@@ -252,7 +252,6 @@ export default function DepartmentsPage() {
             <div className="flex-1 min-w-0">Departament</div>
             <div className="w-32 text-center">Valideyn</div>
             <div className="w-36 text-center">Təyin edilmiş əməkdaşlar</div>
-            <div className="w-44 text-center">Qaydalar</div>
             <div className="w-40 text-center">Təyin et</div>
             <div className="w-24 text-center">Ərazi</div>
             <div className="w-20 text-center">Əməliyyatlar</div>
@@ -300,16 +299,6 @@ export default function DepartmentsPage() {
                 <div className="w-36 text-center">
                   <span className="text-sm font-semibold" style={{ color: '#1e2a4a' }}>{dept.employeeCount ?? 0}</span>
                   <span className="text-xs text-gray-400 ml-1">nəfər</span>
-                </div>
-
-                {/* Rules */}
-                <div className="w-44 text-center">
-                  <div className="text-xs text-gray-600">
-                    {dept.calculateOvertime ? 'Əlavə iş aktiv' : 'Əlavə iş deaktiv'}
-                  </div>
-                  <div className="text-xs text-gray-600">
-                    {dept.flexShift ? 'Sərbəst Növbə' : 'Standart Növbə'}
-                  </div>
                 </div>
 
                 {/* Assign button */}

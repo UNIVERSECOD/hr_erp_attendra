@@ -204,13 +204,6 @@ export default function PositionsPage() {
                     <span className="text-gray-400 font-medium">TƏYİN EDİLMİŞ İŞÇİLƏR</span>
                     <span className="font-semibold text-gray-800">{pos.employeeCount ?? 0}</span>
                   </div>
-                  <div className="flex items-center justify-between text-xs">
-                    <span className="text-gray-400 font-medium">QAYDALAR</span>
-                    <div className="flex gap-1">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: '#fef3c7', color: '#92400e' }}>Əlavə iş deaktiv</span>
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium" style={{ background: '#ede9fe', color: '#6d28d9' }}>Standart Növbə</span>
-                    </div>
-                  </div>
                 </div>
 
                 {/* Actions */}
