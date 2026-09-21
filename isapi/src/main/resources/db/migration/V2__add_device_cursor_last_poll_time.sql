@@ -1,0 +1,2 @@
+ALTER TABLE device_cursors
+    ADD COLUMN IF NOT EXISTS last_poll_time TIMESTAMP WITH TIME ZONE;

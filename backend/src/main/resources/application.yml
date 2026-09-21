@@ -1,0 +1,66 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/hic_backend}
+    username: ${SPRING_DATASOURCE_USERNAME:hic_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:hic_password}
+    driver-class-name: org.postgresql.Driver
+  jackson:
+    time-zone: Asia/Baku
+    serialization:
+      write-dates-as-timestamps: false
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+    table: flyway_schema_history_backend
+
+jwt:
+  secret: ${JWT_SECRET:HicCentralJwtSecretKey2024AzerbaijanHRERPSystemSecretKeyMustBe64CharsLong!!}
+  expiration: 86400000
+  refresh-expiration: 604800000
+
+hikvision:
+  default-port: 80
+  default-username: admin
+  connection-timeout: 5000
+  read-timeout: 10000
+
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://${COMPUTER_IP:192.168.1.102}:3000}
+
+encryption:
+  secret-key: ${ENCRYPTION_SECRET_KEY:HicEncryptKey32CharactersLongKey!}
+
+rate-limit:
+  # Only auth endpoints are rate-limited (see RateLimitFilter).
+  login-max-per-minute: ${RATE_LIMIT_LOGIN_MAX:10}
+
+logging:
+  level:
+    root: INFO
+    com.hic: INFO
+
+isapi:
+  base-url: ${ISAPI_BASE_URL:http://${COMPUTER_IP:192.168.1.102}:8081}
+  api-key: ${ISAPI_API_KEY:}
+  user-info-record:
+    base-url: ${ISAPI_USER_INFO_BASE_URL:${ISAPI_BASE_URL:http://${COMPUTER_IP:192.168.1.102}}}
+    path: /ISAPI/AccessControl/UserInfo/Record
+    security: ${ISAPI_USER_INFO_SECURITY:1}
+    iv: ${ISAPI_USER_INFO_IV:}
+    username: ${ISAPI_USER_INFO_USERNAME:}
+    password: ${ISAPI_USER_INFO_PASSWORD:}
+    door-right: ${ISAPI_USER_INFO_DOOR_RIGHT:1}
+    door-no: ${ISAPI_USER_INFO_DOOR_NO:1}
+    plan-template-no: ${ISAPI_USER_INFO_PLAN_TEMPLATE_NO:1}

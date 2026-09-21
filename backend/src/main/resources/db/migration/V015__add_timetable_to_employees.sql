@@ -1,0 +1,2 @@
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS timetable_id BIGINT;
+ALTER TABLE departments ADD COLUMN IF NOT EXISTS timetable_id BIGINT;
