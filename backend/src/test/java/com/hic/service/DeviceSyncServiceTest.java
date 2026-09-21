@@ -34,7 +34,7 @@ class DeviceSyncServiceTest {
         server.expect(requestTo("http://host.docker.internal:8080/api/devices"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
-                        [{"id":7,"ip":"10.10.10.10","username":"admin","name":"Main Gate","enabled":true,"running":true}]
+                        [{"id":7,"ip":"10.10.10.10","username":"admin","name":"Main Gate","enabled":true,"running":false}]
                         """, MediaType.APPLICATION_JSON));
 
         List<DeviceSyncDTO.DeviceConfigDTO> result = service.getAllDevices(null);

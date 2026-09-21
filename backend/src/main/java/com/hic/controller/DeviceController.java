@@ -12,10 +12,12 @@ import com.hic.service.DeviceService;
 import com.hic.service.DeviceSyncService;
 import com.hic.service.DoorAttendanceSyncService;
 import com.hic.service.HikDeviceUserImportService;
+import com.hic.util.EncryptionUtil;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.http.ResponseEntity;
+import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
@@ -31,6 +33,7 @@ public class DeviceController {
     private final DeviceConfigRepository deviceConfigRepository;
     private final HikDeviceUserImportService hikDeviceUserImportService;
     private final DoorAttendanceSyncService doorAttendanceSyncService;
+    private final EncryptionUtil encryptionUtil;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<DeviceSyncDTO.DeviceConfigDTO>>> getAll() {
@@ -60,7 +63,7 @@ public class DeviceController {
             @RequestBody DeviceSyncDTO.DeviceUpsertRequest req) {
         DeviceSyncDTO.DeviceConfigDTO dto = toConfigDTO(req);
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.createDevice(dto);
-        DeviceConfig backendDevice = upsertBackendDevice(isapiResult, req.getBranchId());
+        DeviceConfig backendDevice = upsertBackendDevice(isapiResult, req.getBranchId(), req.getPassword());
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(backendDevice.getId())));
     }
 
@@ -73,7 +76,7 @@ public class DeviceController {
         DeviceSyncDTO.DeviceConfigDTO dto = toConfigDTO(req);
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateDevice(
                 toIsapiId(backendDevice.getDeviceId()), dto);
-        updateBackendDevice(backendDevice, isapiResult, req.getBranchId());
+        updateBackendDevice(backendDevice, isapiResult, req.getBranchId(), req.getPassword());
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(id)));
     }
 
@@ -174,7 +177,10 @@ public class DeviceController {
         return dto;
     }
 
-    private DeviceConfig upsertBackendDevice(DeviceSyncDTO.DeviceConfigDTO isapiResult, Long branchId) {
+    private DeviceConfig upsertBackendDevice(
+            DeviceSyncDTO.DeviceConfigDTO isapiResult,
+            Long branchId,
+            String password) {
         DeviceConfig device = deviceConfigRepository.findByDeviceId(isapiResult.getDeviceId()).orElse(new DeviceConfig());
         device.setDeviceId(isapiResult.getDeviceId());
         device.setDeviceName(isapiResult.getDeviceName());
@@ -184,6 +190,7 @@ public class DeviceController {
         if (branchId != null) {
             device.setBranchId(branchId);
         }
+        updateStoredPassword(device, password);
         Long tenantId = TenantContext.getTenantId();
         if (tenantId != null && device.getTenantId() == null) {
             device.setTenantId(tenantId);
@@ -191,7 +198,11 @@ public class DeviceController {
         return deviceConfigRepository.save(device);
     }
 
-    private void updateBackendDevice(DeviceConfig device, DeviceSyncDTO.DeviceConfigDTO isapiResult, Long branchId) {
+    private void updateBackendDevice(
+            DeviceConfig device,
+            DeviceSyncDTO.DeviceConfigDTO isapiResult,
+            Long branchId,
+            String password) {
         device.setDeviceName(isapiResult.getDeviceName());
         device.setDeviceIp(isapiResult.getDeviceIp());
         device.setUsername(isapiResult.getUsername());
@@ -199,7 +210,14 @@ public class DeviceController {
         if (branchId != null) {
             device.setBranchId(branchId);
         }
+        updateStoredPassword(device, password);
         deviceConfigRepository.save(device);
+    }
+
+    private void updateStoredPassword(DeviceConfig device, String password) {
+        if (StringUtils.hasText(password)) {
+            device.setPasswordEncrypted(encryptionUtil.encrypt(password.trim()));
+        }
     }
 
     private Long toIsapiId(String deviceId) {

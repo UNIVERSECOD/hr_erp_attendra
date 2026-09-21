@@ -9,8 +9,11 @@ import com.hic.service.DeviceService;
 import com.hic.service.DeviceSyncService;
 import com.hic.service.DoorAttendanceSyncService;
 import com.hic.service.HikDeviceUserImportService;
+import com.hic.util.EncryptionUtil;
 import com.hic.util.JwtUtil;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
 import org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration;
@@ -25,10 +28,12 @@ import java.util.Optional;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -55,6 +60,9 @@ class DeviceControllerTest {
 
     @MockBean
     private DoorAttendanceSyncService doorAttendanceSyncService;
+
+    @MockBean
+    private EncryptionUtil encryptionUtil;
 
     @MockBean
     private JwtUtil jwtUtil;
@@ -142,5 +150,54 @@ class DeviceControllerTest {
                 .andExpect(jsonPath("$.data.recordsSynced").value(3));
 
         verify(doorAttendanceSyncService).syncAllDevices(any(), any(), eq(500));
+    }
+
+    @Test
+    void create_storesDevicePasswordEncrypted() throws Exception {
+        DeviceSyncDTO.DeviceConfigDTO created = deviceConfigDto();
+        when(deviceSyncService.createDevice(any(DeviceSyncDTO.DeviceConfigDTO.class))).thenReturn(created);
+        when(deviceConfigRepository.findByDeviceId("10")).thenReturn(Optional.empty());
+        when(encryptionUtil.encrypt("device-secret")).thenReturn("ENC:device-secret");
+        when(deviceConfigRepository.save(any(DeviceConfig.class))).thenAnswer(invocation -> {
+            DeviceConfig saved = invocation.getArgument(0);
+            saved.setId(1L);
+            return saved;
+        });
+        when(deviceService.getById(1L)).thenReturn(created);
+
+        mockMvc.perform(post("/api/devices")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ip":"10.0.0.1","username":"admin","password":"device-secret",
+                                 "name":"Front Door","enabled":true}
+                                """))
+                .andExpect(status().isOk());
+
+        ArgumentCaptor<DeviceConfig> deviceCaptor = ArgumentCaptor.forClass(DeviceConfig.class);
+        verify(deviceConfigRepository).save(deviceCaptor.capture());
+        Assertions.assertThat(deviceCaptor.getValue().getPasswordEncrypted()).isEqualTo("ENC:device-secret");
+    }
+
+    @Test
+    void update_withoutPassword_preservesStoredPassword() throws Exception {
+        DeviceConfig existing = backendDevice();
+        existing.setPasswordEncrypted("ENC:existing-secret");
+        DeviceSyncDTO.DeviceConfigDTO updated = deviceConfigDto();
+        updated.setDeviceName("Renamed Door");
+
+        when(deviceConfigRepository.findById(1L)).thenReturn(Optional.of(existing));
+        when(deviceSyncService.updateDevice(eq(10L), any(DeviceSyncDTO.DeviceConfigDTO.class))).thenReturn(updated);
+        when(deviceService.getById(1L)).thenReturn(updated);
+
+        mockMvc.perform(put("/api/devices/1")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"ip":"10.0.0.1","username":"admin","name":"Renamed Door","enabled":true}
+                                """))
+                .andExpect(status().isOk());
+
+        Assertions.assertThat(existing.getPasswordEncrypted()).isEqualTo("ENC:existing-secret");
+        verify(encryptionUtil, never()).encrypt(any());
+        verify(deviceConfigRepository).save(existing);
     }
 }

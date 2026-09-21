@@ -11,7 +11,7 @@ type DeviceWritePayload = Partial<DeviceConfig> & {
 const toIsapiUpsertPayload = (data: DeviceWritePayload) => ({
   ip: data.deviceIp,
   username: data.username,
-  password: data.password,
+  ...(data.password?.trim() ? { password: data.password } : {}),
   name: data.deviceName,
   enabled: data.status ? data.status === 'ACTIVE' : undefined,
   branchId: data.branchId,

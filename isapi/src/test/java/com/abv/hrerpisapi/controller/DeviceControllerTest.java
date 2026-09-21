@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -101,5 +102,46 @@ class DeviceControllerTest {
         verify(historyPoller).pollDevice(device);
         assertThat(response.success()).isTrue();
         assertThat(response.recordsSynced()).isEqualTo(3);
+    }
+
+    @Test
+    void updateName_withBlankPassword_preservesCredentialAndWorker() {
+        DeviceEntity device = enabledDevice();
+        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
+        when(deviceRepository.save(device)).thenReturn(device);
+
+        DeviceController.DeviceResponse response = controller.update(1L,
+                new DeviceController.DeviceUpsertRequest(
+                        "192.168.1.10", "admin", "", "Renamed Door", true));
+
+        assertThat(device.getPassword()).isEqualTo("device-secret");
+        assertThat(response.name()).isEqualTo("Renamed Door");
+        verify(deviceWorkerService).startDevice(device);
+        verify(deviceWorkerService, never()).restartDevice(device);
+    }
+
+    @Test
+    void updatePassword_restartsWorkerWithNewCredential() {
+        DeviceEntity device = enabledDevice();
+        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
+        when(deviceRepository.save(device)).thenReturn(device);
+
+        controller.update(1L, new DeviceController.DeviceUpsertRequest(
+                "192.168.1.10", "admin", "new-secret", "Front Door", true));
+
+        assertThat(device.getPassword()).isEqualTo("new-secret");
+        verify(deviceWorkerService).restartDevice(device);
+        verify(deviceWorkerService, never()).startDevice(device);
+    }
+
+    private DeviceEntity enabledDevice() {
+        DeviceEntity device = new DeviceEntity();
+        device.setId(1L);
+        device.setIp("192.168.1.10");
+        device.setUsername("admin");
+        device.setPassword("device-secret");
+        device.setName("Front Door");
+        device.setEnabled(true);
+        return device;
     }
 }

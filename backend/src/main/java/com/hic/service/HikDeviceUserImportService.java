@@ -301,9 +301,17 @@ public class HikDeviceUserImportService {
     }
 
     private List<FetchedPerson> fetchViaDirectBasic(DeviceConfig device) {
+        if (!StringUtils.hasText(device.getPasswordEncrypted())) {
+            throw new IllegalStateException(
+                    "Device credential is unavailable; edit the device and enter its password before retrying");
+        }
         String baseUrl = buildBaseUrl(device);
         String username = device.getUsername();
         String password = decryptPassword(device.getPasswordEncrypted());
+        if (!StringUtils.hasText(password)) {
+            throw new IllegalStateException(
+                    "Device credential is unavailable; edit the device and enter its password before retrying");
+        }
         String url = baseUrl + SEARCH_PATH;
         HttpHeaders headers = buildHeaders(username, password);
 

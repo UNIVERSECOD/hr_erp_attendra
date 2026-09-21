@@ -82,6 +82,19 @@ public class DeviceWorkerService {
         }
     }
 
+    public void restartDevice(DeviceEntity device) {
+        Thread t = activeThreads.remove(device.getId());
+        IsapiAlertStreamRunner runner = activeRunners.remove(device.getId());
+        if (runner != null) {
+            stopRunner(runner);
+        }
+        if (t != null) {
+            interruptThread(t);
+            waitForThreadStop(t);
+        }
+        startDevice(device);
+    }
+
     protected void interruptThread(Thread thread) {
         thread.interrupt();
     }

@@ -125,7 +125,7 @@ public class DeviceSyncService {
         dto.setDeviceName(response.getName());
         dto.setDeviceIp(response.getIp());
         dto.setUsername(response.getUsername());
-        dto.setStatus(response.isRunning() ? ACTIVE_STATUS : INACTIVE_STATUS);
+        dto.setStatus(response.isEnabled() ? ACTIVE_STATUS : INACTIVE_STATUS);
         dto.setLastSyncTime(response.getLastSyncTime() == null ? null : response.getLastSyncTime().toLocalDateTime());
         log.info("ActionLog.toConfigDTO.end");
         return dto;

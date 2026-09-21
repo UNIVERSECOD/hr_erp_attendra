@@ -280,6 +280,26 @@ class HikDeviceUserImportServiceTest {
     }
 
     @Test
+    void importUsersFromBranch_missingStoredPassword_doesNotTryEmptyCredential() {
+        when(branchRepository.findById(10L)).thenReturn(Optional.of(branch(10L, "Baku", "BAK")));
+        DeviceConfig device = device(1L, "101", "Entry", "10.0.0.1", 10L);
+        device.setPasswordEncrypted(null);
+        when(deviceConfigRepository.findByBranchId(10L)).thenReturn(List.of(device));
+        when(restTemplate.exchange(eq("http://isapi:8081/api/devices/101/users/from-device"),
+                eq(HttpMethod.GET), eq(null), eq(String.class)))
+                .thenThrow(new RuntimeException("bridge unavailable"));
+
+        DeviceEmployeeImportDTO.ImportResult result = service.importUsersFromBranch(
+                new DeviceEmployeeImportDTO.ImportRequest(10L, null, false));
+
+        assertThat(result.getDevicesFailed()).isEqualTo(1);
+        assertThat(result.getDeviceStatuses().get(0).getError()).contains("credential is unavailable");
+        verify(restTemplate, never()).exchange(
+                eq("http://10.0.0.1/ISAPI/AccessControl/UserInfo/Search?format=json"),
+                eq(HttpMethod.POST), any(), eq(String.class));
+    }
+
+    @Test
     void importUsersFromBranch_writesMissingPersonToSiblingBranchDevice() {
         Branch branch = branch(10L, "Baku", "BAK");
         when(branchRepository.findById(10L)).thenReturn(Optional.of(branch));

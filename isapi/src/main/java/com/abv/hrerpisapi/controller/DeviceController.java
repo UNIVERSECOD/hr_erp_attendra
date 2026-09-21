@@ -18,6 +18,7 @@ import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @RestController
@@ -73,10 +74,21 @@ public class DeviceController {
     public DeviceResponse update(@PathVariable Long id, @RequestBody DeviceUpsertRequest request) {
         log.info("ActionLog.device.update.started deviceId={} ip={} enabled={}", id, trimToNull(request.ip()), request.enabled());
         DeviceEntity device = requireDevice(id);
+        String previousIp = device.getIp();
+        String previousUsername = device.getUsername();
+        String previousPassword = device.getPassword();
+        boolean wasEnabled = device.isEnabled();
         applyUpsert(device, request, false);
+        boolean connectionChanged = !Objects.equals(previousIp, device.getIp())
+                || !Objects.equals(previousUsername, device.getUsername())
+                || !Objects.equals(previousPassword, device.getPassword());
         DeviceEntity saved = deviceRepository.save(device);
         if (saved.isEnabled()) {
-            deviceWorkerService.startDevice(saved);
+            if (wasEnabled && connectionChanged) {
+                deviceWorkerService.restartDevice(saved);
+            } else {
+                deviceWorkerService.startDevice(saved);
+            }
         } else {
             deviceWorkerService.stopDevice(saved.getId());
         }
