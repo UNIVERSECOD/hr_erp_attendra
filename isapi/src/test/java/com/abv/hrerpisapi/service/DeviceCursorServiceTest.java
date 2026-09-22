@@ -61,4 +61,26 @@ class DeviceCursorServiceTest {
         assertThat(result.getLastSerialNo()).isEqualTo(0L);
         assertThat(result.getLastEventTime()).isNull();
     }
+
+    @Test
+    void invalidateLastContact_clearsTimestampsAndPreservesSerialNumber() {
+        DeviceCursorEntity existing = new DeviceCursorEntity();
+        existing.setDeviceId(3L);
+        existing.setLastSerialNo(654L);
+        existing.setLastEventTime(OffsetDateTime.now().minusMinutes(2));
+        existing.setLastPollTime(OffsetDateTime.now().minusMinutes(1));
+
+        when(deviceCursorRepository.findById(3L)).thenReturn(Optional.of(existing));
+        when(deviceCursorRepository.save(any(DeviceCursorEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        deviceCursorService.invalidateLastContact(3L);
+
+        ArgumentCaptor<DeviceCursorEntity> captor = ArgumentCaptor.forClass(DeviceCursorEntity.class);
+        verify(deviceCursorRepository).save(captor.capture());
+        DeviceCursorEntity saved = captor.getValue();
+        assertThat(saved.getLastSerialNo()).isEqualTo(654L);
+        assertThat(saved.getLastEventTime()).isNull();
+        assertThat(saved.getLastPollTime()).isNull();
+    }
 }

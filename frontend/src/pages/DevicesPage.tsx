@@ -7,6 +7,7 @@ import { doorApi } from '../api/doorApi.ts'
 import { deviceApi } from '../api/deviceApi.ts'
 import { t } from '../i18n/index.ts'
 import { doorRoleLabel, statusLabel } from '../i18n/labels.ts'
+import { getApiErrorMessage } from '../utils/apiError.ts'
 import { isDeviceOnline, relativeTime, ONLINE_THRESHOLD_MINUTES } from '../utils/deviceOnline.ts'
 
 interface DeviceFormData {
@@ -199,8 +200,11 @@ export default function DevicesPage() {
       await syncDevice(id)
       setSyncFeedback({ type: 'success', message: 'Cihaz və davamiyyət məlumatları sinxronlaşdırıldı.' })
     } catch (error: unknown) {
-      const responseMessage = (error as { response?: { data?: { message?: string } } })?.response?.data?.message
-      setSyncFeedback({ type: 'error', message: responseMessage || 'Cihazı sinxronlaşdırmaq alınmadı.' })
+      const status = (error as { response?: { status?: number } })?.response?.status
+      const message = status === 502 || status === 503
+        ? 'Cihazla əlaqə yaratmaq mümkün olmadı. IP ünvanını, şəbəkəni və cihaz şifrəsini yoxlayın.'
+        : getApiErrorMessage(error, 'Cihazı sinxronlaşdırmaq alınmadı.')
+      setSyncFeedback({ type: 'error', message })
     } finally {
       setSyncingId(null)
     }

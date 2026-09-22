@@ -30,4 +30,15 @@ public class DeviceCursorService {
                 saved.getDeviceId(), saved.getLastSerialNo(), saved.getLastEventTime());
         return saved;
     }
+
+    @Transactional
+    public void invalidateLastContact(Long deviceId) {
+        deviceCursorRepository.findById(deviceId).ifPresent(cursor -> {
+            cursor.setLastEventTime(null);
+            cursor.setLastPollTime(null);
+            DeviceCursorEntity saved = deviceCursorRepository.save(cursor);
+            log.info("ActionLog.device.cursor.contact.invalidated deviceId={} lastSerialNo={}",
+                    saved.getDeviceId(), saved.getLastSerialNo());
+        });
+    }
 }

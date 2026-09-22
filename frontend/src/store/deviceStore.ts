@@ -93,7 +93,10 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     await get().fetchDevices()
   },
   syncDevice: async (id) => {
-    await deviceApi.sync(id)
-    await get().fetchDevices()
+    try {
+      await deviceApi.sync(id)
+    } finally {
+      await get().fetchDevices()
+    }
   },
 }))

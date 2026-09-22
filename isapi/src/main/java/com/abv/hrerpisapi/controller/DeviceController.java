@@ -83,6 +83,9 @@ public class DeviceController {
                 || !Objects.equals(previousUsername, device.getUsername())
                 || !Objects.equals(previousPassword, device.getPassword());
         DeviceEntity saved = deviceRepository.save(device);
+        if (connectionChanged) {
+            deviceCursorService.invalidateLastContact(saved.getId());
+        }
         if (saved.isEnabled()) {
             if (wasEnabled && connectionChanged) {
                 deviceWorkerService.restartDevice(saved);
@@ -157,7 +160,11 @@ public class DeviceController {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Device sync was interrupted", e);
-        } catch (IOException | IsapiClient.AcsEventHistoryNotSupportedException e) {
+        } catch (IOException e) {
+            deviceCursorService.invalidateLastContact(device.getId());
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Device history sync failed: " + e.getMessage(), e);
+        } catch (IsapiClient.AcsEventHistoryNotSupportedException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Device history sync failed: " + e.getMessage(), e);
         }

@@ -13,12 +13,15 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
+import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -105,6 +108,18 @@ class DeviceControllerTest {
     }
 
     @Test
+    void sync_connectionFailure_invalidatesLastContact() throws Exception {
+        DeviceEntity device = enabledDevice();
+        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
+        when(historyPoller.pollDevice(device)).thenThrow(new IOException("Connection refused"));
+
+        assertThatThrownBy(() -> controller.sync(1L))
+                .isInstanceOf(ResponseStatusException.class);
+
+        verify(deviceCursorService).invalidateLastContact(1L);
+    }
+
+    @Test
     void updateName_withBlankPassword_preservesCredentialAndWorker() {
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
@@ -118,6 +133,7 @@ class DeviceControllerTest {
         assertThat(response.name()).isEqualTo("Renamed Door");
         verify(deviceWorkerService).startDevice(device);
         verify(deviceWorkerService, never()).restartDevice(device);
+        verify(deviceCursorService, never()).invalidateLastContact(1L);
     }
 
     @Test
@@ -130,6 +146,21 @@ class DeviceControllerTest {
                 "192.168.1.10", "admin", "new-secret", "Front Door", true));
 
         assertThat(device.getPassword()).isEqualTo("new-secret");
+        verify(deviceCursorService).invalidateLastContact(1L);
+        verify(deviceWorkerService).restartDevice(device);
+        verify(deviceWorkerService, never()).startDevice(device);
+    }
+
+    @Test
+    void updateIp_invalidatesLastContactAndRestartsWorker() {
+        DeviceEntity device = enabledDevice();
+        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
+        when(deviceRepository.save(device)).thenReturn(device);
+
+        controller.update(1L, new DeviceController.DeviceUpsertRequest(
+                "192.168.1.99", "admin", "", "Front Door", true));
+
+        verify(deviceCursorService).invalidateLastContact(1L);
         verify(deviceWorkerService).restartDevice(device);
         verify(deviceWorkerService, never()).startDevice(device);
     }
