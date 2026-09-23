@@ -80,6 +80,7 @@ class DeviceControllerTest {
         cursor.setLastEventTime(OffsetDateTime.parse("2026-05-18T10:15:30Z"));
         OffsetDateTime lastPollTime = OffsetDateTime.parse("2026-05-18T10:20:30Z");
         cursor.setLastPollTime(lastPollTime);
+        cursor.setOnline(true);
 
         when(deviceRepository.findAll()).thenReturn(List.of(device));
         when(deviceCursorRepository.findAllById(List.of(1L))).thenReturn(List.of(cursor));
@@ -88,7 +89,26 @@ class DeviceControllerTest {
         List<DeviceController.DeviceResponse> response = controller.list(null);
 
         assertThat(response).hasSize(1);
+        assertThat(response.get(0).online()).isTrue();
         assertThat(response.get(0).lastSyncTime()).isEqualTo(lastPollTime);
+    }
+
+    @Test
+    void list_usesLastEventTimeWhenPollTimeIsMissing() {
+        DeviceEntity device = enabledDevice();
+        OffsetDateTime lastEventTime = OffsetDateTime.parse("2026-09-22T18:19:43Z");
+        DeviceCursorEntity cursor = new DeviceCursorEntity();
+        cursor.setDeviceId(1L);
+        cursor.setLastEventTime(lastEventTime);
+
+        when(deviceRepository.findAll()).thenReturn(List.of(device));
+        when(deviceCursorRepository.findAllById(List.of(1L))).thenReturn(List.of(cursor));
+
+        List<DeviceController.DeviceResponse> response = controller.list(null);
+
+        assertThat(response).hasSize(1);
+        assertThat(response.get(0).online()).isFalse();
+        assertThat(response.get(0).lastSyncTime()).isEqualTo(lastEventTime);
     }
 
     @Test
@@ -108,7 +128,7 @@ class DeviceControllerTest {
     }
 
     @Test
-    void sync_connectionFailure_invalidatesLastContact() throws Exception {
+    void sync_connectionFailure_marksDeviceOffline() throws Exception {
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
         when(historyPoller.pollDevice(device)).thenThrow(new IOException("Connection refused"));
@@ -116,7 +136,7 @@ class DeviceControllerTest {
         assertThatThrownBy(() -> controller.sync(1L))
                 .isInstanceOf(ResponseStatusException.class);
 
-        verify(deviceCursorService).invalidateLastContact(1L);
+        verify(deviceCursorService).markOffline(1L);
     }
 
     @Test
@@ -133,7 +153,7 @@ class DeviceControllerTest {
         assertThat(response.name()).isEqualTo("Renamed Door");
         verify(deviceWorkerService).startDevice(device);
         verify(deviceWorkerService, never()).restartDevice(device);
-        verify(deviceCursorService, never()).invalidateLastContact(1L);
+        verify(deviceCursorService, never()).markOffline(1L);
     }
 
     @Test
@@ -146,13 +166,13 @@ class DeviceControllerTest {
                 "192.168.1.10", "admin", "new-secret", "Front Door", true));
 
         assertThat(device.getPassword()).isEqualTo("new-secret");
-        verify(deviceCursorService).invalidateLastContact(1L);
+        verify(deviceCursorService).markOffline(1L);
         verify(deviceWorkerService).restartDevice(device);
         verify(deviceWorkerService, never()).startDevice(device);
     }
 
     @Test
-    void updateIp_invalidatesLastContactAndRestartsWorker() {
+    void updateIp_marksDeviceOfflineAndRestartsWorker() {
         DeviceEntity device = enabledDevice();
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
         when(deviceRepository.save(device)).thenReturn(device);
@@ -160,7 +180,7 @@ class DeviceControllerTest {
         controller.update(1L, new DeviceController.DeviceUpsertRequest(
                 "192.168.1.99", "admin", "", "Front Door", true));
 
-        verify(deviceCursorService).invalidateLastContact(1L);
+        verify(deviceCursorService).markOffline(1L);
         verify(deviceWorkerService).restartDevice(device);
         verify(deviceWorkerService, never()).startDevice(device);
     }

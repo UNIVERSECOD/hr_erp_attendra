@@ -46,14 +46,14 @@ public class DeviceController {
                 .collect(Collectors.toMap(DeviceCursorEntity::getDeviceId, cursor -> cursor));
         log.info("ActionLog.device.list.finished enabled={}", enabled);
         return devices.stream()
-                .map(device -> toResponse(device, cursorSyncTime(cursorsByDeviceId.get(device.getId()))))
+                .map(device -> toResponse(device, cursorsByDeviceId.get(device.getId())))
                 .toList();
     }
 
     @GetMapping("/{id}")
     public DeviceResponse get(@PathVariable Long id) {
         DeviceEntity device = requireDevice(id);
-        return toResponse(device, findLastSyncTime(device.getId()));
+        return toResponse(device, findCursor(device.getId()));
     }
 
     @PostMapping
@@ -67,7 +67,7 @@ public class DeviceController {
             deviceWorkerService.startDevice(saved);
         }
         log.info("ActionLog.device.create.ended deviceId={} ip={} enabled={}", saved.getId(), saved.getIp(), saved.isEnabled());
-        return toResponse(saved, findLastSyncTime(saved.getId()));
+        return toResponse(saved, findCursor(saved.getId()));
     }
 
     @PutMapping("/{id}")
@@ -84,7 +84,7 @@ public class DeviceController {
                 || !Objects.equals(previousPassword, device.getPassword());
         DeviceEntity saved = deviceRepository.save(device);
         if (connectionChanged) {
-            deviceCursorService.invalidateLastContact(saved.getId());
+            deviceCursorService.markOffline(saved.getId());
         }
         if (saved.isEnabled()) {
             if (wasEnabled && connectionChanged) {
@@ -96,7 +96,7 @@ public class DeviceController {
             deviceWorkerService.stopDevice(saved.getId());
         }
         log.info("ActionLog.device.update.ended deviceId={} ip={} enabled={}", saved.getId(), saved.getIp(), saved.isEnabled());
-        return toResponse(saved, findLastSyncTime(saved.getId()));
+        return toResponse(saved, findCursor(saved.getId()));
     }
 
     @PatchMapping("/{id}/enabled")
@@ -108,10 +108,11 @@ public class DeviceController {
         if (saved.isEnabled()) {
             deviceWorkerService.startDevice(saved);
         } else {
+            deviceCursorService.markOffline(saved.getId());
             deviceWorkerService.stopDevice(saved.getId());
         }
         log.info("ActionLog.device.enabled.update.ended deviceId={} enabled={}", saved.getId(), saved.isEnabled());
-        return toResponse(saved, findLastSyncTime(saved.getId()));
+        return toResponse(saved, findCursor(saved.getId()));
     }
 
     @DeleteMapping("/{id}")
@@ -161,7 +162,7 @@ public class DeviceController {
             Thread.currentThread().interrupt();
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Device sync was interrupted", e);
         } catch (IOException e) {
-            deviceCursorService.invalidateLastContact(device.getId());
+            deviceCursorService.markOffline(device.getId());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Device history sync failed: " + e.getMessage(), e);
         } catch (IsapiClient.AcsEventHistoryNotSupportedException e) {
@@ -175,6 +176,11 @@ public class DeviceController {
         DeviceEntity device = requireDevice(id);
         log.info("ActionLog.device.status.check.started deviceId={} ip={}", device.getId(), device.getIp());
         IsapiClient.DeviceStatusCheckResult status = isapiClient.checkDeviceStatus(device);
+        if (status.online()) {
+            deviceCursorService.markOnline(device.getId());
+        } else {
+            deviceCursorService.markOffline(device.getId());
+        }
         DeviceStatusResponse response = new DeviceStatusResponse(
                 device.getId(),
                 status.online(),
@@ -230,10 +236,8 @@ public class DeviceController {
         return trimmed.isEmpty() ? null : trimmed;
     }
 
-    private OffsetDateTime findLastSyncTime(Long deviceId) {
-        return deviceCursorRepository.findById(deviceId)
-                .map(this::cursorSyncTime)
-                .orElse(null);
+    private DeviceCursorEntity findCursor(Long deviceId) {
+        return deviceCursorRepository.findById(deviceId).orElse(null);
     }
 
     private OffsetDateTime cursorSyncTime(DeviceCursorEntity cursor) {
@@ -243,7 +247,7 @@ public class DeviceController {
         return cursor.getLastPollTime() != null ? cursor.getLastPollTime() : cursor.getLastEventTime();
     }
 
-    private DeviceResponse toResponse(DeviceEntity device, OffsetDateTime lastSyncTime) {
+    private DeviceResponse toResponse(DeviceEntity device, DeviceCursorEntity cursor) {
         return new DeviceResponse(
                 device.getId(),
                 device.getIp(),
@@ -251,7 +255,8 @@ public class DeviceController {
                 device.getName(),
                 device.isEnabled(),
                 deviceWorkerService.isRunning(device.getId()),
-                lastSyncTime);
+                device.isEnabled() && cursor != null && cursor.isOnline(),
+                cursorSyncTime(cursor));
     }
 
     public record DeviceResponse(
@@ -261,6 +266,7 @@ public class DeviceController {
             String name,
             boolean enabled,
             boolean running,
+            boolean online,
             OffsetDateTime lastSyncTime
     ) {
     }

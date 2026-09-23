@@ -378,6 +378,7 @@ export interface DeviceConfig {
   doorId?: number
   doorRole?: string
   status?: string
+  online?: boolean
   lastSyncTime?: string
 }
 

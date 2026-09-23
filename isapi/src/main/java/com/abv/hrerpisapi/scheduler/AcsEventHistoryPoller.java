@@ -7,6 +7,7 @@ import com.abv.hrerpisapi.dao.repository.DeviceRepository;
 import com.abv.hrerpisapi.device.client.IsapiClient;
 import com.abv.hrerpisapi.device.model.ParsedAcsEvent;
 import com.abv.hrerpisapi.service.AcsIngestService;
+import com.abv.hrerpisapi.service.DeviceCursorService;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -40,6 +41,7 @@ public class AcsEventHistoryPoller {
     private final DeviceCursorRepository cursorRepository;
     private final IsapiClient isapiClient;
     private final AcsIngestService acsIngestService;
+    private final DeviceCursorService deviceCursorService;
 
     private final Map<Long, OffsetDateTime> historyPollingDisabledUntil = new ConcurrentHashMap<>();
 
@@ -58,11 +60,16 @@ public class AcsEventHistoryPoller {
             try {
                 pollDevice(device);
             } catch (IsapiClient.AcsEventHistoryNotSupportedException e) {
+                deviceCursorService.markOnline(device.getId());
                 disableHistoryPolling(device);
+            } catch (IOException e) {
+                deviceCursorService.markOffline(device.getId());
+                logPollFailure(device, e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                logPollFailure(device, e);
             } catch (Exception e) {
-                log.warn("HistoryPoller failed for device {} ({}): {}",
-                        device.getId(), device.getIp(), e.getMessage());
-                log.debug("HistoryPoller exception for device {}", device.getId(), e);
+                logPollFailure(device, e);
             }
         });
     }
@@ -150,9 +157,16 @@ public class AcsEventHistoryPoller {
         }
 
         cursor.setLastPollTime(pollTime);
+        cursor.setOnline(true);
         cursorRepository.save(cursor);
-        log.info("HistoryPoller: cursor updated deviceId={} lastSerialNo={} lastEventTime={} lastPollTime={}",
-                deviceId, cursor.getLastSerialNo(), cursor.getLastEventTime(), cursor.getLastPollTime());
+        log.info("HistoryPoller: cursor updated deviceId={} online={} lastSerialNo={} lastEventTime={} lastPollTime={}",
+                deviceId, cursor.isOnline(), cursor.getLastSerialNo(), cursor.getLastEventTime(), cursor.getLastPollTime());
+    }
+
+    private void logPollFailure(DeviceEntity device, Exception exception) {
+        log.warn("HistoryPoller failed for device {} ({}): {}",
+                device.getId(), device.getIp(), exception.getMessage());
+        log.debug("HistoryPoller exception for device {}", device.getId(), exception);
     }
 
     private boolean isHistoryPollingDisabled(Long deviceId) {

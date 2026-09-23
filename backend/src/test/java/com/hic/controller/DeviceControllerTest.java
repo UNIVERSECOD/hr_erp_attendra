@@ -22,6 +22,7 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -81,7 +82,8 @@ class DeviceControllerTest {
 
     private DeviceSyncDTO.DeviceConfigDTO deviceConfigDto() {
         return new DeviceSyncDTO.DeviceConfigDTO(
-                1L, "10", "Front Door", "10.0.0.1", 80, "admin", null, null, null, null, "ACTIVE", null);
+                1L, "10", "Front Door", "10.0.0.1", 80, "admin", null, null, null, null,
+                "ACTIVE", true, LocalDateTime.of(2026, 9, 23, 10, 30));
     }
 
     @Test
@@ -176,6 +178,9 @@ class DeviceControllerTest {
         ArgumentCaptor<DeviceConfig> deviceCaptor = ArgumentCaptor.forClass(DeviceConfig.class);
         verify(deviceConfigRepository).save(deviceCaptor.capture());
         Assertions.assertThat(deviceCaptor.getValue().getPasswordEncrypted()).isEqualTo("ENC:device-secret");
+        Assertions.assertThat(deviceCaptor.getValue().isOnline()).isTrue();
+        Assertions.assertThat(deviceCaptor.getValue().getLastSyncTime())
+                .isEqualTo(LocalDateTime.of(2026, 9, 23, 10, 30));
     }
 
     @Test

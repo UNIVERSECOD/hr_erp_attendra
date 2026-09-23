@@ -6,6 +6,7 @@ import com.abv.hrerpisapi.dao.repository.DeviceCursorRepository;
 import com.abv.hrerpisapi.dao.repository.DeviceRepository;
 import com.abv.hrerpisapi.device.client.IsapiClient;
 import com.abv.hrerpisapi.service.AcsIngestService;
+import com.abv.hrerpisapi.service.DeviceCursorService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -13,6 +14,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
@@ -34,6 +36,8 @@ class AcsEventHistoryPollerTest {
     private IsapiClient isapiClient;
     @Mock
     private AcsIngestService acsIngestService;
+    @Mock
+    private DeviceCursorService deviceCursorService;
 
     @InjectMocks
     private AcsEventHistoryPoller poller;
@@ -68,5 +72,22 @@ class AcsEventHistoryPollerTest {
         assertThat(ingested).isZero();
         assertThat(cursorCaptor.getValue().getLastPollTime()).isNotNull();
         assertThat(cursorCaptor.getValue().getLastSerialNo()).isEqualTo(42L);
+        assertThat(cursorCaptor.getValue().isOnline()).isTrue();
+    }
+
+    @Test
+    void scheduledPoll_connectionFailure_marksDeviceOffline() throws Exception {
+        DeviceEntity device = new DeviceEntity();
+        device.setId(2L);
+        device.setIp("192.168.1.20");
+
+        when(deviceRepository.findByEnabledTrue()).thenReturn(List.of(device));
+        when(cursorRepository.findById(2L)).thenReturn(Optional.empty());
+        when(isapiClient.searchAcsEvents(eq(device), any(OffsetDateTime.class), eq(0L), eq(30)))
+                .thenThrow(new IOException("Connection refused"));
+
+        poller.poll();
+
+        verify(deviceCursorService).markOffline(2L);
     }
 }

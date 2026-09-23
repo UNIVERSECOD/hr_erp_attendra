@@ -38,6 +38,7 @@ const normalizeDevice = (item: Record<string, unknown>): DeviceConfig => {
   } else if (typeof item.enabled === 'boolean') {
     status = item.enabled ? 'ACTIVE' : 'INACTIVE'
   }
+  const online = typeof item.online === 'boolean' ? item.online : undefined
   const lastSyncTime = typeof item.lastSyncTime === 'string' ? item.lastSyncTime : undefined
 
   return {
@@ -52,6 +53,7 @@ const normalizeDevice = (item: Record<string, unknown>): DeviceConfig => {
     doorRole,
     // Prefer explicit runtime state first, then fallback to enabled flag.
     status,
+    online,
     lastSyncTime,
   }
 }

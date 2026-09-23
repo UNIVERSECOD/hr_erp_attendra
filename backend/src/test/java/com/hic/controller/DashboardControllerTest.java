@@ -46,21 +46,28 @@ class DashboardControllerTest {
     void getDeviceStatus_usesRecentDatabaseSyncTimes() {
         DeviceConfig online = new DeviceConfig();
         online.setStatus("ACTIVE");
+        online.setOnline(true);
         online.setLastSyncTime(LocalDateTime.now().minusMinutes(2));
         DeviceConfig stale = new DeviceConfig();
         stale.setStatus("ACTIVE");
+        stale.setOnline(true);
         stale.setLastSyncTime(LocalDateTime.now().minusMinutes(20));
         DeviceConfig inactive = new DeviceConfig();
         inactive.setStatus("INACTIVE");
+        inactive.setOnline(true);
         inactive.setLastSyncTime(LocalDateTime.now());
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(online, stale, inactive));
+        DeviceConfig reportedOffline = new DeviceConfig();
+        reportedOffline.setStatus("ACTIVE");
+        reportedOffline.setOnline(false);
+        reportedOffline.setLastSyncTime(LocalDateTime.now().minusMinutes(1));
+        when(deviceConfigRepository.findAll()).thenReturn(List.of(online, stale, inactive, reportedOffline));
 
         ResponseEntity<ApiResponse<Map<String, Object>>> response = dashboardController.getDeviceStatus();
 
         Map<String, Object> data = response.getBody().getData();
-        assertThat(data.get("totalDevices")).isEqualTo(3L);
+        assertThat(data.get("totalDevices")).isEqualTo(4L);
         assertThat(data.get("onlineDevices")).isEqualTo(1L);
-        assertThat(data.get("offlineDevices")).isEqualTo(2L);
+        assertThat(data.get("offlineDevices")).isEqualTo(3L);
     }
 
     @Test

@@ -63,24 +63,42 @@ class DeviceCursorServiceTest {
     }
 
     @Test
-    void invalidateLastContact_clearsTimestampsAndPreservesSerialNumber() {
+    void markOffline_preservesLastSuccessfulSyncAndSerialNumber() {
         DeviceCursorEntity existing = new DeviceCursorEntity();
         existing.setDeviceId(3L);
         existing.setLastSerialNo(654L);
-        existing.setLastEventTime(OffsetDateTime.now().minusMinutes(2));
-        existing.setLastPollTime(OffsetDateTime.now().minusMinutes(1));
+        OffsetDateTime lastEventTime = OffsetDateTime.now().minusMinutes(2);
+        OffsetDateTime lastPollTime = OffsetDateTime.now().minusMinutes(1);
+        existing.setLastEventTime(lastEventTime);
+        existing.setLastPollTime(lastPollTime);
+        existing.setOnline(true);
 
         when(deviceCursorRepository.findById(3L)).thenReturn(Optional.of(existing));
         when(deviceCursorRepository.save(any(DeviceCursorEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
 
-        deviceCursorService.invalidateLastContact(3L);
+        deviceCursorService.markOffline(3L);
 
         ArgumentCaptor<DeviceCursorEntity> captor = ArgumentCaptor.forClass(DeviceCursorEntity.class);
         verify(deviceCursorRepository).save(captor.capture());
         DeviceCursorEntity saved = captor.getValue();
         assertThat(saved.getLastSerialNo()).isEqualTo(654L);
-        assertThat(saved.getLastEventTime()).isNull();
+        assertThat(saved.getLastEventTime()).isEqualTo(lastEventTime);
+        assertThat(saved.getLastPollTime()).isEqualTo(lastPollTime);
+        assertThat(saved.isOnline()).isFalse();
+    }
+
+    @Test
+    void markOnline_missingCursor_createsOnlineCursor() {
+        when(deviceCursorRepository.findById(4L)).thenReturn(Optional.empty());
+        when(deviceCursorRepository.save(any(DeviceCursorEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
+        DeviceCursorEntity saved = deviceCursorService.markOnline(4L);
+
+        assertThat(saved.getDeviceId()).isEqualTo(4L);
+        assertThat(saved.getLastSerialNo()).isEqualTo(0L);
+        assertThat(saved.isOnline()).isTrue();
         assertThat(saved.getLastPollTime()).isNull();
     }
 }

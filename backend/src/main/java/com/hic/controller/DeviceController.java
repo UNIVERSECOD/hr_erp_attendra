@@ -102,6 +102,8 @@ public class DeviceController {
         DeviceSyncDTO.DeviceConfigDTO isapiResult = deviceSyncService.updateEnabled(
                 toIsapiId(backendDevice.getDeviceId()), dto);
         backendDevice.setStatus(isapiResult.getStatus());
+        backendDevice.setOnline(isapiResult.isOnline());
+        updateLastSuccessfulSync(backendDevice, isapiResult.getLastSyncTime());
         deviceConfigRepository.save(backendDevice);
         return ResponseEntity.ok(ApiResponse.success(deviceService.getById(id)));
     }
@@ -187,6 +189,8 @@ public class DeviceController {
         device.setDeviceIp(isapiResult.getDeviceIp());
         device.setUsername(isapiResult.getUsername());
         device.setStatus(isapiResult.getStatus());
+        device.setOnline(isapiResult.isOnline());
+        updateLastSuccessfulSync(device, isapiResult.getLastSyncTime());
         if (branchId != null) {
             device.setBranchId(branchId);
         }
@@ -207,6 +211,8 @@ public class DeviceController {
         device.setDeviceIp(isapiResult.getDeviceIp());
         device.setUsername(isapiResult.getUsername());
         device.setStatus(isapiResult.getStatus());
+        device.setOnline(isapiResult.isOnline());
+        updateLastSuccessfulSync(device, isapiResult.getLastSyncTime());
         if (branchId != null) {
             device.setBranchId(branchId);
         }
@@ -217,6 +223,13 @@ public class DeviceController {
     private void updateStoredPassword(DeviceConfig device, String password) {
         if (StringUtils.hasText(password)) {
             device.setPasswordEncrypted(encryptionUtil.encrypt(password.trim()));
+        }
+    }
+
+    private void updateLastSuccessfulSync(DeviceConfig device, LocalDateTime candidate) {
+        if (candidate != null
+                && (device.getLastSyncTime() == null || candidate.isAfter(device.getLastSyncTime()))) {
+            device.setLastSyncTime(candidate);
         }
     }
 

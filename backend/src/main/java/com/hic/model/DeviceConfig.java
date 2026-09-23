@@ -50,6 +50,9 @@ public class DeviceConfig {
     @Column(name = "last_sync_time")
     private LocalDateTime lastSyncTime;
 
+    @Column(name = "online", nullable = false)
+    private boolean online;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

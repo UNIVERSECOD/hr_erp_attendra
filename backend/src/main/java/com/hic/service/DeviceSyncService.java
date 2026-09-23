@@ -3,6 +3,7 @@ package com.hic.service;
 import com.hic.dto.DeviceSyncDTO;
 import com.hic.exception.DeviceSyncException;
 import com.hic.exception.UpstreamApiException;
+import com.hic.util.AppTimeZone;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -126,7 +127,8 @@ public class DeviceSyncService {
         dto.setDeviceIp(response.getIp());
         dto.setUsername(response.getUsername());
         dto.setStatus(response.isEnabled() ? ACTIVE_STATUS : INACTIVE_STATUS);
-        dto.setLastSyncTime(response.getLastSyncTime() == null ? null : response.getLastSyncTime().toLocalDateTime());
+        dto.setOnline(response.isOnline());
+        dto.setLastSyncTime(AppTimeZone.toLocalDateTime(response.getLastSyncTime()));
         log.info("ActionLog.toConfigDTO.end");
         return dto;
     }

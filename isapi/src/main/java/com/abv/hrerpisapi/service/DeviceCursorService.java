@@ -32,13 +32,28 @@ public class DeviceCursorService {
     }
 
     @Transactional
-    public void invalidateLastContact(Long deviceId) {
-        deviceCursorRepository.findById(deviceId).ifPresent(cursor -> {
-            cursor.setLastEventTime(null);
-            cursor.setLastPollTime(null);
-            DeviceCursorEntity saved = deviceCursorRepository.save(cursor);
-            log.info("ActionLog.device.cursor.contact.invalidated deviceId={} lastSerialNo={}",
-                    saved.getDeviceId(), saved.getLastSerialNo());
-        });
+    public DeviceCursorEntity markOffline(Long deviceId) {
+        return updateOnlineStatus(deviceId, false);
+    }
+
+    @Transactional
+    public DeviceCursorEntity markOnline(Long deviceId) {
+        return updateOnlineStatus(deviceId, true);
+    }
+
+    private DeviceCursorEntity updateOnlineStatus(Long deviceId, boolean online) {
+        DeviceCursorEntity cursor = deviceCursorRepository.findById(deviceId)
+                .orElseGet(() -> {
+                    DeviceCursorEntity created = new DeviceCursorEntity();
+                    created.setDeviceId(deviceId);
+                    created.setLastSerialNo(0L);
+                    return created;
+                });
+
+        cursor.setOnline(online);
+        DeviceCursorEntity saved = deviceCursorRepository.save(cursor);
+        log.info("ActionLog.device.cursor.online.updated deviceId={} online={} lastSerialNo={} lastPollTime={}",
+                saved.getDeviceId(), saved.isOnline(), saved.getLastSerialNo(), saved.getLastPollTime());
+        return saved;
     }
 }

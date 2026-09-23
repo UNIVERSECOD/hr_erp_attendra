@@ -25,6 +25,7 @@ public class DeviceSyncDTO {
         private Long doorId;
         private String doorRole;
         private String status;
+        private boolean online;
         private LocalDateTime lastSyncTime;
     }
 
@@ -87,6 +88,7 @@ public class DeviceSyncDTO {
         private String name;
         private boolean enabled;
         private boolean running;
+        private boolean online;
         private OffsetDateTime lastSyncTime;
     }
 

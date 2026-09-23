@@ -3,8 +3,9 @@
  *
  * Rules:
  *  1. If status is 'INACTIVE', the device is offline.
- *  2. If lastSyncTime is missing/null/undefined, the device is offline.
- *  3. If lastSyncTime is present, the device is online ONLY if lastSyncTime is within ONLINE_THRESHOLD_MINUTES (10 mins).
+ *  2. If the bridge explicitly reports an offline state, the device is offline.
+ *  3. If lastSyncTime is missing/null/undefined, the device is offline.
+ *  4. A successful sync must still be recent, so stale cached state expires.
  */
 
 /** Minutes within which a device is considered online */
@@ -13,8 +14,10 @@ export const ONLINE_THRESHOLD_MINUTES = 10
 export function isDeviceOnline(
   status: string | undefined,
   lastSyncTime: string | undefined,
+  online?: boolean,
 ): boolean {
   if (status === 'INACTIVE') return false
+  if (online === false) return false
   if (!lastSyncTime) return false
 
   const syncDate = new Date(lastSyncTime)

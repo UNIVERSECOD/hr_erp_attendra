@@ -34,7 +34,8 @@ class DeviceSyncServiceTest {
         server.expect(requestTo("http://host.docker.internal:8080/api/devices"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withSuccess("""
-                        [{"id":7,"ip":"10.10.10.10","username":"admin","name":"Main Gate","enabled":true,"running":false}]
+                        [{"id":7,"ip":"10.10.10.10","username":"admin","name":"Main Gate","enabled":true,
+                          "running":false,"online":true,"lastSyncTime":"2026-09-23T08:15:00+04:00"}]
                         """, MediaType.APPLICATION_JSON));
 
         List<DeviceSyncDTO.DeviceConfigDTO> result = service.getAllDevices(null);
@@ -44,6 +45,8 @@ class DeviceSyncServiceTest {
         assertThat(result.get(0).getDeviceId()).isEqualTo("7");
         assertThat(result.get(0).getDeviceIp()).isEqualTo("10.10.10.10");
         assertThat(result.get(0).getStatus()).isEqualTo("ACTIVE");
+        assertThat(result.get(0).isOnline()).isTrue();
+        assertThat(result.get(0).getLastSyncTime()).isEqualTo("2026-09-23T08:15:00");
         server.verify();
     }
 

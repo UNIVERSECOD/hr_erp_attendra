@@ -65,8 +65,8 @@ public class DeviceService {
                     newDevice.setDeviceIp(isapiDevice.getDeviceIp());
                     newDevice.setUsername(isapiDevice.getUsername());
                     newDevice.setStatus(isapiDevice.getStatus());
-                    // Sync time comes ONLY from the device response
-                    newDevice.setLastSyncTime(isapiDevice.getLastSyncTime());
+                    newDevice.setOnline(isapiDevice.isOnline());
+                    updateLastSuccessfulSync(newDevice, isapiDevice.getLastSyncTime());
                     newDevice.setTenantId(tenantId);
                     deviceConfigRepository.save(newDevice);
                     syncedCount++;
@@ -76,8 +76,8 @@ public class DeviceService {
                     existing.setDeviceIp(isapiDevice.getDeviceIp());
                     existing.setUsername(isapiDevice.getUsername());
                     existing.setStatus(isapiDevice.getStatus());
-                    // Sync time comes ONLY from the device response
-                    existing.setLastSyncTime(isapiDevice.getLastSyncTime());
+                    existing.setOnline(isapiDevice.isOnline());
+                    updateLastSuccessfulSync(existing, isapiDevice.getLastSyncTime());
                     if (tenantId != null && existing.getTenantId() == null) {
                         existing.setTenantId(tenantId);
                     }
@@ -148,7 +148,15 @@ public class DeviceService {
         dto.setDoorId(device.getDoorId());
         dto.setDoorRole(device.getDoorRole());
         dto.setStatus(device.getStatus());
+        dto.setOnline(device.isOnline());
         dto.setLastSyncTime(device.getLastSyncTime());
         return dto;
+    }
+
+    private void updateLastSuccessfulSync(DeviceConfig device, java.time.LocalDateTime candidate) {
+        if (candidate != null
+                && (device.getLastSyncTime() == null || candidate.isAfter(device.getLastSyncTime()))) {
+            device.setLastSyncTime(candidate);
+        }
     }
 }

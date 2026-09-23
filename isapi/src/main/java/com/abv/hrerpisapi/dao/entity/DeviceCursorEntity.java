@@ -29,4 +29,7 @@ public class DeviceCursorEntity {
 
     @Column(name = "last_poll_time")
     private OffsetDateTime lastPollTime;
+
+    @Column(name = "online", nullable = false)
+    private boolean online;
 }

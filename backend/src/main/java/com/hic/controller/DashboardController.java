@@ -114,7 +114,8 @@ public class DashboardController {
     public ResponseEntity<ApiResponse<Map<String, Object>>> getDeviceStatus() {
         Long tenantId = TenantContext.getTenantId();
         // Use DB records so this endpoint works even when ISAPI is unreachable.
-        // A device is considered "online" if its lastSyncTime is within the last 10 minutes.
+        // The explicit connection state gives immediate offline feedback; the
+        // timestamp threshold prevents a stale online state from lasting forever.
         java.time.LocalDateTime onlineThreshold = java.time.LocalDateTime.now().minusMinutes(10);
 
         java.util.List<com.hic.model.DeviceConfig> devices = tenantId != null
@@ -123,7 +124,10 @@ public class DashboardController {
 
         long totalDevices = devices.size();
         long onlineDevices = devices.stream()
-                .filter(d -> !"INACTIVE".equalsIgnoreCase(d.getStatus()) && d.getLastSyncTime() != null && d.getLastSyncTime().isAfter(onlineThreshold))
+                .filter(d -> !"INACTIVE".equalsIgnoreCase(d.getStatus())
+                        && d.isOnline()
+                        && d.getLastSyncTime() != null
+                        && d.getLastSyncTime().isAfter(onlineThreshold))
                 .count();
         long offlineDevices = totalDevices - onlineDevices;
 

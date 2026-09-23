@@ -210,8 +210,8 @@ export default function DevicesPage() {
     }
   }
 
-  // Compute online/offline counts using lastSyncTime-based real-time logic
-  const activeCount = devices.filter((d: DeviceConfig) => isDeviceOnline(d.status, d.lastSyncTime)).length
+  // Combine immediate bridge state with the last successful sync freshness.
+  const activeCount = devices.filter((d: DeviceConfig) => isDeviceOnline(d.status, d.lastSyncTime, d.online)).length
   const inactiveCount = devices.length - activeCount
 
   return (
@@ -346,7 +346,7 @@ export default function DevicesPage() {
                   <div className="flex items-center gap-2 mb-0.5">
                     <p className="font-semibold text-gray-900 text-sm">{device.deviceName || device.deviceId}</p>
                     {(() => {
-                      const online = isDeviceOnline(device.status, device.lastSyncTime)
+                      const online = isDeviceOnline(device.status, device.lastSyncTime, device.online)
                       return (
                         <span
                           className="px-2 py-0.5 rounded-full text-xs font-medium flex items-center gap-1"
