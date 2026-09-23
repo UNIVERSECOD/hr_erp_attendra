@@ -68,6 +68,7 @@ public class ShiftAssignmentController {
         return ResponseEntity.ok(ApiResponse.success(
                 shiftAssignmentService.bulkAssignToShift(
                         request.getEmployeeIds(),
+                        request.getDepartmentIds(),
                         request.getTimetableId(),
                         request.getStartDate(),
                         request.getEndDate()

@@ -20,6 +20,7 @@ import com.hic.repository.EmployeeDeviceAccessRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.PositionRepository;
 import com.hic.repository.TenantRepository;
+import com.hic.util.AppTimeZone;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -193,7 +194,7 @@ public class EmployeeService {
 
         Employee saved = employeeRepository.save(employee);
         if (saved.getTimetableId() != null) {
-            LocalDate effectiveFrom = saved.getHireDate() != null ? saved.getHireDate() : LocalDate.now();
+            LocalDate effectiveFrom = saved.getHireDate() != null ? saved.getHireDate() : AppTimeZone.today();
             shiftAssignmentService.syncScheduleFromEmployee(saved, null, saved.getTimetableId(), effectiveFrom);
             saved = employeeRepository.save(saved);
         }
@@ -235,7 +236,7 @@ public class EmployeeService {
         mapDtoToEmployee(dto, employee);
         if (!java.util.Objects.equals(previousTimetableId, employee.getTimetableId())) {
             shiftAssignmentService.syncScheduleFromEmployee(
-                    employee, previousTimetableId, employee.getTimetableId(), LocalDate.now());
+                    employee, previousTimetableId, employee.getTimetableId(), AppTimeZone.today());
         }
 
         Employee saved = employeeRepository.save(employee);
@@ -304,7 +305,7 @@ public class EmployeeService {
         employee.setBranchId(dto.getBranchId());
         employee.setDepartmentId(dto.getDepartmentId());
         employee.setPositionId(dto.getPositionId());
-        employee.setHireDate(dto.getHireDate() != null ? dto.getHireDate() : LocalDate.now());
+        employee.setHireDate(dto.getHireDate() != null ? dto.getHireDate() : AppTimeZone.today());
         employee.setContractEndDate(dto.getContractEndDate());
         employee.setAnnualLeaveDuration(dto.getAnnualLeaveDuration());
         employee.setAnnualLeaveBalance(dto.getAnnualLeaveBalance());

@@ -203,6 +203,28 @@ class EmployeeServiceTest {
     }
 
     @Test
+    void update_preservesSelectedDepartmentAndTimetable() {
+        Department newDepartment = new Department();
+        newDepartment.setId(2L);
+        newDepartment.setDepartmentName("Survey");
+        testEmployee.setTimetableId(10L);
+        testEmployeeDTO.setDepartmentId(2L);
+        testEmployeeDTO.setTimetableId(20L);
+
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
+        when(departmentRepository.existsById(2L)).thenReturn(true);
+        when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(departmentRepository.findById(2L)).thenReturn(Optional.of(newDepartment));
+
+        EmployeeResponseDTO result = employeeService.update(1L, testEmployeeDTO);
+
+        assertThat(result.getDepartmentId()).isEqualTo(2L);
+        assertThat(result.getTimetableId()).isEqualTo(20L);
+        verify(shiftAssignmentService).syncScheduleFromEmployee(
+                testEmployee, 10L, 20L, com.hic.util.AppTimeZone.today());
+    }
+
+    @Test
     void update_isapiSyncFails_stillUpdatesEmployee() {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(departmentRepository.existsById(1L)).thenReturn(true);

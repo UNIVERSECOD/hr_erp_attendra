@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 public class ShiftAssignmentBulkRequest {
     private List<Long> employeeIds;
+    private List<Long> departmentIds;
     private Long timetableId;
     private LocalDate startDate;
     private LocalDate endDate;

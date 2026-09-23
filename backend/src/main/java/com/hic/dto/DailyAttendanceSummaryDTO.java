@@ -15,6 +15,8 @@ public class DailyAttendanceSummaryDTO {
     private OffsetDateTime checkInTime;
     private OffsetDateTime checkOutTime;
     private Double hoursWorked;
+    private Integer lateMinutes;
+    private Integer earlyLeaveMinutes;
     private Boolean isStandardDay;
     private Boolean isAdditionalDay;
     private Boolean isExtraDay;

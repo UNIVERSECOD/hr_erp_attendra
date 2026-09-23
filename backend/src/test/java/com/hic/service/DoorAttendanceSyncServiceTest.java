@@ -21,7 +21,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicLong;
@@ -256,7 +255,7 @@ class DoorAttendanceSyncServiceTest {
         AttendanceLogSyncDTO.AttendanceLogEntryDTO punch = new AttendanceLogSyncDTO.AttendanceLogEntryDTO();
         punch.setEmployeeNo(employeeNo);
         punch.setDeviceId(isapiDeviceId);
-        punch.setPunchTime(localTime.atZone(ZoneId.systemDefault()).toOffsetDateTime());
+        punch.setPunchTime(localTime.atZone(com.hic.util.AppTimeZone.ZONE).toOffsetDateTime());
         return punch;
     }
 }

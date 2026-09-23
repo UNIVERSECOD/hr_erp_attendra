@@ -13,32 +13,24 @@ import com.hic.model.DailyAttendanceSummary.AttendanceStatus;
 import com.hic.model.Employee;
 import com.hic.model.EmployeePermission;
 import com.hic.model.LeaveRequest;
-import com.hic.model.Timetable;
-import com.hic.model.WorkSchedule;
 import com.hic.repository.AttendanceLogRepository;
 import com.hic.repository.DailyAttendanceSummaryRepository;
 import com.hic.repository.EmployeePermissionRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.LeaveRequestRepository;
-import com.hic.repository.TimetableRepository;
-import com.hic.repository.WorkScheduleRepository;
 import com.hic.util.AppTimeZone;
-import com.hic.util.ShiftTypes;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.stream.Collectors;
 
@@ -51,15 +43,10 @@ public class AttendanceService {
     private final EmployeeRepository employeeRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeePermissionRepository employeePermissionRepository;
-    private final TimetableRepository timetableRepository;
-    private final WorkScheduleRepository workScheduleRepository;
     private final UserScopeService userScopeService;
     private final AttendanceInferenceService attendanceInferenceService;
-    private final EmployeeShiftResolver employeeShiftResolver;
-
-    private static final LocalTime DEFAULT_SHIFT_START = LocalTime.of(9, 0);
-    private static final LocalTime DEFAULT_SHIFT_END = LocalTime.of(17, 0);
-    private static final int DEFAULT_ALLOWED_LATE_MINUTES = 5;
+    private final AttendanceScheduleResolver attendanceScheduleResolver;
+    private final AttendanceTimeCalculator attendanceTimeCalculator;
 
     @Transactional
     public AttendanceLogDTO logAttendance(AttendanceDTO dto) {
@@ -104,8 +91,9 @@ public class AttendanceService {
         List<AttendanceLog> logs = findDayLogs(employeeId, date);
         AttendanceInferenceService.AttendanceInference inference = attendanceInferenceService.inferDay(logs, date);
         Employee employee = employeeRepository.findById(employeeId).orElse(null);
-        String shiftType = resolveShiftType(employee, date);
-        ScheduleSettings scheduleSettings = resolveScheduleSettings(employee, date);
+        AttendanceScheduleResolver.DaySchedule daySchedule = attendanceScheduleResolver.resolve(employee, date);
+        AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
+                date, inference, daySchedule);
 
         Optional<DailyAttendanceSummary> existing = summaryRepository.findByEmployeeIdAndAttendanceDate(employeeId, date);
         DailyAttendanceSummary summary = existing.orElse(new DailyAttendanceSummary());
@@ -114,21 +102,17 @@ public class AttendanceService {
         summary.setAttendanceDate(date);
         summary.setIsHoliday(false);
         summary.setIsLeave(false);
-        summary.setIsStandardDay(true);
-        summary.setIsAdditionalDay(false);
-        summary.setIsExtraDay(false);
+        summary.setIsStandardDay(daySchedule.workingDay());
+        boolean workedOnDayOff = !daySchedule.workingDay() && inference.firstEntry() != null;
+        summary.setIsAdditionalDay(workedOnDayOff);
+        summary.setIsExtraDay(workedOnDayOff);
 
-        if (inference.firstEntry() == null && !inference.currentlyInside()) {
-            summary.setCheckInTime(null);
-            summary.setCheckOutTime(null);
-            summary.setAttendanceStatus(AttendanceStatus.ABSENT);
-            summary.setHoursWorked(0.0);
-        } else {
-            summary.setCheckInTime(inference.firstEntry());
-            summary.setCheckOutTime(inference.lastExit());
-            summary.setHoursWorked(inference.workedHoursForShift(shiftType));
-            summary.setAttendanceStatus(determineStatus(date, inference, scheduleSettings, shiftType));
-        }
+        summary.setCheckInTime(inference.firstEntry());
+        summary.setCheckOutTime(inference.lastExit());
+        summary.setHoursWorked(calculation.workedMinutes() / 60.0);
+        summary.setLateMinutes(calculation.lateMinutes());
+        summary.setEarlyLeaveMinutes(calculation.earlyLeaveMinutes());
+        summary.setAttendanceStatus(calculation.status());
 
         return toSummaryDTO(summaryRepository.save(summary));
     }
@@ -160,8 +144,6 @@ public class AttendanceService {
         List<EmployeePermission> approvedPermissions = tenantId != null
                 ? employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(tenantId, employeeId, start, end)
                 : employeePermissionRepository.findByEmployeeIdAndDateRange(employeeId, start, end);
-        Optional<Timetable> timetable = getEmployeeTimetable(employee, tenantId);
-
         List<EmployeeAttendanceRowDTO> rows = new ArrayList<>();
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
             final LocalDate currentDate = date;
@@ -174,16 +156,25 @@ public class AttendanceService {
 
             // Prefer live day-clipped inference for hours/times so midnight splits stay correct.
             // Shift type is resolved as-of this calendar day so schedule changes do not rewrite history.
-            String shiftType = resolveShiftType(employee, currentDate);
-            Optional<Timetable> dayTimetable = resolveTimetableForDate(employee, currentDate, timetable);
             LocalDateTime firstCheckIn = inference.firstEntry();
             LocalDateTime lastCheckOut = inference.lastExit();
-            double hoursWorked = inference.workedHoursForShift(shiftType);
+            AttendanceScheduleResolver.DaySchedule daySchedule = attendanceScheduleResolver.resolve(employee, currentDate);
+            AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
+                    currentDate, inference, daySchedule);
+            double hoursWorked = calculation.workedMinutes() / 60.0;
+            int lateMinutes = calculation.lateMinutes();
+            int earlyLeaveMinutes = calculation.earlyLeaveMinutes();
+            AttendanceStatus attendanceStatus = calculation.status();
 
             if (summary != null && summary.getHoursWorked() != null && dayLogs.isEmpty()) {
                 hoursWorked = summary.getHoursWorked();
                 firstCheckIn = summary.getCheckInTime();
                 lastCheckOut = summary.getCheckOutTime();
+                lateMinutes = summary.getLateMinutes() != null ? summary.getLateMinutes() : 0;
+                earlyLeaveMinutes = summary.getEarlyLeaveMinutes() != null ? summary.getEarlyLeaveMinutes() : 0;
+                if (summary.getAttendanceStatus() != null) {
+                    attendanceStatus = summary.getAttendanceStatus();
+                }
             }
 
             EmployeeAttendanceRowDTO row = new EmployeeAttendanceRowDTO();
@@ -191,9 +182,11 @@ public class AttendanceService {
             row.setCheckInTime(toOffsetDateTime(firstCheckIn));
             row.setCheckOutTime(toOffsetDateTime(lastCheckOut));
             row.setHoursWorked(hoursWorked);
-            row.setStatus(determineDailyStatus(summary, inference, onLeave, currentDate, dayTimetable.orElse(null), shiftType));
+            row.setLateMinutes(lateMinutes);
+            row.setEarlyLeaveMinutes(earlyLeaveMinutes);
+            row.setStatus(onLeave ? AttendanceStatus.ON_LEAVE : attendanceStatus);
             row.setNotes(buildNotes(approvedLeaves, approvedPermissions, currentDate));
-            row.setShiftType(shiftType);
+            row.setShiftType(daySchedule.shiftType());
             row.setSessions(toSessionDtos(inference.segments()));
             rows.add(row);
         }
@@ -208,6 +201,7 @@ public class AttendanceService {
         summary.setWorkingDays(rows.stream()
                 .filter(row -> row.getStatus() == AttendanceStatus.PRESENT
                         || row.getStatus() == AttendanceStatus.LATE
+                        || row.getStatus() == AttendanceStatus.EARLY_LEAVE
                         || row.getStatus() == AttendanceStatus.WORKDAY_COMPLETE)
                 .count());
         summary.setTotalHours(rows.stream()
@@ -216,33 +210,9 @@ public class AttendanceService {
                 .mapToDouble(Double::doubleValue)
                 .sum());
         summary.setAbsentDays(rows.stream().filter(row -> row.getStatus() == AttendanceStatus.ABSENT).count());
-        summary.setLateDays(rows.stream().filter(row -> row.getStatus() == AttendanceStatus.LATE).count());
+        summary.setLateDays(rows.stream().filter(row -> row.getLateMinutes() != null && row.getLateMinutes() > 0).count());
         summary.setLeaveDays(rows.stream().filter(row -> row.getStatus() == AttendanceStatus.ON_LEAVE).count());
         return summary;
-    }
-
-    private java.time.LocalTime getScheduleStart(WorkSchedule s, java.time.DayOfWeek day) {
-        return switch (day) {
-            case MONDAY -> s.getMondayStart();
-            case TUESDAY -> s.getTuesdayStart();
-            case WEDNESDAY -> s.getWednesdayStart();
-            case THURSDAY -> s.getThursdayStart();
-            case FRIDAY -> s.getFridayStart();
-            case SATURDAY -> s.getSaturdayStart();
-            case SUNDAY -> s.getSundayStart();
-        };
-    }
-
-    private java.time.LocalTime getScheduleEnd(WorkSchedule s, java.time.DayOfWeek day) {
-        return switch (day) {
-            case MONDAY -> s.getMondayEnd();
-            case TUESDAY -> s.getTuesdayEnd();
-            case WEDNESDAY -> s.getWednesdayEnd();
-            case THURSDAY -> s.getThursdayEnd();
-            case FRIDAY -> s.getFridayEnd();
-            case SATURDAY -> s.getSaturdayEnd();
-            case SUNDAY -> s.getSundayEnd();
-        };
     }
 
     private AttendanceLogDTO toLogDTO(AttendanceLog log) {
@@ -268,6 +238,8 @@ public class AttendanceService {
         dto.setCheckInTime(toOffsetDateTime(s.getCheckInTime()));
         dto.setCheckOutTime(toOffsetDateTime(s.getCheckOutTime()));
         dto.setHoursWorked(s.getHoursWorked());
+        dto.setLateMinutes(s.getLateMinutes());
+        dto.setEarlyLeaveMinutes(s.getEarlyLeaveMinutes());
         dto.setIsStandardDay(s.getIsStandardDay());
         dto.setIsAdditionalDay(s.getIsAdditionalDay());
         dto.setIsExtraDay(s.getIsExtraDay());
@@ -302,15 +274,6 @@ public class AttendanceService {
                 .orElse(null);
     }
 
-    private Optional<Timetable> getEmployeeTimetable(Employee employee, Long tenantId) {
-        if (employee.getTimetableId() == null) {
-            return Optional.empty();
-        }
-        return tenantId != null
-                ? timetableRepository.findByTenantIdAndId(tenantId, employee.getTimetableId())
-                : timetableRepository.findById(employee.getTimetableId());
-    }
-
     private boolean overlapsLeave(List<LeaveRequest> leaves, LocalDate date) {
         return leaves.stream().anyMatch(leave ->
                 !leave.getStartDate().isAfter(date) && !leave.getEndDate().isBefore(date));
@@ -319,61 +282,6 @@ public class AttendanceService {
     private boolean overlapsPermission(List<EmployeePermission> permissions, LocalDate date) {
         return permissions.stream().anyMatch(permission ->
                 !permission.getStartDate().isAfter(date) && !permission.getEndDate().isBefore(date));
-    }
-
-    private AttendanceStatus determineDailyStatus(DailyAttendanceSummary summary,
-                                                  AttendanceInferenceService.AttendanceInference inference,
-                                                  boolean onLeave,
-                                                  LocalDate date,
-                                                  Timetable timetable,
-                                                  String shiftType) {
-        if (onLeave) {
-            return AttendanceStatus.ON_LEAVE;
-        }
-        if (summary != null && summary.getAttendanceStatus() == AttendanceStatus.ON_LEAVE) {
-            return AttendanceStatus.ON_LEAVE;
-        }
-        if (summary != null && summary.getAttendanceStatus() != null) {
-            return summary.getAttendanceStatus();
-        }
-
-        ScheduleSettings scheduleSettings = timetable != null
-                ? new ScheduleSettings(
-                timetable.getStartTime() != null ? timetable.getStartTime() : DEFAULT_SHIFT_START,
-                timetable.getEndTime() != null ? timetable.getEndTime() : DEFAULT_SHIFT_END,
-                timetable.getAllowedLateMinutes() != null ? timetable.getAllowedLateMinutes() : DEFAULT_ALLOWED_LATE_MINUTES
-        )
-                : resolveScheduleSettings(null, date);
-        return determineStatus(date, inference, scheduleSettings, shiftType);
-    }
-
-    private String resolveShiftType(Employee employee) {
-        return resolveShiftType(employee, LocalDate.now());
-    }
-
-    private String resolveShiftType(Employee employee, LocalDate date) {
-        if (employee == null) {
-            return null;
-        }
-        EmployeeShiftResolver.ResolvedShift resolved = employeeShiftResolver.resolve(employee, date);
-        if (resolved.shiftType() != null && !resolved.shiftType().isBlank()) {
-            return resolved.shiftType();
-        }
-        return employee.getShiftType();
-    }
-
-    private Optional<Timetable> resolveTimetableForDate(Employee employee, LocalDate date, Optional<Timetable> currentFallback) {
-        if (employee == null) {
-            return Optional.empty();
-        }
-        EmployeeShiftResolver.ResolvedShift resolved = employeeShiftResolver.resolve(employee, date);
-        if (resolved.timetableId() != null) {
-            if (currentFallback.isPresent() && Objects.equals(currentFallback.get().getId(), resolved.timetableId())) {
-                return currentFallback;
-            }
-            return timetableRepository.findById(resolved.timetableId());
-        }
-        return currentFallback;
     }
 
     private String buildNotes(List<LeaveRequest> leaves, List<EmployeePermission> permissions, LocalDate date) {
@@ -417,72 +325,4 @@ public class AttendanceService {
                 .collect(Collectors.toList());
     }
 
-    private ScheduleSettings resolveScheduleSettings(Employee employee, LocalDate date) {
-        if (employee != null && employee.getTimetableId() != null) {
-            Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : TenantContext.getTenantId();
-            Optional<Timetable> timetable = tenantId != null
-                    ? timetableRepository.findByTenantIdAndId(tenantId, employee.getTimetableId())
-                    : timetableRepository.findById(employee.getTimetableId());
-            if (timetable.isPresent()) {
-                Timetable value = timetable.get();
-                return new ScheduleSettings(
-                        value.getStartTime() != null ? value.getStartTime() : DEFAULT_SHIFT_START,
-                        value.getEndTime() != null ? value.getEndTime() : DEFAULT_SHIFT_END,
-                        value.getAllowedLateMinutes() != null ? value.getAllowedLateMinutes() : DEFAULT_ALLOWED_LATE_MINUTES
-                );
-            }
-        }
-
-        if (employee != null) {
-            Optional<WorkSchedule> schedule = workScheduleRepository
-                    .findTopByEmployeeIdAndEffectiveDateLessThanEqualOrderByEffectiveDateDesc(employee.getId(), date)
-                    .filter(value -> value.getEndDate() == null || !value.getEndDate().isBefore(date));
-            if (schedule.isPresent()) {
-                WorkSchedule value = schedule.get();
-                return new ScheduleSettings(
-                        Optional.ofNullable(getScheduleStart(value, date.getDayOfWeek())).orElse(DEFAULT_SHIFT_START),
-                        Optional.ofNullable(getScheduleEnd(value, date.getDayOfWeek())).orElse(DEFAULT_SHIFT_END),
-                        value.getGracePeriodMinutes() != null ? value.getGracePeriodMinutes() : DEFAULT_ALLOWED_LATE_MINUTES
-                );
-            }
-        }
-
-        return new ScheduleSettings(DEFAULT_SHIFT_START, DEFAULT_SHIFT_END, DEFAULT_ALLOWED_LATE_MINUTES);
-    }
-
-    private AttendanceStatus determineStatus(LocalDate date,
-                                             AttendanceInferenceService.AttendanceInference inference,
-                                             ScheduleSettings scheduleSettings,
-                                             String shiftType) {
-        if (inference.firstEntry() == null) {
-            return AttendanceStatus.ABSENT;
-        }
-
-        boolean flexible = ShiftTypes.isFlexible(shiftType);
-        boolean late = !flexible
-                && Duration.between(scheduleSettings.startTime(), inference.firstEntry().toLocalTime()).toMinutes()
-                > scheduleSettings.allowedLateMinutes();
-
-        if (!date.equals(AppTimeZone.today())) {
-            return late ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
-        }
-
-        if (inference.currentlyInside()) {
-            return late ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
-        }
-
-        if (flexible) {
-            return inference.lastExit() != null ? AttendanceStatus.WORKDAY_COMPLETE : AttendanceStatus.PRESENT;
-        }
-
-        LocalDateTime scheduledEnd = date.atTime(scheduleSettings.endTime());
-        if (inference.lastExit() != null && !inference.lastExit().isBefore(scheduledEnd)) {
-            return AttendanceStatus.WORKDAY_COMPLETE;
-        }
-
-        return AttendanceStatus.ABSENT;
-    }
-
-    private record ScheduleSettings(LocalTime startTime, LocalTime endTime, int allowedLateMinutes) {
-    }
 }

@@ -11,6 +11,6 @@ export const shiftAssignmentApi = {
   update: (id: number, data: Partial<EmployeeShiftAssignment>) =>
     client.put<{ data: EmployeeShiftAssignment }>(`/shift-assignments/${id}`, data),
   remove: (id: number) => client.delete(`/shift-assignments/${id}`),
-  bulkAssign: (data: { employeeIds: number[]; timetableId: number; startDate: string; endDate?: string }) =>
+  bulkAssign: (data: { employeeIds?: number[]; departmentIds?: number[]; timetableId: number; startDate: string; endDate?: string }) =>
     client.post<{ data: EmployeeShiftAssignment[] }>('/shift-assignments/bulk', data),
 }

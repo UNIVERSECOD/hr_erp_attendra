@@ -36,6 +36,7 @@ const statusStyles: Record<EmployeeAttendanceRow['status'], string> = {
   ON_LEAVE: 'bg-blue-100 text-blue-700',
   EARLY_LEAVE: 'bg-purple-100 text-purple-700',
   WORKDAY_COMPLETE: 'bg-slate-200 text-slate-700',
+  DAY_OFF: 'bg-gray-100 text-gray-600',
 }
 
 const defaultSummary: EmployeeAttendanceSummary = {
@@ -54,6 +55,7 @@ const statusLabels: Record<EmployeeAttendanceRow['status'], string> = {
   ON_LEAVE: 'Məzuniyyətdə',
   EARLY_LEAVE: 'Erkən çıxış',
   WORKDAY_COMPLETE: 'İş saatı bitib',
+  DAY_OFF: 'İstirahət günü',
 }
 
 function formatEmployeeLabel(employee: EmployeeSearchResult) {
@@ -422,6 +424,8 @@ export default function AttendancePage() {
                         <th className="px-5 py-3">{t('attendance.checkIn')}</th>
                         <th className="px-5 py-3">{t('attendance.checkOut')}</th>
                         <th className="px-5 py-3">{t('attendance.hoursWorked')}</th>
+                        <th className="px-5 py-3">Gecikmə</th>
+                        <th className="px-5 py-3">Erkən çıxış</th>
                         <th className="px-5 py-3">{t('common.status')}</th>
                         <th className="px-5 py-3">{t('attendance.notes')}</th>
                       </tr>
@@ -444,6 +448,12 @@ export default function AttendancePage() {
                           </td>
                           <td className="px-5 py-4 font-semibold text-slate-900">
                             {formatWorkedHours(row.hoursWorked)}
+                          </td>
+                          <td className="px-5 py-4 text-amber-700">
+                            {row.lateMinutes ? `${row.lateMinutes} dəq.` : '—'}
+                          </td>
+                          <td className="px-5 py-4 text-purple-700">
+                            {row.earlyLeaveMinutes ? `${row.earlyLeaveMinutes} dəq.` : '—'}
                           </td>
                           <td className="px-5 py-4">
                             <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[row.status]}`}>

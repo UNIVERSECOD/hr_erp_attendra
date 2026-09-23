@@ -17,8 +17,6 @@ import com.hic.repository.DailyAttendanceSummaryRepository;
 import com.hic.repository.EmployeePermissionRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.LeaveRequestRepository;
-import com.hic.repository.TimetableRepository;
-import com.hic.repository.WorkScheduleRepository;
 import com.hic.util.AppTimeZone;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -57,19 +55,16 @@ class AttendanceServiceTest {
     private EmployeePermissionRepository employeePermissionRepository;
 
     @Mock
-    private TimetableRepository timetableRepository;
-
-    @Mock
-    private WorkScheduleRepository workScheduleRepository;
-
-    @Mock
     private UserScopeService userScopeService;
 
     @Spy
     private AttendanceInferenceService attendanceInferenceService = new AttendanceInferenceService();
 
     @Mock
-    private EmployeeShiftResolver employeeShiftResolver;
+    private AttendanceScheduleResolver attendanceScheduleResolver;
+
+    @Spy
+    private AttendanceTimeCalculator attendanceTimeCalculator = new AttendanceTimeCalculator();
 
     @InjectMocks
     private AttendanceService attendanceService;
@@ -79,12 +74,18 @@ class AttendanceServiceTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(employeeShiftResolver.resolve(any(), any())).thenAnswer(invocation -> {
+        lenient().when(attendanceScheduleResolver.resolve(any(), any())).thenAnswer(invocation -> {
             Employee employee = invocation.getArgument(0);
-            if (employee == null) {
-                return new EmployeeShiftResolver.ResolvedShift(null, null);
-            }
-            return new EmployeeShiftResolver.ResolvedShift(employee.getTimetableId(), employee.getShiftType());
+            return new AttendanceScheduleResolver.DaySchedule(
+                    employee != null ? employee.getTimetableId() : null,
+                    employee != null ? employee.getShiftType() : null,
+                    true,
+                    java.time.LocalTime.of(9, 0),
+                    java.time.LocalTime.of(17, 0),
+                    0,
+                    5,
+                    0
+            );
         });
 
         testLog = new AttendanceLog();
@@ -226,7 +227,6 @@ class AttendanceServiceTest {
                 .thenReturn(List.of(leaveRequest));
         when(employeePermissionRepository.findByEmployeeIdAndDateRange(1L, LocalDate.of(2024, 1, 15), LocalDate.of(2024, 1, 16)))
                 .thenReturn(List.of());
-        when(timetableRepository.findById(3L)).thenReturn(Optional.of(timetable));
         List<EmployeeAttendanceRowDTO> result = attendanceService.getEmployeeAttendance(
                 1L, LocalDate.of(2024, 1, 15), LocalDate.of(2024, 1, 16));
 
@@ -334,7 +334,6 @@ class AttendanceServiceTest {
         evening.setCheckOutTime(LocalDateTime.of(2024, 1, 15, 18, 0));
 
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
-        when(timetableRepository.findById(3L)).thenReturn(Optional.of(timetable));
         when(attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(eq(1L), any(), any()))
                 .thenReturn(List.of(morning, midday, evening));
         when(summaryRepository.findByEmployeeIdAndAttendanceDate(1L, date))
@@ -375,7 +374,6 @@ class AttendanceServiceTest {
                 .thenReturn(List.of());
         when(employeePermissionRepository.findByEmployeeIdAndDateRange(1L, LocalDate.of(2024, 1, 16), LocalDate.of(2024, 1, 16)))
                 .thenReturn(List.of());
-        when(timetableRepository.findById(3L)).thenReturn(Optional.of(timetable));
 
         List<EmployeeAttendanceRowDTO> result = attendanceService.getEmployeeAttendance(
                 1L, LocalDate.of(2024, 1, 16), LocalDate.of(2024, 1, 16));

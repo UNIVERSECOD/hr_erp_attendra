@@ -121,7 +121,9 @@ export interface EmployeeAttendanceRow {
   checkInTime?: string
   checkOutTime?: string
   hoursWorked?: number
-  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE'
+  lateMinutes?: number
+  earlyLeaveMinutes?: number
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF'
   notes?: string
   shiftType?: string
   sessions?: AttendanceSession[]
@@ -165,7 +167,9 @@ export interface DailyAttendanceSummary {
   checkInTime?: string
   checkOutTime?: string
   hoursWorked?: number
-  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE'
+  lateMinutes?: number
+  earlyLeaveMinutes?: number
+  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF'
 }
 
 export interface LeaveRequest {
@@ -200,6 +204,18 @@ export interface Timetable {
   allowedLateMinutes?: number
   allowedEarlyLeaveMinutes?: number
   shiftType?: string
+  dayRules?: TimetableDayRule[]
+}
+
+export interface TimetableDayRule {
+  id?: number
+  dayOfWeek: number
+  workingDay: boolean
+  startTime?: string
+  endTime?: string
+  breakMinutes: number
+  allowedLateMinutes: number
+  allowedEarlyLeaveMinutes: number
 }
 
 export interface Holiday {

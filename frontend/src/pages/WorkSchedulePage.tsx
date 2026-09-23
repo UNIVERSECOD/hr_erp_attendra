@@ -1,15 +1,14 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import TimetableWeekEditor, { DAY_LABELS } from '../components/TimetableWeekEditor.tsx'
 import { useScheduleStore } from '../store/scheduleStore.ts'
-import { Timetable, Holiday, Permission, PermissionType } from '../types'
+import { Timetable, TimetableDayRule, Holiday, Permission, PermissionType } from '../types'
 import ShiftAssignmentPage from './ShiftAssignmentPage.tsx'
 import { statusLabel } from '../i18n/labels.ts'
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 /** UI-exposed shift types only. MORNING/NIGHT remain valid in DB/backend. */
 const SHIFT_TYPES = ['STANDARD', 'FLEXIBLE']
-const LATE_OPTIONS = [0, 5, 10, 15, 20, 30, 45, 60]
-const EARLY_OPTIONS = [0, 5, 10, 15, 30]
 const APPLY_SCOPES = ['ALL', 'SPECIFIC_DEPARTMENT', 'SPECIFIC_BRANCH']
 const APPLY_SCOPE_LABELS: Record<string, string> = {
   ALL: 'Bütün şirkət',
@@ -96,6 +95,44 @@ const SHIFT_TYPE_LABELS: Record<string, string> = {
   NIGHT: 'Standart Növbə',
 }
 
+const defaultDayRules = (): TimetableDayRule[] => Array.from({ length: 7 }, (_, index) => ({
+  dayOfWeek: index + 1,
+  workingDay: index < 5,
+  startTime: '09:00',
+  endTime: '18:00',
+  breakMinutes: 0,
+  allowedLateMinutes: 10,
+  allowedEarlyLeaveMinutes: 5,
+}))
+
+const normalizeDayRules = (timetable: Partial<Timetable>): TimetableDayRule[] => {
+  const existing = timetable.dayRules ?? []
+  if (existing.length === 7) {
+    return [...existing]
+      .sort((left, right) => left.dayOfWeek - right.dayOfWeek)
+      .map(rule => ({
+        ...rule,
+        workingDay: rule.workingDay !== false,
+        breakMinutes: rule.breakMinutes ?? timetable.breakMinutes ?? 0,
+        allowedLateMinutes: rule.allowedLateMinutes ?? timetable.allowedLateMinutes ?? 0,
+        allowedEarlyLeaveMinutes: rule.allowedEarlyLeaveMinutes ?? timetable.allowedEarlyLeaveMinutes ?? 0,
+      }))
+  }
+
+  if (timetable.id) {
+    return Array.from({ length: 7 }, (_, index) => ({
+      dayOfWeek: index + 1,
+      workingDay: true,
+      startTime: timetable.startTime ?? '09:00',
+      endTime: timetable.endTime ?? '18:00',
+      breakMinutes: timetable.breakMinutes ?? 0,
+      allowedLateMinutes: timetable.allowedLateMinutes ?? 0,
+      allowedEarlyLeaveMinutes: timetable.allowedEarlyLeaveMinutes ?? 0,
+    }))
+  }
+  return defaultDayRules()
+}
+
 const defaultTimetable = (): Partial<Timetable> => ({
   name: '',
   description: '',
@@ -105,6 +142,7 @@ const defaultTimetable = (): Partial<Timetable> => ({
   allowedLateMinutes: 10,
   allowedEarlyLeaveMinutes: 5,
   shiftType: '',
+  dayRules: defaultDayRules(),
 })
 
 function TimetableModal({ initial, onSave, onClose }: {
@@ -121,7 +159,11 @@ function TimetableModal({ initial, onSave, onClose }: {
 
   const [form, setForm] = useState<Partial<Timetable>>(() => {
     const base = initial ?? defaultTimetable()
-    return { ...base, shiftType: normalizeUiShiftType(base.shiftType) || base.shiftType || '' }
+    return {
+      ...base,
+      shiftType: normalizeUiShiftType(base.shiftType) || base.shiftType || '',
+      dayRules: normalizeDayRules(base),
+    }
   })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -133,8 +175,17 @@ function TimetableModal({ initial, onSave, onClose }: {
   const handleSave = async () => {
     if (!form.name?.trim()) { setError('Növbə adı daxil edilməlidir'); return }
     if (!form.shiftType) { setError('Növbə növü seçilməlidir'); return }
-    if (!isFlexible && (!form.startTime || !form.endTime)) {
-      setError('Başlanğıc və bitmə vaxtı seçilməlidir')
+    if (!isFlexible) {
+      const hasInvalidWorkingDay = (form.dayRules ?? []).some(rule =>
+        rule.workingDay && (!rule.startTime || !rule.endTime || rule.startTime === rule.endTime)
+      )
+      if (hasInvalidWorkingDay) {
+        setError('Bütün iş günləri üçün fərqli başlanğıc və bitmə vaxtı seçilməlidir')
+        return
+      }
+    }
+    if (!isFlexible && !(form.dayRules ?? []).some(rule => rule.workingDay)) {
+      setError('Ən azı bir iş günü seçilməlidir')
       return
     }
     setSaving(true)
@@ -149,6 +200,14 @@ function TimetableModal({ initial, onSave, onClose }: {
         payload.shiftType = 'FLEXIBLE'
       } else {
         payload.shiftType = 'STANDARD'
+        const firstWorkingDay = payload.dayRules?.find(rule => rule.workingDay)
+        if (firstWorkingDay) {
+          payload.startTime = firstWorkingDay.startTime
+          payload.endTime = firstWorkingDay.endTime
+          payload.breakMinutes = firstWorkingDay.breakMinutes
+          payload.allowedLateMinutes = firstWorkingDay.allowedLateMinutes
+          payload.allowedEarlyLeaveMinutes = firstWorkingDay.allowedEarlyLeaveMinutes
+        }
       }
       await onSave(payload)
       onClose()
@@ -159,7 +218,7 @@ function TimetableModal({ initial, onSave, onClose }: {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md">
+      <div className="max-h-[90vh] w-full max-w-6xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
         <h2 className="text-lg font-bold text-gray-900 mb-4">{initial?.id ? 'İş qrafikini redaktə et' : 'Yeni iş qrafiki'}</h2>
         {error && <p className="text-red-500 text-sm mb-3">{error}</p>}
         <div className="space-y-3">
@@ -187,37 +246,10 @@ function TimetableModal({ initial, onSave, onClose }: {
             </select>
           </div>
           {!isFlexible && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Başlanğıc vaxtı *</label>
-                  <input type="time" value={form.startTime} onChange={e => set('startTime', e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Bitmə vaxtı *</label>
-                  <input type="time" value={form.endTime} onChange={e => set('endTime', e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Fasilə (dəq.)</label>
-                  <input
-                    type="number"
-                    min={0}
-                    max={120}
-                    value={form.breakMinutes ?? 0}
-                    onChange={e => set('breakMinutes', Number(e.target.value))}
-                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Gecikmə toleransı (dəq.)</label>
-                  <select value={form.allowedLateMinutes ?? 10} onChange={e => set('allowedLateMinutes', Number(e.target.value))} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-500">
-                    {LATE_OPTIONS.map(n => <option key={n} value={n}>{n}</option>)}
-                  </select>
-                </div>
-              </div>
-            </>
+            <TimetableWeekEditor
+              rules={form.dayRules ?? defaultDayRules()}
+              onChange={rules => set('dayRules', rules)}
+            />
           )}
           {isFlexible && (
             <p className="text-sm text-slate-500 rounded-lg bg-slate-50 px-3 py-2">
@@ -299,6 +331,18 @@ function TimetableTab() {
               <div className="text-xs text-gray-500 space-y-1">
                 {['FLEXIBLE', 'FIRST_ENTRY', 'SERBEST', 'FREE_SHIFT', 'FREE'].includes((t.shiftType ?? '').toUpperCase()) ? (
                   <span>Sərbəst Növbə — sabit vaxt / gecikmə yoxdur</span>
+                ) : t.dayRules?.length ? (
+                  <div className="space-y-1">
+                    {t.dayRules.filter(rule => rule.workingDay).map(rule => (
+                      <div key={rule.dayOfWeek} className="grid grid-cols-[110px_1fr] gap-2">
+                        <span>{DAY_LABELS[rule.dayOfWeek - 1]}</span>
+                        <span className="font-medium text-gray-700">
+                          {rule.startTime} – {rule.endTime}
+                          {rule.breakMinutes > 0 ? ` · ${rule.breakMinutes} dəq. fasilə` : ''}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   <>
                     <div className="flex items-center gap-1">

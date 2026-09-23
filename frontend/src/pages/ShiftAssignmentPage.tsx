@@ -2,18 +2,31 @@ import { useEffect, useMemo, useState } from 'react'
 import { employeeApi } from '../api/employeeApi.ts'
 import { timetableApi } from '../api/timetableApi.ts'
 import { shiftAssignmentApi } from '../api/shiftAssignmentApi.ts'
-import { Employee, EmployeeShiftAssignment, Timetable } from '../types'
+import { departmentApi } from '../api/departmentApi.ts'
+import { Department, Employee, EmployeeShiftAssignment, Timetable } from '../types'
+import { todayInAppTimeZone } from '../utils/dateTime.ts'
+
+interface AssignmentPayload {
+  employeeIds?: number[]
+  departmentIds?: number[]
+  timetableId: number
+  startDate: string
+  endDate?: string
+}
 
 interface ShiftAssignmentModalProps {
   employees: Employee[]
+  departments: Department[]
   timetableId: number
   onClose: () => void
-  onSave: (payload: { employeeIds: number[]; timetableId: number; startDate: string; endDate?: string }) => Promise<void>
+  onSave: (payload: AssignmentPayload) => Promise<void>
 }
 
-function ShiftAssignmentModal({ employees, timetableId, onClose, onSave }: ShiftAssignmentModalProps) {
+function ShiftAssignmentModal({ employees, departments, timetableId, onClose, onSave }: ShiftAssignmentModalProps) {
+  const [selectionMode, setSelectionMode] = useState<'EMPLOYEE' | 'DEPARTMENT'>('EMPLOYEE')
   const [selectedEmployeeIds, setSelectedEmployeeIds] = useState<number[]>([])
-  const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0])
+  const [selectedDepartmentIds, setSelectedDepartmentIds] = useState<number[]>([])
+  const [startDate, setStartDate] = useState(todayInAppTimeZone())
   const [endDate, setEndDate] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -22,9 +35,16 @@ function ShiftAssignmentModal({ employees, timetableId, onClose, onSave }: Shift
     setSelectedEmployeeIds(prev => checked ? [...prev, employeeId] : prev.filter(id => id !== employeeId))
   }
 
+  const toggleDepartment = (departmentId: number, checked: boolean) => {
+    setSelectedDepartmentIds(prev => checked ? [...prev, departmentId] : prev.filter(id => id !== departmentId))
+  }
+
   const handleSave = async () => {
-    if (!selectedEmployeeIds.length) {
-      setError('Ən azı bir əməkdaş seçin')
+    const hasSelection = selectionMode === 'EMPLOYEE'
+      ? selectedEmployeeIds.length > 0
+      : selectedDepartmentIds.length > 0
+    if (!hasSelection) {
+      setError(selectionMode === 'EMPLOYEE' ? 'Ən azı bir əməkdaş seçin' : 'Ən azı bir departament seçin')
       return
     }
     if (endDate && endDate < startDate) {
@@ -34,7 +54,13 @@ function ShiftAssignmentModal({ employees, timetableId, onClose, onSave }: Shift
     setSaving(true)
     setError('')
     try {
-      await onSave({ employeeIds: selectedEmployeeIds, timetableId, startDate, endDate: endDate || undefined })
+      await onSave({
+        employeeIds: selectionMode === 'EMPLOYEE' ? selectedEmployeeIds : [],
+        departmentIds: selectionMode === 'DEPARTMENT' ? selectedDepartmentIds : [],
+        timetableId,
+        startDate,
+        endDate: endDate || undefined,
+      })
       onClose()
     } catch (e: unknown) {
       setError((e as Error).message || 'Təyin etmə alınmadı')
@@ -48,6 +74,22 @@ function ShiftAssignmentModal({ employees, timetableId, onClose, onSave }: Shift
       <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-xl space-y-4">
         <h3 className="text-lg font-semibold text-gray-900">Növbə təyin et</h3>
         {error && <p className="text-sm text-red-500">{error}</p>}
+        <div className="inline-flex w-fit rounded-lg border border-gray-200 bg-gray-50 p-1">
+          <button
+            type="button"
+            onClick={() => setSelectionMode('EMPLOYEE')}
+            className={`px-3 py-1.5 text-sm font-medium ${selectionMode === 'EMPLOYEE' ? 'rounded-md bg-white text-purple-700 shadow-sm' : 'text-gray-500'}`}
+          >
+            Əməkdaşlar
+          </button>
+          <button
+            type="button"
+            onClick={() => setSelectionMode('DEPARTMENT')}
+            className={`px-3 py-1.5 text-sm font-medium ${selectionMode === 'DEPARTMENT' ? 'rounded-md bg-white text-purple-700 shadow-sm' : 'text-gray-500'}`}
+          >
+            Departamentlər
+          </button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="text-sm text-gray-700">Başlanğıc tarixi</label>
@@ -58,13 +100,28 @@ function ShiftAssignmentModal({ employees, timetableId, onClose, onSave }: Shift
             <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
           </div>
         </div>
-        <div className="max-h-64 overflow-y-auto border rounded-lg p-2 space-y-1">
-          {employees.map(employee => (
-            <label key={employee.id} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-gray-50 text-sm">
+        <div className="max-h-64 space-y-1 overflow-y-auto rounded-lg border p-2">
+          {selectionMode === 'EMPLOYEE' ? employees.map(employee => (
+            <label key={employee.id} className="flex items-center gap-2 rounded px-2 py-1 text-sm hover:bg-gray-50">
               <input type="checkbox" checked={selectedEmployeeIds.includes(employee.id)} onChange={e => toggleEmployee(employee.id, e.target.checked)} />
               <span>{employee.employeeId} — {employee.firstName} {employee.lastName}</span>
             </label>
-          ))}
+          )) : departments.map(department => {
+            const employeeCount = employees.filter(employee => employee.departmentId === department.id).length
+            return (
+              <label key={department.id} className="flex items-center justify-between gap-3 rounded px-2 py-1.5 text-sm hover:bg-gray-50">
+                <span className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={selectedDepartmentIds.includes(department.id)}
+                    onChange={event => toggleDepartment(department.id, event.target.checked)}
+                  />
+                  <span>{department.departmentName}</span>
+                </span>
+                <span className="text-xs text-gray-400">{employeeCount}</span>
+              </label>
+            )
+          })}
         </div>
         <div className="flex justify-end gap-2">
           <button onClick={onClose} className="px-4 py-2 border rounded-lg text-gray-600">Ləğv et</button>
@@ -80,6 +137,7 @@ function ShiftAssignmentModal({ employees, timetableId, onClose, onSave }: Shift
 export default function ShiftAssignmentPage() {
   const [timetables, setTimetables] = useState<Timetable[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [departments, setDepartments] = useState<Department[]>([])
   const [assignments, setAssignments] = useState<EmployeeShiftAssignment[]>([])
   const [activeTimetableId, setActiveTimetableId] = useState<number | null>(null)
   const [search, setSearch] = useState('')
@@ -90,18 +148,21 @@ export default function ShiftAssignmentPage() {
   const fetchData = async () => {
     setLoading(true)
     try {
-      const [timetableRes, employeeRes, assignmentRes] = await Promise.all([
+      const [timetableRes, employeeRes, assignmentRes, departmentRes] = await Promise.all([
         timetableApi.getAll(),
         employeeApi.getAll(0, 500),
         shiftAssignmentApi.getAll(),
+        departmentApi.getAll(),
       ])
       const timetableData = timetableRes.data?.data ?? []
       const employeeData = employeeRes.data?.content ?? []
       const assignmentData = assignmentRes.data?.data ?? []
+      const departmentData = departmentRes.data?.data ?? []
 
       setTimetables(timetableData)
       setEmployees(employeeData)
       setAssignments(assignmentData)
+      setDepartments(departmentData)
       if (timetableData.length && !activeTimetableId) {
         setActiveTimetableId(timetableData[0].id)
       }
@@ -166,7 +227,7 @@ export default function ShiftAssignmentPage() {
     await fetchData()
   }
 
-  const saveAssignment = async (payload: { employeeIds: number[]; timetableId: number; startDate: string; endDate?: string }) => {
+  const saveAssignment = async (payload: AssignmentPayload) => {
     await shiftAssignmentApi.bulkAssign(payload)
     await fetchData()
   }
@@ -253,6 +314,7 @@ export default function ShiftAssignmentPage() {
       {showModal && activeTimetableId && (
         <ShiftAssignmentModal
           employees={assignableEmployees}
+          departments={departments}
           timetableId={activeTimetableId}
           onClose={() => setShowModal(false)}
           onSave={saveAssignment}

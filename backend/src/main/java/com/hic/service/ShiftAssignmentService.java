@@ -5,10 +5,13 @@ import com.hic.exception.BadRequestException;
 import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.Employee;
 import com.hic.model.EmployeeShiftAssignment;
+import com.hic.model.Department;
 import com.hic.model.Timetable;
+import com.hic.repository.DepartmentRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.EmployeeShiftAssignmentRepository;
 import com.hic.repository.TimetableRepository;
+import com.hic.util.AppTimeZone;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -16,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -27,6 +31,7 @@ public class ShiftAssignmentService {
     private final EmployeeShiftAssignmentRepository assignmentRepository;
     private final EmployeeRepository employeeRepository;
     private final TimetableRepository timetableRepository;
+    private final DepartmentRepository departmentRepository;
 
     @Transactional
     public EmployeeShiftAssignmentDTO assignEmployeeToShift(Long employeeId, Long timetableId, LocalDate startDate, LocalDate endDate) {
@@ -85,7 +90,7 @@ public class ShiftAssignmentService {
         if (Objects.equals(previousTimetableId, newTimetableId)) {
             return;
         }
-        LocalDate start = effectiveFrom != null ? effectiveFrom : LocalDate.now();
+        LocalDate start = effectiveFrom != null ? effectiveFrom : AppTimeZone.today();
         ensureHistoricalAssignment(tenantId, employee, previousTimetableId, start);
         closeOverlappingAssignments(tenantId, employee.getId(), start, null, null);
 
@@ -189,8 +194,9 @@ public class ShiftAssignmentService {
         Long tenantId = requireTenant();
         EmployeeShiftAssignment assignment = findByIdAndTenant(assignmentId, tenantId);
         assignment.setStatus(EmployeeShiftAssignment.Status.INACTIVE);
-        if (assignment.getEffectiveEndDate() == null || assignment.getEffectiveEndDate().isAfter(LocalDate.now())) {
-            assignment.setEffectiveEndDate(LocalDate.now());
+        LocalDate today = AppTimeZone.today();
+        if (assignment.getEffectiveEndDate() == null || assignment.getEffectiveEndDate().isAfter(today)) {
+            assignment.setEffectiveEndDate(today);
         }
         assignmentRepository.save(assignment);
     }
@@ -202,7 +208,7 @@ public class ShiftAssignmentService {
 
     public List<EmployeeShiftAssignmentDTO> getEmployeesForShift(Long timetableId, LocalDate date) {
         Long tenantId = requireTenant();
-        LocalDate targetDate = date != null ? date : LocalDate.now();
+        LocalDate targetDate = date != null ? date : AppTimeZone.today();
         return assignmentRepository.findActiveByTimetableAndDate(tenantId, timetableId, targetDate)
                 .stream()
                 .map(this::toDTO)
@@ -211,7 +217,7 @@ public class ShiftAssignmentService {
 
     public EmployeeShiftAssignmentDTO getActiveShiftForEmployee(Long employeeId, LocalDate date) {
         Long tenantId = requireTenant();
-        LocalDate targetDate = date != null ? date : LocalDate.now();
+        LocalDate targetDate = date != null ? date : AppTimeZone.today();
         return assignmentRepository.findActiveByEmployeeAndDate(tenantId, employeeId, targetDate)
                 .map(this::toDTO)
                 .orElse(null);
@@ -226,20 +232,41 @@ public class ShiftAssignmentService {
     }
 
     @Transactional
-    public List<EmployeeShiftAssignmentDTO> bulkAssignToShift(List<Long> employeeIds, Long timetableId, LocalDate startDate, LocalDate endDate) {
-        if (employeeIds == null || employeeIds.isEmpty()) {
-            throw new BadRequestException("At least one employee is required");
+    public List<EmployeeShiftAssignmentDTO> bulkAssignToShift(
+            List<Long> employeeIds,
+            List<Long> departmentIds,
+            Long timetableId,
+            LocalDate startDate,
+            LocalDate endDate
+    ) {
+        Long tenantId = requireTenant();
+        LinkedHashSet<Long> targetEmployeeIds = new LinkedHashSet<>();
+        if (employeeIds != null) {
+            targetEmployeeIds.addAll(employeeIds.stream().filter(Objects::nonNull).toList());
         }
-        List<EmployeeShiftAssignmentDTO> result = new ArrayList<>();
-        for (Long employeeId : employeeIds) {
-            try {
-                result.add(assignEmployeeToShift(employeeId, timetableId, startDate, endDate));
-            } catch (RuntimeException ignored) {
-                // continue processing remaining employees
+
+        if (departmentIds != null) {
+            for (Long departmentId : new LinkedHashSet<>(departmentIds)) {
+                if (departmentId == null) {
+                    continue;
+                }
+                Department department = departmentRepository.findById(departmentId)
+                        .orElseThrow(() -> new ResourceNotFoundException("Department", departmentId));
+                ensureSameTenant(tenantId, department.getTenantId(), "Department");
+                employeeRepository.findByTenantIdAndDepartmentId(tenantId, departmentId).stream()
+                        .filter(employee -> employee.getEmploymentStatus() == Employee.EmploymentStatus.ACTIVE)
+                        .map(Employee::getId)
+                        .forEach(targetEmployeeIds::add);
             }
         }
-        if (result.isEmpty()) {
-            throw new BadRequestException("No employee could be assigned in bulk operation");
+
+        if (targetEmployeeIds.isEmpty()) {
+            throw new BadRequestException("At least one active employee is required");
+        }
+
+        List<EmployeeShiftAssignmentDTO> result = new ArrayList<>();
+        for (Long employeeId : targetEmployeeIds) {
+            result.add(assignEmployeeToShift(employeeId, timetableId, startDate, endDate));
         }
         return result;
     }

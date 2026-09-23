@@ -14,6 +14,8 @@ public class EmployeeAttendanceRowDTO {
     private OffsetDateTime checkInTime;
     private OffsetDateTime checkOutTime;
     private Double hoursWorked;
+    private Integer lateMinutes;
+    private Integer earlyLeaveMinutes;
     private AttendanceStatus status;
     private String notes;
     /** Employee shift type (e.g. FIRST_ENTRY = serbest növbə). */

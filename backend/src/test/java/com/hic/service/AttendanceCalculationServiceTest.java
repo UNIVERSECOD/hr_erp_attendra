@@ -49,7 +49,10 @@ class AttendanceCalculationServiceTest {
     private AttendanceInferenceService attendanceInferenceService = new AttendanceInferenceService();
 
     @Mock
-    private EmployeeShiftResolver employeeShiftResolver;
+    private AttendanceScheduleResolver attendanceScheduleResolver;
+
+    @Spy
+    private AttendanceTimeCalculator attendanceTimeCalculator = new AttendanceTimeCalculator();
 
     @InjectMocks
     private AttendanceCalculationService attendanceCalculationService;
@@ -57,9 +60,18 @@ class AttendanceCalculationServiceTest {
     @BeforeEach
     void setTenant() {
         TenantContext.setTenantId(7L);
-        lenient().when(employeeShiftResolver.resolve(any(), any())).thenAnswer(invocation -> {
+        lenient().when(attendanceScheduleResolver.resolve(any(), any())).thenAnswer(invocation -> {
             Employee employee = invocation.getArgument(0);
-            return new EmployeeShiftResolver.ResolvedShift(employee.getTimetableId(), employee.getShiftType());
+            return new AttendanceScheduleResolver.DaySchedule(
+                    employee.getTimetableId(),
+                    employee.getShiftType(),
+                    true,
+                    java.time.LocalTime.of(9, 0),
+                    java.time.LocalTime.of(17, 0),
+                    0,
+                    5,
+                    0
+            );
         });
     }
 

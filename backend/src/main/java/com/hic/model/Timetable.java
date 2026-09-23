@@ -2,9 +2,13 @@ package com.hic.model;
 
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.EqualsAndHashCode;
+import lombok.ToString;
 
 import java.time.LocalDateTime;
 import java.time.LocalTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @Entity
@@ -44,6 +48,12 @@ public class Timetable {
 
     @Column(name = "break_minutes", nullable = false)
     private Integer breakMinutes = 0;
+
+    @OneToMany(mappedBy = "timetable", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OrderBy("dayOfWeek ASC")
+    @ToString.Exclude
+    @EqualsAndHashCode.Exclude
+    private List<TimetableDayRule> dayRules = new ArrayList<>();
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
