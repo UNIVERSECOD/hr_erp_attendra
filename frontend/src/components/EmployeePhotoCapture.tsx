@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 interface EmployeePhotoCaptureProps {
   previewUrl: string | null
   onPhotoSelected: (file: File) => void
+  onPhotoRemoved: () => void
 }
 
 type CameraState = 'idle' | 'starting' | 'active' | 'capturing'
@@ -28,7 +29,11 @@ const cameraErrorMessage = (error: unknown) => {
     : 'Kamera açılmadı. Brauzerin kamera icazəsini yoxlayın.'
 }
 
-export default function EmployeePhotoCapture({ previewUrl, onPhotoSelected }: EmployeePhotoCaptureProps) {
+export default function EmployeePhotoCapture({
+  previewUrl,
+  onPhotoSelected,
+  onPhotoRemoved,
+}: EmployeePhotoCaptureProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
@@ -198,7 +203,23 @@ export default function EmployeePhotoCapture({ previewUrl, onPhotoSelected }: Em
             )}
           </>
         ) : previewUrl ? (
-          <img src={previewUrl} alt="Əməkdaş şəkli" className="w-full h-full object-cover" />
+          <>
+            <img src={previewUrl} alt="Əməkdaş şəkli" className="w-full h-full object-cover" />
+            <button
+              type="button"
+              onClick={() => {
+                setCameraError(null)
+                onPhotoRemoved()
+              }}
+              className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-lg bg-red-600 text-white shadow hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2"
+              title="Şəkli sil"
+              aria-label="Şəkli sil"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 7h12m-8 4v6m4-6v6M9 7l1-2h4l1 2m-8 0 1 13h8l1-13" />
+              </svg>
+            </button>
+          </>
         ) : (
           <div className="text-center text-gray-400">
             <svg className="w-10 h-10 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">

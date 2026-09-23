@@ -147,6 +147,7 @@ export default function EmployeesPage() {
   const [profileImageSrc, setProfileImageSrc] = useState<string | null>(null)
   const [wizardImagePreview, setWizardImagePreview] = useState<string | null>(null)
   const [wizardImageFile, setWizardImageFile] = useState<File | null>(null)
+  const [wizardImageRemovalRequested, setWizardImageRemovalRequested] = useState(false)
   const wizardImageObjectUrlRef = useRef<string | null>(null)
   const wizardImageLoadTokenRef = useRef(0)
 
@@ -213,6 +214,7 @@ export default function EmployeesPage() {
     setForm(defaultForm)
     setEmployeeDoors([])
     setWizardImageFile(null)
+    setWizardImageRemovalRequested(false)
     setWizardImagePreview(null)
     setCurrentStep(1)
     setFormError(null)
@@ -254,6 +256,7 @@ export default function EmployeesPage() {
     })
     loadEmployeeDoors(emp.id)
     setWizardImageFile(null)
+    setWizardImageRemovalRequested(false)
     if (wizardImageObjectUrlRef.current) {
       URL.revokeObjectURL(wizardImageObjectUrlRef.current)
       wizardImageObjectUrlRef.current = null
@@ -291,6 +294,7 @@ export default function EmployeesPage() {
     }
     setShowWizard(false)
     setWizardImageFile(null)
+    setWizardImageRemovalRequested(false)
     setWizardImagePreview(null)
     setCurrentStep(1)
     setFormError(null)
@@ -407,6 +411,29 @@ export default function EmployeesPage() {
     setCurrentStep((step) => Math.min(step + 1, stepTitles.length))
   }
 
+  const resolveIsapiDeviceIds = async (employee: Employee): Promise<number[]> => {
+    const assignedDeviceIds = employee.deviceIds && employee.deviceIds.length > 0
+      ? employee.deviceIds
+      : [defaultDeviceId]
+
+    try {
+      const devicesRes = await deviceApi.getAll()
+      const devices = devicesRes.data?.data ?? (Array.isArray(devicesRes.data) ? devicesRes.data : [])
+      const bridgeIdByBackendId = new Map<number, string>()
+      for (const device of devices) {
+        if (device.id != null && device.deviceId != null) {
+          bridgeIdByBackendId.set(device.id, device.deviceId)
+        }
+      }
+      return [...new Set(assignedDeviceIds
+        .map((id) => Number(bridgeIdByBackendId.get(Number(id)) ?? id))
+        .filter((id) => Number.isFinite(id) && id > 0))]
+    } catch (error) {
+      console.info('[resolveIsapiDeviceIds] device list unavailable, using assigned IDs', error)
+      return [...new Set(assignedDeviceIds.map(Number).filter((id) => Number.isFinite(id) && id > 0))]
+    }
+  }
+
   /**
    * Same captured photo is used for:
    * 1) employee profile photo (always persisted)
@@ -418,30 +445,7 @@ export default function EmployeesPage() {
     // Profile photo first — must not depend on Hikvision success.
     await employeeApi.uploadFaceImage(employee.id, file)
 
-    const deviceIds = employee.deviceIds && employee.deviceIds.length > 0
-      ? employee.deviceIds
-      : [defaultDeviceId]
-    console.info('[uploadFace] employee.deviceIds:', deviceIds)
-
-    let isapiDeviceIds: number[] = []
-    try {
-      const devicesRes = await deviceApi.getAll()
-      const devicesList = devicesRes.data?.data ?? (Array.isArray(devicesRes.data) ? devicesRes.data : [])
-      console.info('[uploadFace] devicesList:', devicesList)
-      const deviceMap = new Map<number, string>()
-      for (const d of devicesList) {
-        if (d.id != null && d.deviceId != null) {
-          deviceMap.set(d.id, d.deviceId)
-        }
-      }
-      console.info('[uploadFace] deviceMap:', Array.from(deviceMap.entries()))
-      isapiDeviceIds = deviceIds
-        .map((id) => Number(deviceMap.get(Number(id)) ?? id))
-        .filter((id) => !isNaN(id) && id > 0)
-    } catch (e) {
-      console.error('[uploadFace] deviceApi.getAll failed:', e)
-      isapiDeviceIds = deviceIds.map(Number)
-    }
+    const isapiDeviceIds = await resolveIsapiDeviceIds(employee)
     console.info('[uploadFace] isapiDeviceIds:', isapiDeviceIds)
 
     if (isapiDeviceIds.length === 0) {
@@ -476,6 +480,33 @@ export default function EmployeesPage() {
 
     if (errors.length > 0) {
       console.info('[uploadFace] Hikvision sync warnings (profile photo saved):', errors)
+    }
+    return errors
+  }
+
+  const deleteFaceForEmployee = async (employee: Employee): Promise<string[]> => {
+    // The local profile image is authoritative and must be removable even when a terminal is offline.
+    await employeeApi.deleteFaceImage(employee.id)
+
+    const errors: string[] = []
+    const isapiDeviceIds = await resolveIsapiDeviceIds(employee)
+    for (const isapiDeviceId of isapiDeviceIds) {
+      try {
+        const usersRes = await deviceUserApi.getAll(isapiDeviceId)
+        const users = Array.isArray(usersRes.data) ? usersRes.data : []
+        const deviceUser = users.find((user) =>
+          matchesDevicePerson(employee.deviceEmployeeNo, employee.employeeId, user.employeeNo)
+        )
+        if (!deviceUser) continue
+
+        try {
+          await deviceUserApi.deleteFace(isapiDeviceId, deviceUser.id)
+        } catch (error) {
+          if (extractStatusCode(error) !== 404) throw error
+        }
+      } catch (error) {
+        errors.push(`Cihaz ${isapiDeviceId}: ${getApiErrorMessage(error, 'üz şəkli silinmədi')}`)
+      }
     }
     return errors
   }
@@ -531,7 +562,7 @@ export default function EmployeesPage() {
         savedEmployee = res.data?.data
       }
 
-      if (savedEmployee && wizardImageFile) {
+      if (savedEmployee && (wizardImageFile || wizardImageRemovalRequested)) {
         try {
           const freshRes = await employeeApi.getById(savedEmployee.id)
           if (freshRes.data?.data) {
@@ -540,6 +571,22 @@ export default function EmployeesPage() {
         } catch (e) {
           console.info('[handleSave] refetch employee failed, using original', e)
         }
+      }
+
+      if (savedEmployee && wizardImageRemovalRequested && !wizardImageFile) {
+        try {
+          const faceErrors = await deleteFaceForEmployee(savedEmployee)
+          if (faceErrors.length > 0) {
+            console.info('[handleSave] Hikvision face delete warnings:', faceErrors)
+          }
+        } catch (e) {
+          setFormError(getApiErrorMessage(e, 'Profil şəkli silinmədi'))
+          setSaving(false)
+          return
+        }
+      }
+
+      if (savedEmployee && wizardImageFile) {
         try {
           const faceErrors = await uploadFaceForEmployee(savedEmployee, wizardImageFile)
           if (faceErrors.length > 0) {
@@ -620,27 +667,16 @@ export default function EmployeesPage() {
     setUploadFaceError(null)
     setDeletingFaceEmployeeId(employee.id)
     try {
-      const usersRes = await deviceUserApi.getAll(defaultDeviceId)
-      const deviceUser = usersRes.data.find((u) =>
-        matchesDevicePerson(employee.deviceEmployeeNo, employee.employeeId, u.employeeNo)
-      )
-      if (!deviceUser) {
-        throw new Error(`Cihaz istifadəçi tapılmadı (${employee.deviceEmployeeNo || employee.employeeId})`)
+      const faceErrors = await deleteFaceForEmployee(employee)
+      if (faceErrors.length > 0) {
+        console.info('[handleFaceDelete] Hikvision face delete warnings:', faceErrors)
       }
-      await deviceUserApi.deleteFace(defaultDeviceId, deviceUser.id, employee.id)
       await fetchEmployees(currentPage, 20)
       if (selectedEmployee?.id === employee.id) {
         await openProfile(employee)
       }
     } catch (e: unknown) {
-      if (extractStatusCode(e) === 404) {
-        await fetchEmployees(currentPage, 20)
-        if (selectedEmployee?.id === employee.id) {
-          await openProfile(employee)
-        }
-      } else {
-        setUploadFaceError((e as Error).message || 'Şəkil silinmədi')
-      }
+      setUploadFaceError(getApiErrorMessage(e, 'Şəkil silinmədi'))
     } finally {
       setDeletingFaceEmployeeId(null)
     }
@@ -654,7 +690,19 @@ export default function EmployeesPage() {
     const previewUrl = URL.createObjectURL(file)
     wizardImageObjectUrlRef.current = previewUrl
     setWizardImageFile(file)
+    setWizardImageRemovalRequested(false)
     setWizardImagePreview(previewUrl)
+  }
+
+  const onWizardPhotoRemoved = () => {
+    wizardImageLoadTokenRef.current += 1
+    if (wizardImageObjectUrlRef.current) {
+      URL.revokeObjectURL(wizardImageObjectUrlRef.current)
+      wizardImageObjectUrlRef.current = null
+    }
+    setWizardImageFile(null)
+    setWizardImagePreview(null)
+    setWizardImageRemovalRequested(Boolean(editingEmployee?.faceImageUrl))
   }
 
   const filtered = employees.filter((e: Employee) => {
@@ -1172,6 +1220,7 @@ export default function EmployeesPage() {
               <EmployeePhotoCapture
                 previewUrl={wizardImagePreview}
                 onPhotoSelected={onWizardPhotoSelected}
+                onPhotoRemoved={onWizardPhotoRemoved}
               />
             )}
 

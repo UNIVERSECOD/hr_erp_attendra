@@ -8,6 +8,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -43,5 +44,11 @@ public class EmployeeFaceController {
                                                         @RequestParam("file") MultipartFile file) {
         employeeFaceImageService.saveFaceImage(employeeId, file);
         return ResponseEntity.ok().build();
+    }
+
+    @DeleteMapping("/employee/{employeeId}/image")
+    public ResponseEntity<Void> deleteEmployeeFaceImage(@PathVariable Long employeeId) {
+        employeeFaceImageService.deleteFaceImages(employeeId);
+        return ResponseEntity.noContent().build();
     }
 }

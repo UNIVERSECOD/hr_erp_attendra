@@ -30,4 +30,6 @@ export const employeeApi = {
   },
   getFaceImage: (employeeId: number) =>
     client.get<Blob>(`/faces/employee/${employeeId}/image`, { responseType: 'blob' }),
+  deleteFaceImage: (employeeId: number) =>
+    client.delete(`/faces/employee/${employeeId}/image`),
 }
