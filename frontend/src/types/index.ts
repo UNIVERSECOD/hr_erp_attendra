@@ -123,7 +123,7 @@ export interface EmployeeAttendanceRow {
   hoursWorked?: number
   lateMinutes?: number
   earlyLeaveMinutes?: number
-  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF'
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF' | 'OPEN_SESSION' | 'MISSING_EXIT'
   notes?: string
   shiftType?: string
   sessions?: AttendanceSession[]
@@ -169,7 +169,7 @@ export interface DailyAttendanceSummary {
   hoursWorked?: number
   lateMinutes?: number
   earlyLeaveMinutes?: number
-  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF'
+  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF' | 'OPEN_SESSION' | 'MISSING_EXIT'
 }
 
 export interface LeaveRequest {
@@ -332,6 +332,24 @@ export interface AttendanceReportRow {
   workedMinutes?: number
   verificationMethod?: string
   shiftType?: string
+  status?: 'OPEN' | 'MISSING_EXIT' | 'CLOSED' | 'MANUALLY_CORRECTED'
+}
+
+export interface OpenAttendanceSession {
+  attendanceLogId: number
+  employeePk: number
+  employeeId: string
+  fullName: string
+  checkInTime: string
+  shiftType?: string
+  status: 'OPEN' | 'MISSING_EXIT'
+  manualOverride?: boolean
+}
+
+export interface AttendanceCorrectionRequest {
+  checkInTime: string
+  checkOutTime: string
+  reason: string
 }
 
 export interface AttendanceReportFilters {

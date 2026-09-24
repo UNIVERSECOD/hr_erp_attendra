@@ -20,8 +20,9 @@ public class AttendanceReportRowDTO {
     private LocalDate date;
     private OffsetDateTime checkInTime;
     private OffsetDateTime checkOutTime;
-    /** Worked duration in minutes for the day. */
+    /** Worked duration in minutes for the complete session/work date. */
     private Integer workedMinutes;
     private String verificationMethod;
     private String shiftType;
+    private String status;
 }

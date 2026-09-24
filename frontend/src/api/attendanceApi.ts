@@ -1,5 +1,12 @@
 import client from './client.ts'
-import { ApiResponse, AttendanceReportFilters, EmployeeAttendanceRow, EmployeeAttendanceSummary } from '../types'
+import {
+  ApiResponse,
+  AttendanceCorrectionRequest,
+  AttendanceReportFilters,
+  EmployeeAttendanceRow,
+  EmployeeAttendanceSummary,
+  OpenAttendanceSession,
+} from '../types'
 
 export const attendanceApi = {
   getLogs: (employeeId: number, start: string, end: string) =>
@@ -22,4 +29,8 @@ export const attendanceApi = {
     client.get('/attendance/report', { params }),
   exportExcel: async (params: AttendanceReportFilters) =>
     client.get('/attendance/report/export', { params, responseType: 'blob' }),
+  getOpenSessions: () =>
+    client.get<ApiResponse<OpenAttendanceSession[]>>('/attendance/open-sessions'),
+  correctSession: (attendanceLogId: number, data: AttendanceCorrectionRequest) =>
+    client.put(`/attendance/sessions/${attendanceLogId}`, data),
 }

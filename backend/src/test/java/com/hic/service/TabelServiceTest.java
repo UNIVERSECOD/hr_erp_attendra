@@ -23,6 +23,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -45,6 +46,8 @@ class TabelServiceTest {
     private EmployeePermissionRepository employeePermissionRepository;
     @Mock
     private HolidayPermissionRepository holidayPermissionRepository;
+    @Mock
+    private AttendanceScheduleResolver attendanceScheduleResolver;
 
     @InjectMocks
     private TabelService tabelService;
@@ -100,6 +103,15 @@ class TabelServiceTest {
         when(dailyAttendanceSummaryRepository.findByEmployeeIdAndAttendanceDateBetween(11L,
                 LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30)))
                 .thenReturn(List.of(day3, day4));
+        when(attendanceScheduleResolver.resolve(any(), any())).thenAnswer(invocation -> {
+            LocalDate date = invocation.getArgument(1);
+            boolean workingDay = date.getDayOfWeek().getValue() <= 5;
+            return new AttendanceScheduleResolver.DaySchedule(
+                    1L, "STANDARD", workingDay,
+                    workingDay ? LocalTime.of(8, 0) : null,
+                    workingDay ? LocalTime.of(17, 0) : null,
+                    60, 30, 30);
+        });
 
         TabelMonthlyDTO result = tabelService.getMonthlyTabel(2026, 4, 3L, 4L, 5L, "FIN123");
 

@@ -13,11 +13,10 @@ import java.util.List;
 import java.util.Objects;
 
 /**
- * Day-aware attendance inference.
+ * Work-date attendance inference.
  * <p>
- * Calendar-day rule: minutes worked in {@code [day 00:00, next day 00:00)} belong to that day.
- * A session that crosses midnight is split — pre-midnight minutes go to the previous day,
- * post-midnight minutes go to the next day.
+ * A session belongs to the local date on which it started. Sessions that cross midnight
+ * remain one session and their full duration is credited to that work date.
  * <p>
  * Worked minutes depend on shift type:
  * <ul>
@@ -51,9 +50,6 @@ public class AttendanceInferenceService {
             return new AttendanceInference(null, null, 0, false, List.of());
         }
 
-        LocalDateTime dayStart = day.atStartOfDay();
-        LocalDateTime dayEnd = day.plusDays(1).atStartOfDay();
-
         List<SessionSegment> segments = new ArrayList<>();
         LocalDateTime firstEntry = null;
         LocalDateTime lastExit = null;
@@ -64,73 +60,50 @@ public class AttendanceInferenceService {
 
         for (AttendanceLog log : ordered) {
             LocalDateTime entry = log.getCheckInTime();
-            if (entry == null) {
+            if (entry == null || !entry.toLocalDate().equals(day)) {
                 continue;
             }
             LocalDateTime exit = log.getCheckOutTime();
 
             if (exit == null) {
-                // Open session: overlaps this day if it started before tomorrow.
-                if (!entry.isBefore(dayEnd)) {
-                    continue;
+                if (firstEntry == null || entry.isBefore(firstEntry)) {
+                    firstEntry = entry;
                 }
-                LocalDateTime clippedStart = entry.isBefore(dayStart) ? dayStart : entry;
-                if (clippedStart.isBefore(dayEnd)) {
-                    if (firstEntry == null || clippedStart.isBefore(firstEntry)) {
-                        firstEntry = clippedStart;
-                    }
-                    currentlyInside = true;
-                    segments.add(new SessionSegment(clippedStart, null));
-                }
+                currentlyInside = true;
+                segments.add(new SessionSegment(entry, null));
                 continue;
             }
 
             if (!exit.isAfter(entry)) {
                 continue;
             }
-            // No overlap with [dayStart, dayEnd)
-            if (!entry.isBefore(dayEnd) || !exit.isAfter(dayStart)) {
-                continue;
-            }
 
-            LocalDateTime clippedStart = entry.isBefore(dayStart) ? dayStart : entry;
-            LocalDateTime clippedEnd = exit.isAfter(dayEnd) ? dayEnd : exit;
-            if (!clippedEnd.isAfter(clippedStart)) {
-                continue;
+            workedMinutes += safeMinutes(Duration.between(entry, exit));
+            if (firstEntry == null || entry.isBefore(firstEntry)) {
+                firstEntry = entry;
             }
-
-            workedMinutes += (int) Duration.between(clippedStart, clippedEnd).toMinutes();
-            if (firstEntry == null || clippedStart.isBefore(firstEntry)) {
-                firstEntry = clippedStart;
+            if (lastExit == null || exit.isAfter(lastExit)) {
+                lastExit = exit;
             }
-            if (lastExit == null || clippedEnd.isAfter(lastExit)) {
-                lastExit = clippedEnd;
-            }
-            segments.add(new SessionSegment(clippedStart, clippedEnd));
+            segments.add(new SessionSegment(entry, exit));
         }
 
         return new AttendanceInference(firstEntry, lastExit, workedMinutes, currentlyInside, List.copyOf(segments));
     }
 
     /**
-     * Returns true when a session overlaps the calendar day {@code [day 00:00, next 00:00)}.
+     * Returns true when the session belongs to {@code workDate}.
      */
-    public boolean overlapsDay(AttendanceLog log, LocalDate day) {
-        if (log == null || day == null || log.getCheckInTime() == null) {
-            return false;
-        }
-        LocalDateTime dayStart = day.atStartOfDay();
-        LocalDateTime dayEnd = day.plusDays(1).atStartOfDay();
-        LocalDateTime entry = log.getCheckInTime();
-        LocalDateTime exit = log.getCheckOutTime();
+    public boolean belongsToWorkDate(AttendanceLog log, LocalDate workDate) {
+        return log != null
+                && workDate != null
+                && log.getCheckInTime() != null
+                && log.getCheckInTime().toLocalDate().equals(workDate);
+    }
 
-        if (exit == null) {
-            return entry.isBefore(dayEnd);
-        }
-        if (!exit.isAfter(entry)) {
-            return false;
-        }
-        return entry.isBefore(dayEnd) && exit.isAfter(dayStart);
+    /** Backward-compatible name for callers while preserving work-date semantics. */
+    public boolean overlapsDay(AttendanceLog log, LocalDate day) {
+        return belongsToWorkDate(log, day);
     }
 
     /**
@@ -197,9 +170,13 @@ public class AttendanceInferenceService {
 
         /**
          * Flexible shifts sum each interval; standard/night use first-in to last-out span.
+         * When any session is still open, only closed intervals are countable; using the
+         * full span would invent worked time for the missing exit.
          */
         public int workedMinutesForShift(String shiftType) {
-            return ShiftTypes.isFlexible(shiftType) ? intervalWorkedMinutes() : spanWorkedMinutes();
+            return ShiftTypes.isFlexible(shiftType) || currentlyInside
+                    ? intervalWorkedMinutes()
+                    : spanWorkedMinutes();
         }
 
         public double workedHours() {
@@ -209,5 +186,10 @@ public class AttendanceInferenceService {
         public double workedHoursForShift(String shiftType) {
             return workedMinutesForShift(shiftType) / 60.0;
         }
+    }
+
+    private int safeMinutes(Duration duration) {
+        long minutes = Math.max(duration.toMinutes(), 0);
+        return minutes > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) minutes;
     }
 }

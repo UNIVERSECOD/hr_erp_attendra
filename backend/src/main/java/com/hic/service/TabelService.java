@@ -24,7 +24,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.io.ByteArrayOutputStream;
-import java.time.DayOfWeek;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.time.format.TextStyle;
@@ -50,6 +49,7 @@ public class TabelService {
     private final LeaveRequestRepository leaveRequestRepository;
     private final EmployeePermissionRepository employeePermissionRepository;
     private final HolidayPermissionRepository holidayPermissionRepository;
+    private final AttendanceScheduleResolver attendanceScheduleResolver;
 
     public TabelMonthlyDTO getMonthlyTabel(int year,
                                            int month,
@@ -110,7 +110,7 @@ public class TabelService {
                         value = normalized;
                         workingDays++;
                         totalHours += normalized;
-                    } else if (isWeekend(date)) {
+                    } else if (!isScheduledWorkingDay(employee, date, summary)) {
                         value = null;
                     } else {
                         value = 0;
@@ -333,9 +333,15 @@ public class TabelService {
         return employee.getLastName() + " " + employee.getFirstName() + fatherName;
     }
 
-    private boolean isWeekend(LocalDate date) {
-        DayOfWeek dayOfWeek = date.getDayOfWeek();
-        return dayOfWeek == DayOfWeek.SATURDAY || dayOfWeek == DayOfWeek.SUNDAY;
+    private boolean isScheduledWorkingDay(
+            Employee employee,
+            LocalDate date,
+            DailyAttendanceSummary summary
+    ) {
+        if (summary != null && summary.getIsStandardDay() != null) {
+            return summary.getIsStandardDay();
+        }
+        return attendanceScheduleResolver.resolve(employee, date).workingDay();
     }
 
     private double round2(double value) {

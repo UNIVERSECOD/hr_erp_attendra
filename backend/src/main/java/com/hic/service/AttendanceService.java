@@ -26,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -126,9 +127,9 @@ public class AttendanceService {
         Employee employee = getAccessibleEmployee(employeeId);
         Long tenantId = TenantContext.getTenantId();
 
-        // Include previous-day sessions that may cross midnight into `start`.
-        LocalDateTime rangeStart = start.minusDays(1).atStartOfDay();
-        LocalDateTime rangeEnd = end.atTime(23, 59, 59);
+        // Sessions belong to the date on which they started, even when they end after midnight.
+        LocalDateTime rangeStart = start.atStartOfDay();
+        LocalDateTime rangeEnd = end.atTime(LocalTime.MAX);
         List<AttendanceLog> logs = tenantId != null
                 ? attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTimeBetween(tenantId, employeeId, rangeStart, rangeEnd)
                 : attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(employeeId, rangeStart, rangeEnd);
@@ -149,13 +150,12 @@ public class AttendanceService {
             final LocalDate currentDate = date;
             DailyAttendanceSummary summary = summariesByDate.get(currentDate);
             List<AttendanceLog> dayLogs = logs.stream()
-                    .filter(log -> attendanceInferenceService.overlapsDay(log, currentDate))
+                    .filter(log -> attendanceInferenceService.belongsToWorkDate(log, currentDate))
                     .toList();
             boolean onLeave = overlapsLeave(approvedLeaves, currentDate) || overlapsPermission(approvedPermissions, currentDate);
             AttendanceInferenceService.AttendanceInference inference = attendanceInferenceService.inferDay(dayLogs, currentDate);
 
-            // Prefer live day-clipped inference for hours/times so midnight splits stay correct.
-            // Shift type is resolved as-of this calendar day so schedule changes do not rewrite history.
+            // Prefer live work-date inference. Overnight sessions stay attached to check-in day.
             LocalDateTime firstCheckIn = inference.firstEntry();
             LocalDateTime lastCheckOut = inference.lastExit();
             AttendanceScheduleResolver.DaySchedule daySchedule = attendanceScheduleResolver.resolve(employee, currentDate);
@@ -303,14 +303,13 @@ public class AttendanceService {
     }
 
     private List<AttendanceLog> findDayLogs(Long employeeId, LocalDate date) {
-        // Fetch previous day too — night shifts that start yesterday may continue past midnight.
         List<AttendanceLog> candidates = attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(
                 employeeId,
-                date.minusDays(1).atStartOfDay(),
+                date.atStartOfDay(),
                 date.plusDays(1).atStartOfDay().minusNanos(1)
         );
         return candidates.stream()
-                .filter(log -> attendanceInferenceService.overlapsDay(log, date))
+                .filter(log -> attendanceInferenceService.belongsToWorkDate(log, date))
                 .toList();
     }
 

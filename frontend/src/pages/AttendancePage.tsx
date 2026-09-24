@@ -7,10 +7,11 @@ import {
   EmployeeAttendanceRow,
   EmployeeAttendanceSummary,
   EmployeeSearchResult,
+  OpenAttendanceSession,
 } from '../types'
 import { useDebounce } from '../hooks/useSearch.ts'
 import { t } from '../i18n/index.ts'
-import { formatAttendanceTime } from '../utils/dateTime.ts'
+import { formatAttendanceDateTime, formatAttendanceTime } from '../utils/dateTime.ts'
 
 type PeriodType = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR' | 'LAST_YEAR' | 'CUSTOM'
 
@@ -37,6 +38,8 @@ const statusStyles: Record<EmployeeAttendanceRow['status'], string> = {
   EARLY_LEAVE: 'bg-purple-100 text-purple-700',
   WORKDAY_COMPLETE: 'bg-slate-200 text-slate-700',
   DAY_OFF: 'bg-gray-100 text-gray-600',
+  OPEN_SESSION: 'bg-blue-100 text-blue-700',
+  MISSING_EXIT: 'bg-red-100 text-red-700',
 }
 
 const defaultSummary: EmployeeAttendanceSummary = {
@@ -56,6 +59,8 @@ const statusLabels: Record<EmployeeAttendanceRow['status'], string> = {
   EARLY_LEAVE: 'Erkən çıxış',
   WORKDAY_COMPLETE: 'İş saatı bitib',
   DAY_OFF: 'İstirahət günü',
+  OPEN_SESSION: 'Açıq sessiya',
+  MISSING_EXIT: 'Çıxış yoxdur',
 }
 
 function formatEmployeeLabel(employee: EmployeeSearchResult) {
@@ -101,6 +106,10 @@ function formatWorkedHours(hours?: number) {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`
 }
 
+function toDateTimeInput(value?: string) {
+  return value ? value.slice(0, 16) : ''
+}
+
 export default function AttendancePage() {
   const now = new Date()
   const currentMonth = now.getMonth()
@@ -125,6 +134,17 @@ export default function AttendancePage() {
   const [summary, setSummary] = useState<EmployeeAttendanceSummary>(defaultSummary)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [syncWarning, setSyncWarning] = useState<string | null>(null)
+  const [openSessions, setOpenSessions] = useState<OpenAttendanceSession[]>([])
+  const [openSessionsLoading, setOpenSessionsLoading] = useState(false)
+  const [openRefreshToken, setOpenRefreshToken] = useState(0)
+  const [attendanceRefreshToken, setAttendanceRefreshToken] = useState(0)
+  const [editingSession, setEditingSession] = useState<OpenAttendanceSession | null>(null)
+  const [correctionCheckIn, setCorrectionCheckIn] = useState('')
+  const [correctionCheckOut, setCorrectionCheckOut] = useState('')
+  const [correctionReason, setCorrectionReason] = useState('')
+  const [correctionSaving, setCorrectionSaving] = useState(false)
+  const [correctionError, setCorrectionError] = useState<string | null>(null)
 
 
 
@@ -189,6 +209,22 @@ export default function AttendancePage() {
   }, [customEndDate, customStartDate, periodType, selectedMonth, selectedYear])
 
   useEffect(() => {
+    let cancelled = false
+    setOpenSessionsLoading(true)
+    attendanceApi.getOpenSessions()
+      .then((response) => {
+        if (!cancelled) setOpenSessions(response.data?.data ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setOpenSessions([])
+      })
+      .finally(() => {
+        if (!cancelled) setOpenSessionsLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [openRefreshToken])
+
+  useEffect(() => {
     if (!selectedEmployee || !activePeriod?.start || !activePeriod?.end) {
       setAttendanceRows([])
       setSummary(defaultSummary)
@@ -198,41 +234,89 @@ export default function AttendancePage() {
     let cancelled = false
     setLoading(true)
     setError(null)
+    setSyncWarning(null)
 
-    // Automatically sync before fetching
-    attendanceApi.syncAll({
-      start: `${activePeriod.start}T00:00:00`,
-      end: `${activePeriod.end}T23:59:59`,
-    })
-      .then(() => {
-        if (cancelled) return
-        return Promise.all([
-          attendanceApi.getEmployeeAttendance(selectedEmployee.employeePk, activePeriod.start, activePeriod.end),
-          attendanceApi.getEmployeeAttendanceSummary(selectedEmployee.employeePk, activePeriod.start, activePeriod.end),
-        ])
-      })
-      .then((responses) => {
-        if (cancelled || !responses) return
+    const loadStoredAttendance = async () => {
+      const responses = await Promise.all([
+        attendanceApi.getEmployeeAttendance(selectedEmployee.employeePk, activePeriod.start, activePeriod.end),
+        attendanceApi.getEmployeeAttendanceSummary(selectedEmployee.employeePk, activePeriod.start, activePeriod.end),
+      ])
+      if (!cancelled) {
         const [attendanceResponse, summaryResponse] = responses
         setAttendanceRows(attendanceResponse.data?.data ?? [])
         setSummary(summaryResponse.data?.data ?? defaultSummary)
-      })
-      .catch((requestError: unknown) => {
-        if (cancelled) return
-        setAttendanceRows([])
-        setSummary(defaultSummary)
-        setError((requestError as Error).message || t('attendance.fetchFailed'))
-      })
-      .finally(() => {
+        setError(null)
+      }
+    }
+
+    const run = async () => {
+      // Start device sync in parallel so an offline/slow terminal cannot block stored data.
+      const syncPromise = attendanceApi.syncAll({
+        start: `${activePeriod.start}T00:00:00`,
+        end: `${activePeriod.end}T23:59:59.999999999`,
+      }).then(() => true).catch(() => false)
+
+      try {
+        await loadStoredAttendance()
+      } catch (requestError: unknown) {
         if (!cancelled) {
-          setLoading(false)
+          setAttendanceRows([])
+          setSummary(defaultSummary)
+          setError((requestError as Error).message || t('attendance.fetchFailed'))
         }
-      })
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+
+      const syncSucceeded = await syncPromise
+      if (cancelled) return
+      if (!syncSucceeded) {
+        setSyncWarning('Cihaz sinxronu alınmadı. Saxlanmış davamiyyət məlumatları göstərilir.')
+        return
+      }
+
+      try {
+        await loadStoredAttendance()
+        if (!cancelled) setOpenRefreshToken((value) => value + 1)
+      } catch {
+        if (!cancelled) setSyncWarning('Sinxron tamamlandı, amma yenilənmiş məlumatları yükləmək alınmadı.')
+      }
+    }
+
+    void run()
 
     return () => {
       cancelled = true
     }
-  }, [activePeriod, selectedEmployee])
+  }, [activePeriod, attendanceRefreshToken, selectedEmployee])
+
+  const openCorrection = (session: OpenAttendanceSession) => {
+    setEditingSession(session)
+    setCorrectionCheckIn(toDateTimeInput(session.checkInTime))
+    setCorrectionCheckOut('')
+    setCorrectionReason('')
+    setCorrectionError(null)
+  }
+
+  const submitCorrection = async () => {
+    if (!editingSession || !correctionCheckIn || !correctionCheckOut || !correctionReason.trim()) return
+    setCorrectionSaving(true)
+    setCorrectionError(null)
+    try {
+      await attendanceApi.correctSession(editingSession.attendanceLogId, {
+        checkInTime: correctionCheckIn,
+        checkOutTime: correctionCheckOut,
+        reason: correctionReason.trim(),
+      })
+      setEditingSession(null)
+      setOpenRefreshToken((value) => value + 1)
+      setAttendanceRefreshToken((value) => value + 1)
+    } catch (requestError: unknown) {
+      setCorrectionError((requestError as Error).message || 'Düzəliş saxlanılmadı')
+    } finally {
+      setCorrectionSaving(false)
+    }
+  }
 
 
 
@@ -393,6 +477,11 @@ export default function AttendancePage() {
                 {error}
               </div>
             )}
+            {syncWarning && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {syncWarning}
+              </div>
+            )}
 
             <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-5">
               {summaryCards.map((card) => (
@@ -492,8 +581,86 @@ export default function AttendancePage() {
                 </div>
               </div>
             </div>
+
+            <div className="rounded-2xl bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between gap-3">
+                <h2 className="text-lg font-semibold text-slate-900">Açıq sessiyalar</h2>
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                  {openSessions.length}
+                </span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {openSessionsLoading ? (
+                  <div className="text-sm text-slate-500">Yüklənir...</div>
+                ) : openSessions.length === 0 ? (
+                  <div className="text-sm text-slate-500">Açıq sessiya yoxdur</div>
+                ) : openSessions.map((session) => (
+                  <div key={session.attendanceLogId} className="border-b border-slate-100 pb-3 last:border-b-0 last:pb-0">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-slate-900">{session.fullName}</div>
+                        <div className="mt-1 text-xs text-slate-500">{session.employeeId}</div>
+                        <div className="mt-1 text-xs text-slate-600">{formatAttendanceDateTime(session.checkInTime)}</div>
+                      </div>
+                      <span className={`shrink-0 rounded-full px-2 py-1 text-xs font-medium ${session.status === 'MISSING_EXIT' ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
+                        {session.status === 'MISSING_EXIT' ? 'Çıxış yoxdur' : 'Açıq'}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => openCorrection(session)}
+                      className="mt-3 text-sm font-medium text-purple-700 hover:text-purple-900"
+                    >
+                      Manual düzəlt
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
+
+        {editingSession && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+            <div className="w-full max-w-md rounded-xl bg-white p-5 shadow-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">Sessiyanı düzəlt</h2>
+                  <p className="mt-1 text-sm text-slate-500">{editingSession.fullName}</p>
+                </div>
+                <button type="button" onClick={() => setEditingSession(null)} className="text-xl text-slate-400 hover:text-slate-700" aria-label="Bağla">×</button>
+              </div>
+
+              <div className="mt-5 space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Giriş vaxtı</label>
+                  <input type="datetime-local" required value={correctionCheckIn} onChange={(event) => setCorrectionCheckIn(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Çıxış vaxtı</label>
+                  <input type="datetime-local" required value={correctionCheckOut} onChange={(event) => setCorrectionCheckOut(event.target.value)} className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Düzəliş səbəbi</label>
+                  <textarea required maxLength={500} value={correctionReason} onChange={(event) => setCorrectionReason(event.target.value)} rows={3} className="w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm" />
+                </div>
+                {correctionError && <div className="text-sm text-red-600">{correctionError}</div>}
+              </div>
+
+              <div className="mt-5 flex justify-end gap-3">
+                <button type="button" onClick={() => setEditingSession(null)} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">Ləğv et</button>
+                <button
+                  type="button"
+                  disabled={correctionSaving || !correctionCheckIn || !correctionCheckOut || !correctionReason.trim()}
+                  onClick={() => void submitCorrection()}
+                  className="rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
+                >
+                  {correctionSaving ? 'Saxlanılır...' : 'Saxla'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   )

@@ -54,7 +54,7 @@ export const useAttendanceReportStore = create<AttendanceReportState>((set, get)
           syncPromise = attendanceApi
             .syncAll({
               start: `${filters.start}T00:00:00`,
-              end: `${filters.end}T23:59:59`,
+              end: `${filters.end}T23:59:59.999999999`,
             })
             .then(() => undefined)
             .catch(() => {

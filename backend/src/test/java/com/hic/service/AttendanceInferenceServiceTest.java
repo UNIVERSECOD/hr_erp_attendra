@@ -34,8 +34,7 @@ class AttendanceInferenceServiceTest {
     }
 
     @Test
-    void midnightCrossing_splitsBetweenDays() {
-        // Worked 22:00 day1 → 06:00 day2
+    void midnightCrossing_staysOnCheckInWorkDate() {
         AttendanceLog log = session(
                 LocalDateTime.of(2026, 4, 26, 22, 0),
                 LocalDateTime.of(2026, 4, 27, 6, 0)
@@ -45,25 +44,23 @@ class AttendanceInferenceServiceTest {
         var day2 = service.inferDay(List.of(log), LocalDate.of(2026, 4, 27));
 
         assertThat(day1.firstEntry()).isEqualTo(LocalDateTime.of(2026, 4, 26, 22, 0));
-        assertThat(day1.lastExit()).isEqualTo(LocalDateTime.of(2026, 4, 27, 0, 0));
-        assertThat(day1.workedMinutes()).isEqualTo(2 * 60);
+        assertThat(day1.lastExit()).isEqualTo(LocalDateTime.of(2026, 4, 27, 6, 0));
+        assertThat(day1.workedMinutes()).isEqualTo(8 * 60);
 
-        assertThat(day2.firstEntry()).isEqualTo(LocalDateTime.of(2026, 4, 27, 0, 0));
-        assertThat(day2.lastExit()).isEqualTo(LocalDateTime.of(2026, 4, 27, 6, 0));
-        assertThat(day2.workedMinutes()).isEqualTo(6 * 60);
+        assertThat(day2.firstEntry()).isNull();
+        assertThat(day2.lastExit()).isNull();
+        assertThat(day2.workedMinutes()).isZero();
     }
 
     @Test
-    void overlapsDay_detectsCrossMidnightSession() {
+    void belongsToWorkDate_usesCheckInDateOnly() {
         AttendanceLog log = session(
                 LocalDateTime.of(2026, 4, 26, 22, 0),
                 LocalDateTime.of(2026, 4, 27, 6, 0)
         );
 
-        assertThat(service.overlapsDay(log, LocalDate.of(2026, 4, 26))).isTrue();
-        assertThat(service.overlapsDay(log, LocalDate.of(2026, 4, 27))).isTrue();
-        assertThat(service.overlapsDay(log, LocalDate.of(2026, 4, 25))).isFalse();
-        assertThat(service.overlapsDay(log, LocalDate.of(2026, 4, 28))).isFalse();
+        assertThat(service.belongsToWorkDate(log, LocalDate.of(2026, 4, 26))).isTrue();
+        assertThat(service.belongsToWorkDate(log, LocalDate.of(2026, 4, 27))).isFalse();
     }
 
     @Test
@@ -89,6 +86,20 @@ class AttendanceInferenceServiceTest {
         assertThat(day.workedMinutesForShift("NIGHT")).isEqualTo(9 * 60);
         assertThat(day.workedMinutesForShift("FLEXIBLE")).isEqualTo(330);
         assertThat(day.workedMinutesForShift("FIRST_ENTRY")).isEqualTo(330);
+    }
+
+    @Test
+    void openSession_neverInflatesStandardWorkedTime() {
+        LocalDate day = LocalDate.of(2026, 4, 26);
+        AttendanceLog missingExit = session(day.atTime(9, 0), null);
+        AttendanceLog closed = session(day.atTime(12, 0), day.atTime(17, 0));
+
+        var inference = service.inferDay(List.of(missingExit, closed), day);
+
+        assertThat(inference.currentlyInside()).isTrue();
+        assertThat(inference.spanWorkedMinutes()).isEqualTo(8 * 60);
+        assertThat(inference.workedMinutesForShift("STANDARD")).isEqualTo(5 * 60);
+        assertThat(inference.workedMinutesForShift("FLEXIBLE")).isEqualTo(5 * 60);
     }
 
     private static AttendanceLog session(LocalDateTime in, LocalDateTime out) {

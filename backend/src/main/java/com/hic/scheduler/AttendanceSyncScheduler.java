@@ -4,6 +4,7 @@ import com.hic.model.Tenant;
 import com.hic.repository.TenantRepository;
 import com.hic.service.DoorAttendanceSyncService;
 import com.hic.util.TenantContext;
+import com.hic.util.AppTimeZone;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -27,7 +28,7 @@ public class AttendanceSyncScheduler {
     @Scheduled(fixedDelayString = "${attendance.sync.scheduler-check-ms:60000}")
     public void syncAllTenantsDevices() {
         List<Tenant> tenants = tenantRepository.findAll();
-        LocalDateTime end = LocalDateTime.now();
+        LocalDateTime end = AppTimeZone.now();
         LocalDateTime start = end.minusDays(3);
 
         for (Tenant tenant : tenants) {

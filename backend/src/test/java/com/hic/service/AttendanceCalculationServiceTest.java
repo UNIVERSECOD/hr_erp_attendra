@@ -163,6 +163,34 @@ class AttendanceCalculationServiceTest {
     }
 
     @Test
+    void calculateForDay_flexibleOvernightSession_countsFullDurationOnEntryDate() {
+        LocalDate workDate = LocalDate.of(2026, 9, 23);
+        Employee employee = new Employee();
+        employee.setId(1L);
+        employee.setTenantId(7L);
+        employee.setShiftType("FLEXIBLE");
+
+        AttendanceLog overnight = new AttendanceLog();
+        overnight.setEmployeeId(1L);
+        overnight.setCheckInTime(workDate.atTime(20, 0));
+        overnight.setCheckOutTime(workDate.plusDays(1).atTime(4, 0));
+
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(attendanceRecordRepository.findByEmployeeIdAndWorkDate(1L, workDate)).thenReturn(Optional.empty());
+        when(attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(overnight));
+        when(leaveService.hasActiveLeave(1L, workDate)).thenReturn(false);
+        when(holidayService.isHoliday(workDate)).thenReturn(false);
+        when(attendanceRecordRepository.save(any(AttendanceRecord.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        AttendanceRecord record = attendanceCalculationService.calculateForDay(1L, workDate);
+
+        assertThat(record.getEntryTime()).isEqualTo(workDate.atTime(20, 0));
+        assertThat(record.getExitTime()).isEqualTo(workDate.plusDays(1).atTime(4, 0));
+        assertThat(record.getWorkedMinutes()).isEqualTo(8 * 60);
+    }
+
+    @Test
     void calculateForDay_withoutTenantContext_usesEmployeeTenant() {
         TenantContext.clear();
         LocalDate workDate = LocalDate.of(2024, 1, 15);

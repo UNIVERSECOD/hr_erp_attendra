@@ -55,6 +55,7 @@ public class AttendanceReportService {
     private final TimetableRepository timetableRepository;
     private final AttendanceInferenceService attendanceInferenceService;
     private final EmployeeShiftResolver employeeShiftResolver;
+    private final AttendanceSessionPolicy attendanceSessionPolicy;
 
     public PaginatedResponse<AttendanceReportRowDTO> getReport(
             LocalDate start,
@@ -95,7 +96,7 @@ public class AttendanceReportService {
             Row header = sheet.createRow(0);
             String[] headers = {
                     "ID", "Name", "FIN", "Department", "Position", "Area",
-                    "Check-in", "Check-out", "Worked", "Method", "Shift"
+                    "Check-in", "Check-out", "Worked", "Method", "Shift", "Status"
             };
             for (int i = 0; i < headers.length; i++) {
                 header.createCell(i).setCellValue(headers[i]);
@@ -116,6 +117,7 @@ public class AttendanceReportService {
                 excelRow.createCell(8).setCellValue(formatDuration(row.getWorkedMinutes()));
                 excelRow.createCell(9).setCellValue(safe(row.getVerificationMethod()));
                 excelRow.createCell(10).setCellValue(safe(row.getShiftType()));
+                excelRow.createCell(11).setCellValue(safe(row.getStatus()));
             }
             ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
             workbook.write(outputStream);
@@ -138,8 +140,7 @@ public class AttendanceReportService {
     ) {
         Long tenantId = TenantContext.getTenantId();
 
-        // Include previous day so night shifts that cross midnight into `start` are counted.
-        LocalDateTime startDt = start.minusDays(1).atStartOfDay();
+        LocalDateTime startDt = start.atStartOfDay();
         LocalDateTime endDt = end.atTime(LocalTime.MAX);
 
         List<AttendanceLog> logs = tenantId != null
@@ -215,13 +216,11 @@ public class AttendanceReportService {
                         && ShiftTypes.STANDARD.equals(ShiftTypes.canonical(resolved.shiftType()));
 
                 if (knownStandard) {
-                    // Only collapse when we KNOW this punch belonged to STANDARD (stamp or assignment).
-                    for (LocalDate day = start; !day.isAfter(end); day = day.plusDays(1)) {
-                        if (!attendanceInferenceService.overlapsDay(log, day)) {
-                            continue;
-                        }
-                        standardByDay.computeIfAbsent(day, ignored -> new ArrayList<>()).add(log);
-                        standardShiftTypeByDay.putIfAbsent(day, scheduleShiftType);
+                    // Only collapse when we KNOW this punch belonged to STANDARD.
+                    LocalDate workDate = log.getCheckInTime().toLocalDate();
+                    if (!workDate.isBefore(start) && !workDate.isAfter(end)) {
+                        standardByDay.computeIfAbsent(workDate, ignored -> new ArrayList<>()).add(log);
+                        standardShiftTypeByDay.putIfAbsent(workDate, scheduleShiftType);
                     }
                 } else {
                     // Flexible, night, or unmarked history after schedule change: keep every session.
@@ -289,6 +288,7 @@ public class AttendanceReportService {
         }
         dto.setVerificationMethod(normalizeVerificationMethod(log.getVerificationMethod()));
         dto.setShiftType(scheduleShiftType);
+        dto.setStatus(attendanceSessionPolicy.effectiveStatus(employee, log));
         return dto;
     }
 
@@ -320,6 +320,7 @@ public class AttendanceReportService {
                 .orElse(null);
         dto.setVerificationMethod(normalizeVerificationMethod(method));
         dto.setShiftType(scheduleShiftType);
+        dto.setStatus(resolveDailySessionStatus(employee, dayLogs));
         return dto;
     }
 
@@ -341,27 +342,31 @@ public class AttendanceReportService {
         return dto;
     }
 
-    /**
-     * True when the session interval overlaps any calendar day in {@code [start, end]}.
-     * Open sessions are limited to check-ins on/after {@code start - 1 day} so ancient
-     * unfinished sessions do not flood every report window.
-     */
+    /** A session is reported in the period containing its check-in work date. */
     private boolean overlapsReportRange(AttendanceLog log, LocalDate start, LocalDate end) {
         LocalDateTime entry = log.getCheckInTime();
         if (entry == null) {
             return false;
         }
-        LocalDateTime exit = log.getCheckOutTime();
-        if (exit == null) {
-            LocalDate inDate = entry.toLocalDate();
-            return !inDate.isBefore(start.minusDays(1)) && !inDate.isAfter(end);
+        LocalDate workDate = entry.toLocalDate();
+        return !workDate.isBefore(start) && !workDate.isAfter(end);
+    }
+
+    private String resolveDailySessionStatus(Employee employee, List<AttendanceLog> logs) {
+        List<String> statuses = logs.stream()
+                .map(log -> attendanceSessionPolicy.effectiveStatus(employee, log))
+                .filter(Objects::nonNull)
+                .toList();
+        if (statuses.contains("MISSING_EXIT")) {
+            return "MISSING_EXIT";
         }
-        for (LocalDate day = start; !day.isAfter(end); day = day.plusDays(1)) {
-            if (attendanceInferenceService.overlapsDay(log, day)) {
-                return true;
-            }
+        if (statuses.contains("OPEN")) {
+            return "OPEN";
         }
-        return false;
+        if (statuses.contains("MANUALLY_CORRECTED")) {
+            return "MANUALLY_CORRECTED";
+        }
+        return statuses.isEmpty() ? null : "CLOSED";
     }
 
     private OffsetDateTime toOffsetDateTime(LocalDateTime localDateTime) {

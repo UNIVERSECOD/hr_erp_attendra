@@ -108,11 +108,11 @@ public class AttendanceCalculationService {
     private List<AttendanceLog> findDayLogs(Long employeeId, LocalDate workDate) {
         List<AttendanceLog> candidates = attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(
                 employeeId,
-                workDate.minusDays(1).atStartOfDay(),
+                workDate.atStartOfDay(),
                 workDate.plusDays(1).atStartOfDay().minusNanos(1)
         );
         return candidates.stream()
-                .filter(log -> attendanceInferenceService.overlapsDay(log, workDate))
+                .filter(log -> attendanceInferenceService.belongsToWorkDate(log, workDate))
                 .toList();
     }
 }

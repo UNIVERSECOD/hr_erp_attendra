@@ -48,14 +48,32 @@ public class AttendanceLog {
     @Column(name = "timetable_id")
     private Long timetableId;
 
+    @Column(name = "entry_punch_id")
+    private Long entryPunchId;
+
+    @Column(name = "exit_punch_id")
+    private Long exitPunchId;
+
+    @Column(name = "manual_override", nullable = false)
+    private Boolean manualOverride = false;
+
     @Column(name = "status")
     private String status;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "updated_at")
+    private LocalDateTime updatedAt;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        updatedAt = createdAt;
+    }
+
+    @PreUpdate
+    protected void onUpdate() {
+        updatedAt = LocalDateTime.now();
     }
 }

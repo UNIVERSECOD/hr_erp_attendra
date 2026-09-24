@@ -44,6 +44,7 @@ public class DoorAttendanceSyncService {
     private final AttendanceCalculationService attendanceCalculationService;
     private final AttendanceService attendanceService;
     private final EmployeeShiftResolver employeeShiftResolver;
+    private final AttendanceSessionPolicy attendanceSessionPolicy;
 
     /** Serializes sync per tenant so UI + scheduler cannot create duplicate sessions. */
     private final ConcurrentHashMap<Long, Object> tenantSyncLocks = new ConcurrentHashMap<>();
@@ -154,60 +155,78 @@ public class DoorAttendanceSyncService {
             }
 
             List<AttendanceLogSyncDTO.AttendanceLogEntryDTO> employeePunches = entry.getValue().stream()
-                    .sorted(Comparator.comparing(p -> toLocalDateTime(p.getPunchTime())))
+                    .sorted(Comparator
+                            .comparing((AttendanceLogSyncDTO.AttendanceLogEntryDTO p) -> toLocalDateTime(p.getPunchTime()))
+                            .thenComparingInt(p -> rolePriority(deviceRolesByIsapiId.get(p.getDeviceId())))
+                            .thenComparing(AttendanceLogSyncDTO.AttendanceLogEntryDTO::getId,
+                                    Comparator.nullsLast(Comparator.naturalOrder())))
                     .toList();
 
             // Resume an already-open session from DB (entry punched earlier, exit comes later).
             AttendanceLog openLog = findOpenSession(tenantId, employee.getId()).orElse(null);
-            AttendanceLog lastClosedLog = null;
-
             for (AttendanceLogSyncDTO.AttendanceLogEntryDTO punch : employeePunches) {
                 LocalDateTime punchTime = toLocalDateTime(punch.getPunchTime());
                 String role = deviceRolesByIsapiId.get(punch.getDeviceId());
 
                 if ("ENTRY".equals(role)) {
-                    if (openLog != null) {
-                        // Duplicate giriş while still open → first punch was invalid; move check-in forward.
-                        LocalDateTime previousEntry = openLog.getCheckInTime();
-                        if (previousEntry != null && !punchTime.isAfter(previousEntry)) {
-                            continue;
-                        }
-                        addRecalcDate(recalcDatesByEmployee, employee.getId(),
-                                previousEntry != null ? previousEntry.toLocalDate() : null);
-                        openLog.setCheckInTime(punchTime);
-                        openLog.setDeviceId(punch.getDeviceId() != null ? String.valueOf(punch.getDeviceId()) : openLog.getDeviceId());
-                        openLog.setDoorId(punch.getDeviceId() != null ? punch.getDeviceId() + ":null" : openLog.getDoorId());
-                        attendanceLogRepository.save(openLog);
-                        createdLogs++;
-                        addRecalcDate(recalcDatesByEmployee, employee.getId(), punchTime.toLocalDate());
+                    if (isEntryPunchProcessed(tenantId, punch.getId())) {
                         continue;
                     }
+                    if (openLog != null) {
+                        LocalDateTime previousEntry = openLog.getCheckInTime();
+                        if (previousEntry != null && (!punchTime.isAfter(previousEntry)
+                                || attendanceSessionPolicy.isDuplicateEntry(openLog, punchTime))) {
+                            continue;
+                        }
 
-                    // New giriş → create open log immediately (çıxış later updates the same row).
+                        // A real later entry must not rewrite the earlier open session.
+                        // Keep it for correction and start a new independent session.
+                        addRecalcDate(recalcDatesByEmployee, employee.getId(),
+                                previousEntry != null ? previousEntry.toLocalDate() : null);
+                        openLog.setStatus("MISSING_EXIT");
+                        attendanceLogRepository.save(openLog);
+                        createdLogs++;
+                        openLog = null;
+                    }
+
                     AttendanceLog created = ensureOpenEntryLog(
                             tenantId,
                             employee,
                             punchTime,
-                            punch.getDeviceId()
+                            punch.getDeviceId(),
+                            punch.getId()
                     );
                     if (created != null) {
                         createdLogs++;
                         addRecalcDate(recalcDatesByEmployee, employee.getId(), punchTime.toLocalDate());
                         openLog = created;
                     } else {
-                        openLog = tenantId != null
+                        AttendanceLog existing = tenantId != null
                                 ? attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(
                                         tenantId, employee.getId(), punchTime).orElse(null)
                                 : attendanceLogRepository.findByEmployeeIdAndCheckInTime(
                                         employee.getId(), punchTime).orElse(null);
-                        if (openLog == null) {
-                            openLog = findOpenSession(tenantId, employee.getId()).orElse(null);
-                        }
+                        openLog = existing != null
+                                && existing.getCheckOutTime() == null
+                                && !Boolean.TRUE.equals(existing.getManualOverride())
+                                ? existing
+                                : null;
                     }
                 } else if ("EXIT".equals(role)) {
+                    if (isExitPunchProcessed(tenantId, punch.getId())) {
+                        continue;
+                    }
                     if (openLog != null) {
                         LocalDateTime entryTime = openLog.getCheckInTime();
                         if (entryTime == null || !punchTime.isAfter(entryTime)) {
+                            continue;
+                        }
+                        if (attendanceSessionPolicy.isExpired(employee, openLog, punchTime)) {
+                            openLog.setStatus("MISSING_EXIT");
+                            attendanceLogRepository.save(openLog);
+                            addRecalcDate(recalcDatesByEmployee, employee.getId(), entryTime.toLocalDate());
+                            openLog = null;
+                            skippedPunches++;
                             continue;
                         }
 
@@ -218,51 +237,27 @@ public class DoorAttendanceSyncService {
                         String doorId = entryDevId + ":" + exitDevId;
 
                         addRecalcDate(recalcDatesByEmployee, employee.getId(), entryTime.toLocalDate());
-                        addRecalcDate(recalcDatesByEmployee, employee.getId(), punchTime.toLocalDate());
 
                         if (openLog.getCheckOutTime() == null) {
                             openLog.setCheckOutTime(punchTime);
+                            openLog.setExitPunchId(punch.getId());
                             openLog.setDoorId(doorId);
+                            openLog.setStatus("CLOSED");
                             attendanceLogRepository.save(openLog);
                             createdLogs++;
                             matchedSessions++;
                         }
 
-                        lastClosedLog = openLog;
                         openLog = null;
                     } else {
-                        // Duplicate çıxış while already outside → employee stayed inside; extend last checkout.
-                        AttendanceLog closed = lastClosedLog != null
-                                ? lastClosedLog
-                                : findLastClosedSession(tenantId, employee.getId()).orElse(null);
-                        if (closed == null
-                                || closed.getCheckInTime() == null
-                                || closed.getCheckOutTime() == null
-                                || !punchTime.isAfter(closed.getCheckInTime())
-                                || !punchTime.isAfter(closed.getCheckOutTime())) {
-                            continue;
-                        }
-
-                        LocalDateTime previousExit = closed.getCheckOutTime();
-                        addRecalcDate(recalcDatesByEmployee, employee.getId(), closed.getCheckInTime().toLocalDate());
-                        addRecalcDate(recalcDatesByEmployee, employee.getId(), previousExit.toLocalDate());
-                        addRecalcDate(recalcDatesByEmployee, employee.getId(), punchTime.toLocalDate());
-
-                        Long entryDevId = closed.getDeviceId() != null
-                                ? parseLongSafe(closed.getDeviceId())
-                                : null;
-                        closed.setCheckOutTime(punchTime);
-                        if (punch.getDeviceId() != null) {
-                            closed.setDoorId(entryDevId + ":" + punch.getDeviceId());
-                        }
-                        attendanceLogRepository.save(closed);
-                        lastClosedLog = closed;
-                        createdLogs++;
-                        matchedSessions++;
+                        // An unmatched or duplicate exit must never extend a closed session.
+                        skippedPunches++;
                     }
                 }
             }
         }
+
+        refreshOpenSessionStatuses(tenantId, recalcDatesByEmployee);
 
         int recalculatedDays = 0;
         for (Map.Entry<Long, Set<LocalDate>> entry : recalcDatesByEmployee.entrySet()) {
@@ -294,24 +289,28 @@ public class DoorAttendanceSyncService {
     private Optional<AttendanceLog> findOpenSession(Long tenantId, Long employeeId) {
         if (tenantId != null) {
             return attendanceLogRepository
-                    .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(tenantId, employeeId);
+                    .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
+                            tenantId, employeeId);
         }
-        return attendanceLogRepository.findFirstByEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(employeeId);
-    }
-
-    private Optional<AttendanceLog> findLastClosedSession(Long tenantId, Long employeeId) {
-        if (tenantId != null) {
-            return attendanceLogRepository
-                    .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNotNullOrderByCheckOutTimeDesc(tenantId, employeeId);
-        }
-        return attendanceLogRepository.findFirstByEmployeeIdAndCheckOutTimeIsNotNullOrderByCheckOutTimeDesc(employeeId);
+        return attendanceLogRepository
+                .findFirstByEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(employeeId);
     }
 
     /**
      * Creates an open entry log (no checkout yet) if one does not already exist for this check-in time.
      * Returns the created entity, or null when the log already existed.
      */
-    private AttendanceLog ensureOpenEntryLog(Long tenantId, Employee employee, LocalDateTime entryTime, Long entryDeviceId) {
+    private AttendanceLog ensureOpenEntryLog(
+            Long tenantId,
+            Employee employee,
+            LocalDateTime entryTime,
+            Long entryDeviceId,
+            Long entryPunchId
+    ) {
+        if (tenantId != null && entryPunchId != null
+                && attendanceLogRepository.findByTenantIdAndEntryPunchId(tenantId, entryPunchId).isPresent()) {
+            return null;
+        }
         Optional<AttendanceLog> existing = tenantId != null
                 ? attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(tenantId, employee.getId(), entryTime)
                 : attendanceLogRepository.findByEmployeeIdAndCheckInTime(employee.getId(), entryTime);
@@ -324,16 +323,51 @@ public class DoorAttendanceSyncService {
         logEntry.setEmployeeId(employee.getId());
         logEntry.setCheckInTime(entryTime);
         logEntry.setCheckOutTime(null);
+        logEntry.setEntryPunchId(entryPunchId);
         logEntry.setDoorId(entryDeviceId != null ? entryDeviceId + ":null" : null);
         logEntry.setDeviceId(entryDeviceId != null ? String.valueOf(entryDeviceId) : null);
         logEntry.setEventType("DOOR_SESSION");
         logEntry.setVerificationMethod("ISAPI_PUNCH");
-        logEntry.setStatus("ACTIVE");
+        logEntry.setStatus("OPEN");
         EmployeeShiftResolver.ResolvedShift resolved = employeeShiftResolver.resolve(
                 employee, entryTime != null ? entryTime.toLocalDate() : null);
         logEntry.setShiftType(resolved.shiftType());
         logEntry.setTimetableId(resolved.timetableId());
         return attendanceLogRepository.save(logEntry);
+    }
+
+    private boolean isEntryPunchProcessed(Long tenantId, Long punchId) {
+        return tenantId != null && punchId != null
+                && attendanceLogRepository.findByTenantIdAndEntryPunchId(tenantId, punchId).isPresent();
+    }
+
+    private boolean isExitPunchProcessed(Long tenantId, Long punchId) {
+        return tenantId != null && punchId != null
+                && attendanceLogRepository.existsByTenantIdAndExitPunchId(tenantId, punchId);
+    }
+
+    private void refreshOpenSessionStatuses(
+            Long tenantId,
+            Map<Long, Set<LocalDate>> recalcDatesByEmployee
+    ) {
+        if (tenantId == null) {
+            return;
+        }
+        Map<Long, Employee> employeeCache = new HashMap<>();
+        for (AttendanceLog open : attendanceLogRepository.findByTenantIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(tenantId)) {
+            Employee employee = employeeCache.computeIfAbsent(open.getEmployeeId(), id ->
+                    employeeRepository.findByTenantIdAndId(tenantId, id).orElse(null));
+            if (employee == null || Boolean.TRUE.equals(open.getManualOverride())) {
+                continue;
+            }
+            String effectiveStatus = attendanceSessionPolicy.effectiveStatus(employee, open);
+            if (!effectiveStatus.equalsIgnoreCase(open.getStatus() == null ? "" : open.getStatus())) {
+                open.setStatus(effectiveStatus);
+                attendanceLogRepository.save(open);
+                addRecalcDate(recalcDatesByEmployee, employee.getId(),
+                        open.getCheckInTime() != null ? open.getCheckInTime().toLocalDate() : null);
+            }
+        }
     }
 
     private Long parseLongSafe(String value) {
@@ -345,6 +379,10 @@ public class DoorAttendanceSyncService {
         } catch (NumberFormatException ignored) {
             return null;
         }
+    }
+
+    private int rolePriority(String role) {
+        return "ENTRY".equalsIgnoreCase(role) ? 0 : 1;
     }
 
     private List<AttendanceLogSyncDTO.AttendanceLogEntryDTO> fetchPunchesInRange(

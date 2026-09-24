@@ -47,6 +47,7 @@ class DoorAttendanceSyncServiceTest {
     @Mock private AttendanceCalculationService attendanceCalculationService;
     @Mock private AttendanceService attendanceService;
     @Mock private EmployeeShiftResolver employeeShiftResolver;
+    @Mock private AttendanceSessionPolicy attendanceSessionPolicy;
 
     @InjectMocks
     private DoorAttendanceSyncService doorAttendanceSyncService;
@@ -59,6 +60,11 @@ class DoorAttendanceSyncServiceTest {
         logIdSeq.set(1);
         lenient().when(employeeShiftResolver.resolve(any(), any()))
                 .thenReturn(new EmployeeShiftResolver.ResolvedShift(null, "FLEXIBLE", true));
+        lenient().when(attendanceSessionPolicy.isDuplicateEntry(any(), any())).thenAnswer(invocation -> {
+            AttendanceLog open = invocation.getArgument(0);
+            LocalDateTime punchTime = invocation.getArgument(1);
+            return Math.abs(java.time.Duration.between(open.getCheckInTime(), punchTime).getSeconds()) <= 60;
+        });
     }
 
     @AfterEach
@@ -83,14 +89,12 @@ class DoorAttendanceSyncServiceTest {
     }
 
     @Test
-    void syncAllDevices_duplicateEntry_movesOpenCheckInForward() {
+    void syncAllDevices_laterEntry_preservesMissingExitAndStartsNewSession() {
         DeviceConfig entryDevice = device(10L, "101", "ENTRY");
         DeviceConfig exitDevice = device(11L, "102", "EXIT");
         Employee employee = employee(5L, "1001");
 
         stubDevicesAndEmployee(entryDevice, exitDevice, employee);
-        when(attendanceLogRepository.findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(1L, 5L))
-                .thenReturn(Optional.empty());
         when(attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(eq(1L), eq(5L), any()))
                 .thenReturn(Optional.empty());
         when(attendanceLogRepository.save(any(AttendanceLog.class))).thenAnswer(invocation -> {
@@ -116,23 +120,22 @@ class DoorAttendanceSyncServiceTest {
         verify(attendanceLogRepository, atLeastOnce()).save(saved.capture());
         List<AttendanceLog> logs = saved.getAllValues();
 
-        assertThat(logs).hasSizeGreaterThanOrEqualTo(2);
+        assertThat(logs).hasSizeGreaterThanOrEqualTo(3);
         AttendanceLog finalOpen = logs.get(logs.size() - 1);
         assertThat(finalOpen.getCheckInTime()).isEqualTo(day.atTime(9, 20));
         assertThat(finalOpen.getCheckOutTime()).isNull();
-        // Same open row was updated in place (false first entry replaced).
-        assertThat(logs.get(0).getId()).isEqualTo(finalOpen.getId());
+        assertThat(finalOpen.getId()).isNotEqualTo(logs.get(0).getId());
+        assertThat(logs).anyMatch(log -> day.atTime(9, 0).equals(log.getCheckInTime())
+                && "MISSING_EXIT".equals(log.getStatus()));
     }
 
     @Test
-    void syncAllDevices_duplicateExit_extendsLastCheckout() {
+    void syncAllDevices_duplicateExit_doesNotExtendClosedSession() {
         DeviceConfig entryDevice = device(10L, "101", "ENTRY");
         DeviceConfig exitDevice = device(11L, "102", "EXIT");
         Employee employee = employee(5L, "1001");
 
         stubDevicesAndEmployee(entryDevice, exitDevice, employee);
-        when(attendanceLogRepository.findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(1L, 5L))
-                .thenReturn(Optional.empty());
         when(attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(eq(1L), eq(5L), any()))
                 .thenReturn(Optional.empty());
         when(attendanceLogRepository.save(any(AttendanceLog.class))).thenAnswer(invocation -> {
@@ -160,7 +163,7 @@ class DoorAttendanceSyncServiceTest {
 
         AttendanceLog closed = logs.get(logs.size() - 1);
         assertThat(closed.getCheckInTime()).isEqualTo(day.atTime(9, 0));
-        assertThat(closed.getCheckOutTime()).isEqualTo(day.atTime(17, 30));
+        assertThat(closed.getCheckOutTime()).isEqualTo(day.atTime(17, 0));
     }
 
     @Test
@@ -170,8 +173,6 @@ class DoorAttendanceSyncServiceTest {
         Employee employee = employee(5L, "1001");
 
         stubDevicesAndEmployee(entryDevice, exitDevice, employee);
-        when(attendanceLogRepository.findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(1L, 5L))
-                .thenReturn(Optional.empty());
         when(attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(eq(1L), eq(5L), any()))
                 .thenReturn(Optional.empty());
         when(attendanceLogRepository.save(any(AttendanceLog.class))).thenAnswer(invocation -> {
@@ -202,16 +203,111 @@ class DoorAttendanceSyncServiceTest {
     }
 
     @Test
+    void syncAllDevices_overnightExit_recalculatesOnlyCheckInWorkDate() {
+        DeviceConfig entryDevice = device(10L, "101", "ENTRY");
+        DeviceConfig exitDevice = device(11L, "102", "EXIT");
+        Employee employee = employee(5L, "1001");
+
+        stubDevicesAndEmployee(entryDevice, exitDevice, employee);
+        when(attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(eq(1L), eq(5L), any()))
+                .thenReturn(Optional.empty());
+        when(attendanceLogRepository.save(any(AttendanceLog.class))).thenAnswer(invocation -> {
+            AttendanceLog log = invocation.getArgument(0);
+            if (log.getId() == null) {
+                log.setId(logIdSeq.getAndIncrement());
+            }
+            return log;
+        });
+
+        LocalDate day = LocalDate.of(2026, 7, 1);
+        when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(punch("1001", 101L, day.atTime(20, 0))));
+        when(attendanceLogSyncService.getAttendanceLogs(eq(102L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(punch("1001", 102L, day.plusDays(1).atTime(4, 0))));
+
+        DoorAttendanceSyncResultDTO result = doorAttendanceSyncService.syncAllDevices(
+                day.atStartOfDay(), day.plusDays(2).atStartOfDay(), 100);
+
+        assertThat(result.getMatchedSessions()).isEqualTo(1);
+        verify(attendanceCalculationService).calculateForDay(5L, day);
+        verify(attendanceService).generateDailySummary(5L, day);
+        verify(attendanceCalculationService, never()).calculateForDay(5L, day.plusDays(1));
+        verify(attendanceService, never()).generateDailySummary(5L, day.plusDays(1));
+    }
+
+    @Test
+    void syncAllDevices_expiredExit_doesNotCloseOldSession() {
+        DeviceConfig entryDevice = device(10L, "101", "ENTRY");
+        DeviceConfig exitDevice = device(11L, "102", "EXIT");
+        Employee employee = employee(5L, "1001");
+        stubDevicesAndEmployee(entryDevice, exitDevice, employee);
+
+        LocalDate day = LocalDate.of(2026, 7, 1);
+        AttendanceLog oldOpen = new AttendanceLog();
+        oldOpen.setId(50L);
+        oldOpen.setTenantId(1L);
+        oldOpen.setEmployeeId(5L);
+        oldOpen.setCheckInTime(day.atTime(9, 0));
+        oldOpen.setStatus("OPEN");
+
+        when(attendanceLogRepository
+                .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(1L, 5L))
+                .thenReturn(Optional.of(oldOpen));
+        when(attendanceSessionPolicy.isExpired(eq(employee), eq(oldOpen), any())).thenReturn(true);
+        when(attendanceLogRepository.save(oldOpen)).thenReturn(oldOpen);
+        when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of());
+        when(attendanceLogSyncService.getAttendanceLogs(eq(102L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(punch("1001", 102L, day.plusDays(1).atTime(8, 0))));
+
+        DoorAttendanceSyncResultDTO result = doorAttendanceSyncService.syncAllDevices(
+                day.atStartOfDay(), day.plusDays(2).atStartOfDay(), 100);
+
+        assertThat(result.getMatchedSessions()).isZero();
+        assertThat(oldOpen.getCheckOutTime()).isNull();
+        assertThat(oldOpen.getStatus()).isEqualTo("MISSING_EXIT");
+        verify(attendanceCalculationService).calculateForDay(5L, day);
+        verify(attendanceCalculationService, never()).calculateForDay(5L, day.plusDays(1));
+    }
+
+    @Test
+    void syncAllDevices_sameTimestamp_ordersEntryBeforeExit() {
+        DeviceConfig entryDevice = device(10L, "101", "ENTRY");
+        DeviceConfig exitDevice = device(11L, "102", "EXIT");
+        Employee employee = employee(5L, "1001");
+
+        when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(exitDevice, entryDevice));
+        when(employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(anyLong(), eq("1001")))
+                .thenReturn(List.of(employee));
+        when(employeeRepository.findByTenantIdAndId(1L, employee.getId())).thenReturn(Optional.of(employee));
+        when(attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTime(eq(1L), eq(5L), any()))
+                .thenReturn(Optional.empty());
+        when(attendanceLogRepository.save(any(AttendanceLog.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        LocalDateTime punchTime = LocalDate.of(2026, 7, 1).atTime(9, 0);
+        when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(punch("1001", 101L, punchTime)));
+        when(attendanceLogSyncService.getAttendanceLogs(eq(102L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(punch("1001", 102L, punchTime)));
+
+        DoorAttendanceSyncResultDTO result = doorAttendanceSyncService.syncAllDevices(
+                punchTime.toLocalDate().atStartOfDay(), punchTime.toLocalDate().plusDays(1).atStartOfDay(), 100);
+
+        assertThat(result.getMatchedSessions()).isZero();
+        assertThat(result.getSkippedPunches()).isZero();
+        ArgumentCaptor<AttendanceLog> saved = ArgumentCaptor.forClass(AttendanceLog.class);
+        verify(attendanceLogRepository, atLeastOnce()).save(saved.capture());
+        assertThat(saved.getAllValues()).anyMatch(log -> punchTime.equals(log.getCheckInTime())
+                && log.getCheckOutTime() == null);
+    }
+
+    @Test
     void syncAllDevices_exitWithoutEntry_isIgnored() {
         DeviceConfig entryDevice = device(10L, "101", "ENTRY");
         DeviceConfig exitDevice = device(11L, "102", "EXIT");
         Employee employee = employee(5L, "1001");
 
         stubDevicesAndEmployee(entryDevice, exitDevice, employee);
-        when(attendanceLogRepository.findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(1L, 5L))
-                .thenReturn(Optional.empty());
-        when(attendanceLogRepository.findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNotNullOrderByCheckOutTimeDesc(1L, 5L))
-                .thenReturn(Optional.empty());
 
         LocalDate day = LocalDate.of(2026, 7, 1);
         when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))

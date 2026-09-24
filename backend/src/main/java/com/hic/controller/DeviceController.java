@@ -138,7 +138,7 @@ public class DeviceController {
                 .orElseThrow(() -> new ResourceNotFoundException("DeviceConfig", id));
         DeviceSyncDTO.SyncResultDTO result = deviceSyncService.syncDevice(toIsapiId(backendDevice.getDeviceId()));
         if (result != null && result.isSuccess()) {
-            LocalDateTime end = LocalDateTime.now();
+            LocalDateTime end = com.hic.util.AppTimeZone.now();
             doorAttendanceSyncService.syncAllDevices(end.minusDays(3), end, 500);
         }
         return ResponseEntity.ok(ApiResponse.success(result));

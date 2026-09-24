@@ -6,7 +6,7 @@ import { departmentApi } from '../api/departmentApi.ts'
 import { employeeApi } from '../api/employeeApi.ts'
 import { useAttendanceReportStore } from '../store/attendanceReportStore.ts'
 import { t } from '../i18n/index.ts'
-import { Position, Department } from '../types'
+import { AttendanceReportRow, Position, Department } from '../types'
 import { formatAttendanceDateTime } from '../utils/dateTime.ts'
 
 const SHIFT_TABS = [
@@ -52,6 +52,25 @@ function methodStyle(method?: string): { background: string; color: string } {
       return { background: '#dcfce7', color: '#166534' }
     default:
       return { background: '#f1f5f9', color: '#475569' }
+  }
+}
+
+function statusLabel(status?: AttendanceReportRow['status']) {
+  switch (status) {
+    case 'OPEN': return 'Açıq sessiya'
+    case 'MISSING_EXIT': return 'Çıxış yoxdur'
+    case 'MANUALLY_CORRECTED': return 'Manual düzəliş'
+    case 'CLOSED': return 'Bağlanıb'
+    default: return '—'
+  }
+}
+
+function statusStyle(status?: AttendanceReportRow['status']) {
+  switch (status) {
+    case 'OPEN': return 'bg-blue-50 text-blue-700'
+    case 'MISSING_EXIT': return 'bg-red-50 text-red-700'
+    case 'MANUALLY_CORRECTED': return 'bg-amber-50 text-amber-700'
+    default: return 'bg-emerald-50 text-emerald-700'
   }
 }
 
@@ -211,6 +230,7 @@ export default function ReportsPage() {
                   t('reports.checkOut'),
                   t('reports.workedDuration'),
                   t('reports.recognitionMethod'),
+                  'Status',
                 ].map((h) => (
                   <th key={h} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
@@ -218,9 +238,9 @@ export default function ReportsPage() {
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={10} className="px-4 py-6 text-sm text-gray-500 text-center">Yüklənir...</td></tr>
+                <tr><td colSpan={11} className="px-4 py-6 text-sm text-gray-500 text-center">Yüklənir...</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={10} className="px-4 py-6 text-sm text-gray-500 text-center">Məlumat tapılmadı</td></tr>
+                <tr><td colSpan={11} className="px-4 py-6 text-sm text-gray-500 text-center">Məlumat tapılmadı</td></tr>
               ) : rows.map((row, index) => (
                 <tr key={row.attendanceLogId ?? `${row.employeePk}-${row.checkInTime}-${index}`} className="border-t border-gray-100 hover:bg-gray-50">
                   <td className="px-4 py-3 whitespace-nowrap text-gray-700">{row.employeeId}</td>
@@ -238,6 +258,11 @@ export default function ReportsPage() {
                       style={methodStyle(row.verificationMethod)}
                     >
                       {methodLabel(row.verificationMethod)}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${statusStyle(row.status)}`}>
+                      {statusLabel(row.status)}
                     </span>
                   </td>
                 </tr>

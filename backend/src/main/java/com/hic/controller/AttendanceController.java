@@ -2,6 +2,7 @@ package com.hic.controller;
 
 import com.hic.dto.ApiResponse;
 import com.hic.dto.AttendanceDTO;
+import com.hic.dto.AttendanceCorrectionRequest;
 import com.hic.dto.AttendanceLogDTO;
 import com.hic.dto.EmployeeAttendanceRowDTO;
 import com.hic.dto.EmployeeAttendanceSummaryDTO;
@@ -9,10 +10,12 @@ import com.hic.dto.AttendanceReportRowDTO;
 import com.hic.dto.DailyAttendanceSummaryDTO;
 import com.hic.dto.DoorAttendanceSyncResultDTO;
 import com.hic.dto.PaginatedResponse;
+import com.hic.dto.OpenAttendanceSessionDTO;
 import com.hic.service.AttendanceCalculationService;
 import com.hic.service.AttendanceReportService;
 import com.hic.service.AttendanceService;
 import com.hic.service.DoorAttendanceSyncService;
+import com.hic.service.AttendanceSessionManagementService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -36,6 +39,7 @@ public class AttendanceController {
     private final AttendanceCalculationService attendanceCalculationService;
     private final AttendanceReportService attendanceReportService;
     private final DoorAttendanceSyncService doorAttendanceSyncService;
+    private final AttendanceSessionManagementService attendanceSessionManagementService;
 
     @PostMapping("/log")
     public ResponseEntity<ApiResponse<AttendanceLogDTO>> logAttendance(@Valid @RequestBody AttendanceDTO dto) {
@@ -133,6 +137,21 @@ public class AttendanceController {
             @RequestParam(required = false) Long employeeId) {
         attendanceCalculationService.recalculate(start, end, employeeId);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @GetMapping("/open-sessions")
+    public ResponseEntity<ApiResponse<List<OpenAttendanceSessionDTO>>> getOpenSessions() {
+        return ResponseEntity.ok(ApiResponse.success(
+                attendanceSessionManagementService.getOpenSessions()));
+    }
+
+    @PutMapping("/sessions/{attendanceLogId}")
+    public ResponseEntity<ApiResponse<AttendanceLogDTO>> correctSession(
+            @PathVariable Long attendanceLogId,
+            @Valid @RequestBody AttendanceCorrectionRequest request
+    ) {
+        return ResponseEntity.ok(ApiResponse.success(
+                attendanceSessionManagementService.correctSession(attendanceLogId, request)));
     }
 
 

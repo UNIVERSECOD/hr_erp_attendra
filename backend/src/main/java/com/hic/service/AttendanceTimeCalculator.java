@@ -23,11 +23,16 @@ public class AttendanceTimeCalculator {
         int overtimeMinutes = Math.max(workedMinutes - schedule.expectedMinutes(), 0);
 
         if (!schedule.workingDay()) {
-            AttendanceStatus status = inference.firstEntry() == null && !inference.currentlyInside()
-                    ? AttendanceStatus.DAY_OFF
-                    : (inference.currentlyInside() || !date.equals(AppTimeZone.today())
-                    ? AttendanceStatus.PRESENT
-                    : AttendanceStatus.WORKDAY_COMPLETE);
+            AttendanceStatus status;
+            if (inference.firstEntry() == null && !inference.currentlyInside()) {
+                status = AttendanceStatus.DAY_OFF;
+            } else if (inference.currentlyInside()) {
+                status = openStatus(inference, schedule);
+            } else {
+                status = date.equals(AppTimeZone.today())
+                        ? AttendanceStatus.WORKDAY_COMPLETE
+                        : AttendanceStatus.PRESENT;
+            }
             return new Calculation(status, workedMinutes, overtimeMinutes, 0, 0);
         }
 
@@ -37,7 +42,7 @@ public class AttendanceTimeCalculator {
 
         if (schedule.flexible() || schedule.startTime() == null || schedule.endTime() == null) {
             AttendanceStatus status = inference.currentlyInside()
-                    ? AttendanceStatus.PRESENT
+                    ? openStatus(inference, schedule)
                     : (date.equals(AppTimeZone.today())
                     ? AttendanceStatus.WORKDAY_COMPLETE
                     : AttendanceStatus.PRESENT);
@@ -63,8 +68,10 @@ public class AttendanceTimeCalculator {
                 : 0;
 
         AttendanceStatus status;
-        if (inference.currentlyInside() || inference.lastExit() == null) {
-            status = lateMinutes > 0 ? AttendanceStatus.LATE : AttendanceStatus.PRESENT;
+        if (inference.currentlyInside()) {
+            status = openStatus(inference, schedule);
+        } else if (inference.lastExit() == null) {
+            status = AttendanceStatus.MISSING_EXIT;
         } else if (earlyLeaveMinutes > 0) {
             status = AttendanceStatus.EARLY_LEAVE;
         } else if (lateMinutes > 0) {
@@ -76,6 +83,15 @@ public class AttendanceTimeCalculator {
         }
 
         return new Calculation(status, workedMinutes, overtimeMinutes, lateMinutes, earlyLeaveMinutes);
+    }
+
+    private AttendanceStatus openStatus(
+            AttendanceInferenceService.AttendanceInference inference,
+            AttendanceScheduleResolver.DaySchedule schedule
+    ) {
+        boolean expired = AttendanceSessionPolicy.isExpired(
+                inference.firstEntry(), schedule, AppTimeZone.now());
+        return expired ? AttendanceStatus.MISSING_EXIT : AttendanceStatus.OPEN_SESSION;
     }
 
     private int safeMinutes(Duration duration) {

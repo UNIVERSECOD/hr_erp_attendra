@@ -76,7 +76,7 @@ class AttendanceTimeCalculatorTest {
     }
 
     @Test
-    void openSession_doesNotCountPreviousExitAsEarlyLeave() {
+    void expiredOpenSession_isMissingExitWithoutEarlyLeave() {
         AttendanceInferenceService.AttendanceInference inference =
                 new AttendanceInferenceService.AttendanceInference(
                         date.atTime(8, 0),
@@ -89,7 +89,7 @@ class AttendanceTimeCalculatorTest {
         var result = calculator.calculate(date, inference, standardSchedule(30, 30));
 
         assertThat(result.earlyLeaveMinutes()).isZero();
-        assertThat(result.status()).isEqualTo(AttendanceStatus.PRESENT);
+        assertThat(result.status()).isEqualTo(AttendanceStatus.MISSING_EXIT);
     }
 
     private AttendanceScheduleResolver.DaySchedule standardSchedule(int lateTolerance, int earlyTolerance) {

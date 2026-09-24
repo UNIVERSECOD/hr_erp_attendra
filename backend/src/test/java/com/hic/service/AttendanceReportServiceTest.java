@@ -42,6 +42,7 @@ class AttendanceReportServiceTest {
     @Mock private TimetableRepository timetableRepository;
     @Mock private AttendanceInferenceService attendanceInferenceService;
     @Mock private EmployeeShiftResolver employeeShiftResolver;
+    @Mock private AttendanceSessionPolicy attendanceSessionPolicy;
 
     @InjectMocks
     private AttendanceReportService attendanceReportService;
@@ -54,6 +55,10 @@ class AttendanceReportServiceTest {
                 .thenAnswer(invocation -> invocation.getArgument(0));
         lenient().when(attendanceInferenceService.inferDay(any(), any())).thenAnswer(invocation ->
                 new AttendanceInferenceService().inferDay(invocation.getArgument(0), invocation.getArgument(1)));
+        lenient().when(attendanceSessionPolicy.effectiveStatus(any(), any())).thenAnswer(invocation -> {
+            AttendanceLog log = invocation.getArgument(1);
+            return log.getCheckOutTime() == null ? "OPEN" : "CLOSED";
+        });
         lenient().when(employeeShiftResolver.loadAssignmentsByEmployee(any(), any(), any(), any()))
                 .thenReturn(java.util.Map.of());
         lenient().when(employeeShiftResolver.collectTimetableIds(any(), any())).thenAnswer(invocation -> {
@@ -133,7 +138,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), any())).thenReturn(true);
 
         PaginatedResponse<AttendanceReportRowDTO> all = attendanceReportService.getReport(
                 day, day, "", null, null, null, null, null, null, 0, 50);
@@ -178,7 +182,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), any())).thenReturn(true);
 
         PaginatedResponse<AttendanceReportRowDTO> rows = attendanceReportService.getReport(
                 day, day, "", null, null, null, null, null, null, 0, 50);
@@ -210,7 +213,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), any())).thenReturn(true);
 
         PaginatedResponse<AttendanceReportRowDTO> rows = attendanceReportService.getReport(
                 day, day, "FIRST_ENTRY", null, null, null, null, null, null, 0, 50);
@@ -220,7 +222,7 @@ class AttendanceReportServiceTest {
     }
 
     @Test
-    void getReport_includesNightShiftSessionOverlappingSelectedDay() {
+    void getReport_keepsOvernightNightShiftAsOneRowOnCheckInDate() {
         LocalDate day = LocalDate.of(2026, 7, 28);
         Employee employee = employee(1L, "NGT-1", "Night", "Worker", 12L, "NIGHT");
 
@@ -237,15 +239,15 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), eq(day))).thenReturn(true);
 
         PaginatedResponse<AttendanceReportRowDTO> rows = attendanceReportService.getReport(
-                day, day, "NIGHT", null, null, null, null, null, null, 0, 50);
+                day.minusDays(1), day, "NIGHT", null, null, null, null, null, null, 0, 50);
 
         assertThat(rows.getContent()).hasSize(1);
         assertThat(rows.getContent().get(0).getCheckInTime().toLocalDateTime())
                 .isEqualTo(day.minusDays(1).atTime(22, 0));
         assertThat(rows.getContent().get(0).getWorkedMinutes()).isEqualTo(8 * 60);
+        assertThat(rows.getContent().get(0).getDate()).isEqualTo(day.minusDays(1));
     }
 
     @Test
@@ -275,7 +277,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), any())).thenReturn(true);
         when(attendanceInferenceService.dedupeSessions(any())).thenAnswer(invocation -> {
             List<AttendanceLog> logs = invocation.getArgument(0);
             return new AttendanceInferenceService().dedupeSessions(logs);
@@ -313,7 +314,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), eq(day))).thenReturn(true);
         when(attendanceInferenceService.inferDay(any(), eq(day))).thenAnswer(invocation ->
                 new AttendanceInferenceService().inferDay(invocation.getArgument(0), day));
 
@@ -324,6 +324,38 @@ class AttendanceReportServiceTest {
         assertThat(rows.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(9, 0));
         assertThat(rows.getContent().get(0).getCheckOutTime().toLocalDateTime()).isEqualTo(day.atTime(18, 0));
         assertThat(rows.getContent().get(0).getWorkedMinutes()).isEqualTo(9 * 60);
+    }
+
+    @Test
+    void getReport_openStandardSession_doesNotCreateNextDayMidnightRow() {
+        LocalDate entryDay = LocalDate.of(2026, 9, 23);
+        LocalDate nextDay = entryDay.plusDays(1);
+        Employee employee = employee(1L, "HO-1234", "Leyla", "Axmedova", 11L, "STANDARD");
+
+        Timetable timetable = new Timetable();
+        timetable.setId(11L);
+        timetable.setShiftType("STANDARD");
+
+        AttendanceLog open = log(1L, entryDay.atTime(12, 33), null);
+        open.setId(77L);
+        open.setShiftType("STANDARD");
+
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(open));
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee));
+        when(timetableRepository.findAllById(any())).thenReturn(List.of(timetable));
+        when(departmentRepository.findAllById(any())).thenReturn(List.of());
+        when(positionRepository.findAllById(any())).thenReturn(List.of());
+        when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
+
+        PaginatedResponse<AttendanceReportRowDTO> rows = attendanceReportService.getReport(
+                entryDay, nextDay, "STANDARD", null, null, null, null, null, null, 0, 50);
+
+        assertThat(rows.getContent()).hasSize(1);
+        AttendanceReportRowDTO row = rows.getContent().get(0);
+        assertThat(row.getDate()).isEqualTo(entryDay);
+        assertThat(row.getCheckInTime().toLocalDateTime()).isEqualTo(entryDay.atTime(12, 33));
+        assertThat(row.getCheckOutTime()).isNull();
     }
 
     @Test
@@ -350,11 +382,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), any())).thenAnswer(invocation -> {
-            AttendanceLog log = invocation.getArgument(0);
-            LocalDate day = invocation.getArgument(1);
-            return new AttendanceInferenceService().overlapsDay(log, day);
-        });
         when(attendanceInferenceService.inferDay(any(), eq(standardDay))).thenAnswer(invocation ->
                 new AttendanceInferenceService().inferDay(invocation.getArgument(0), standardDay));
         org.mockito.Mockito.doAnswer(invocation -> {
@@ -403,7 +430,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.overlapsDay(any(), any())).thenReturn(true);
 
         PaginatedResponse<AttendanceReportRowDTO> all = attendanceReportService.getReport(
                 day, day, "", null, null, null, null, null, null, 0, 50);

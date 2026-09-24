@@ -41,10 +41,19 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
 
     java.util.Optional<AttendanceLog> findByTenantIdAndEmployeeIdAndCheckInTime(Long tenantId, Long employeeId, LocalDateTime checkInTime);
     java.util.Optional<AttendanceLog> findByEmployeeIdAndCheckInTime(Long employeeId, LocalDateTime checkInTime);
+    java.util.Optional<AttendanceLog> findByTenantIdAndId(Long tenantId, Long id);
+    java.util.Optional<AttendanceLog> findByTenantIdAndEntryPunchId(Long tenantId, Long entryPunchId);
+    boolean existsByTenantIdAndExitPunchId(Long tenantId, Long exitPunchId);
 
     java.util.Optional<AttendanceLog> findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
             Long tenantId, Long employeeId);
     java.util.Optional<AttendanceLog> findFirstByEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(Long employeeId);
+
+    java.util.Optional<AttendanceLog> findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
+            Long tenantId, Long employeeId);
+    java.util.Optional<AttendanceLog> findFirstByEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
+            Long employeeId);
+    List<AttendanceLog> findByTenantIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(Long tenantId);
 
     java.util.Optional<AttendanceLog> findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNotNullOrderByCheckOutTimeDesc(
             Long tenantId, Long employeeId);
