@@ -29,6 +29,9 @@ public class EmployeePermissionController {
                 dto.getPermissionTypeId(),
                 dto.getStartDate(),
                 dto.getEndDate(),
+                dto.getStartTime(),
+                dto.getEndTime(),
+                dto.getDeductFromWorkHours(),
                 dto.getReason(),
                 dto.getStatus()
         )));
@@ -57,6 +60,9 @@ public class EmployeePermissionController {
                 id,
                 dto.getStartDate(),
                 dto.getEndDate(),
+                dto.getStartTime(),
+                dto.getEndTime(),
+                dto.getDeductFromWorkHours(),
                 dto.getReason(),
                 dto.getStatus()
         )));
@@ -78,6 +84,9 @@ public class EmployeePermissionController {
                 request.getPermissionTypeId(),
                 request.getStartDate(),
                 request.getEndDate(),
+                request.getStartTime(),
+                request.getEndTime(),
+                request.getDeductFromWorkHours(),
                 request.getReason(),
                 status
         )));

@@ -9,13 +9,14 @@ import com.hic.model.PermissionType;
 import com.hic.repository.EmployeePermissionRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.PermissionTypeRepository;
+import com.hic.util.AppTimeZone;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,16 +27,21 @@ public class EmployeePermissionService {
     private final EmployeePermissionRepository permissionRepository;
     private final EmployeeRepository employeeRepository;
     private final PermissionTypeRepository permissionTypeRepository;
+    private final AttendanceCalculationService attendanceCalculationService;
+    private final AttendanceService attendanceService;
 
     @Transactional
     public EmployeePermissionDTO grantPermission(Long employeeId,
                                                  Long permissionTypeId,
                                                  LocalDate startDate,
                                                  LocalDate endDate,
+                                                 LocalTime startTime,
+                                                 LocalTime endTime,
+                                                 Boolean deductFromWorkHours,
                                                  String reason,
                                                  EmployeePermission.Status status) {
         Long tenantId = requireTenant();
-        validateDates(startDate, endDate);
+        validatePeriod(startDate, endDate, startTime, endTime, reason);
 
         Employee employee = employeeRepository.findById(employeeId)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee", employeeId));
@@ -55,40 +61,57 @@ public class EmployeePermissionService {
         permission.setPermissionTypeId(permissionTypeId);
         permission.setStartDate(startDate);
         permission.setEndDate(endDate);
-        permission.setReason(reason);
+        permission.setStartTime(startTime);
+        permission.setEndTime(endTime);
+        permission.setDeductFromWorkHours(deductFromWorkHours == null || deductFromWorkHours);
+        permission.setReason(trimToNull(reason));
         permission.setStatus(status == null ? EmployeePermission.Status.PENDING : status);
 
         if (permission.getStatus() == EmployeePermission.Status.APPROVED || permission.getStatus() == EmployeePermission.Status.ACTIVE) {
             permission.setApprovedBy(TenantContext.getUserId());
-            permission.setApprovalDate(LocalDateTime.now());
+            permission.setApprovalDate(AppTimeZone.now());
         }
 
-        return toDTO(permissionRepository.save(permission));
+        EmployeePermission saved = permissionRepository.save(permission);
+        recalculateAttendance(employeeId, startDate, endDate);
+        return toDTO(saved);
     }
 
     @Transactional
     public EmployeePermissionDTO updatePermission(Long id,
                                                   LocalDate startDate,
                                                   LocalDate endDate,
+                                                  LocalTime startTime,
+                                                  LocalTime endTime,
+                                                  Boolean deductFromWorkHours,
                                                   String reason,
                                                   EmployeePermission.Status status) {
         Long tenantId = requireTenant();
-        validateDates(startDate, endDate);
+        validatePeriod(startDate, endDate, startTime, endTime, reason);
 
         EmployeePermission permission = findByIdAndTenant(id, tenantId);
+        LocalDate previousStart = permission.getStartDate();
+        LocalDate previousEnd = permission.getEndDate();
         permission.setStartDate(startDate);
         permission.setEndDate(endDate);
-        permission.setReason(reason);
+        permission.setStartTime(startTime);
+        permission.setEndTime(endTime);
+        permission.setDeductFromWorkHours(deductFromWorkHours == null || deductFromWorkHours);
+        permission.setReason(trimToNull(reason));
 
         if (status != null) {
             permission.setStatus(status);
             if (status == EmployeePermission.Status.APPROVED || status == EmployeePermission.Status.ACTIVE) {
                 permission.setApprovedBy(TenantContext.getUserId());
-                permission.setApprovalDate(LocalDateTime.now());
+                permission.setApprovalDate(AppTimeZone.now());
             }
         }
 
-        return toDTO(permissionRepository.save(permission));
+        EmployeePermission saved = permissionRepository.save(permission);
+        LocalDate recalculateFrom = previousStart.isBefore(startDate) ? previousStart : startDate;
+        LocalDate recalculateTo = previousEnd.isAfter(endDate) ? previousEnd : endDate;
+        recalculateAttendance(permission.getEmployeeId(), recalculateFrom, recalculateTo);
+        return toDTO(saved);
     }
 
     @Transactional
@@ -97,6 +120,7 @@ public class EmployeePermissionService {
         EmployeePermission permission = findByIdAndTenant(id, tenantId);
         permission.setStatus(EmployeePermission.Status.INACTIVE);
         permissionRepository.save(permission);
+        recalculateAttendance(permission.getEmployeeId(), permission.getStartDate(), permission.getEndDate());
     }
 
     public List<EmployeePermissionDTO> getAll() {
@@ -106,7 +130,7 @@ public class EmployeePermissionService {
 
     public List<EmployeePermissionDTO> getEmployeesWithPermission(Long permissionTypeId, LocalDate date) {
         Long tenantId = requireTenant();
-        LocalDate targetDate = date != null ? date : LocalDate.now();
+        LocalDate targetDate = date != null ? date : AppTimeZone.today();
         return permissionRepository.findEmployeesWithPermission(tenantId, permissionTypeId, targetDate)
                 .stream().map(this::toDTO).toList();
     }
@@ -122,6 +146,9 @@ public class EmployeePermissionService {
                                                            Long permissionTypeId,
                                                            LocalDate startDate,
                                                            LocalDate endDate,
+                                                           LocalTime startTime,
+                                                           LocalTime endTime,
+                                                           Boolean deductFromWorkHours,
                                                            String reason,
                                                            EmployeePermission.Status status) {
         if (employeeIds == null || employeeIds.isEmpty()) {
@@ -131,7 +158,9 @@ public class EmployeePermissionService {
         List<EmployeePermissionDTO> results = new ArrayList<>();
         for (Long employeeId : employeeIds) {
             try {
-                results.add(grantPermission(employeeId, permissionTypeId, startDate, endDate, reason, status));
+                results.add(grantPermission(
+                        employeeId, permissionTypeId, startDate, endDate,
+                        startTime, endTime, deductFromWorkHours, reason, status));
             } catch (RuntimeException ignored) {
                 // continue processing remaining employees
             }
@@ -149,15 +178,30 @@ public class EmployeePermissionService {
         return permission;
     }
 
-    private void validateDates(LocalDate startDate, LocalDate endDate) {
+    private void validatePeriod(
+            LocalDate startDate,
+            LocalDate endDate,
+            LocalTime startTime,
+            LocalTime endTime,
+            String reason
+    ) {
         if (startDate == null || endDate == null) {
             throw new BadRequestException("Start and end date are required");
         }
         if (endDate.isBefore(startDate)) {
             throw new BadRequestException("End date must be on or after start date");
         }
-        if (endDate.isBefore(LocalDate.now())) {
+        if (endDate.isBefore(AppTimeZone.today())) {
             throw new BadRequestException("Cannot assign expired permission");
+        }
+        if ((startTime == null) != (endTime == null)) {
+            throw new BadRequestException("Start and end time must both be provided");
+        }
+        if (startTime != null && endTime.equals(startTime)) {
+            throw new BadRequestException("Start and end time must be different");
+        }
+        if (startTime != null && (reason == null || reason.isBlank())) {
+            throw new BadRequestException("Reason is required for hourly permission");
         }
     }
 
@@ -189,6 +233,9 @@ public class EmployeePermissionService {
         dto.setPermissionTypeId(permission.getPermissionTypeId());
         dto.setStartDate(permission.getStartDate());
         dto.setEndDate(permission.getEndDate());
+        dto.setStartTime(permission.getStartTime());
+        dto.setEndTime(permission.getEndTime());
+        dto.setDeductFromWorkHours(permission.getDeductFromWorkHours());
         dto.setReason(permission.getReason());
         dto.setStatus(permission.getStatus());
         dto.setApprovedBy(permission.getApprovedBy());
@@ -196,5 +243,20 @@ public class EmployeePermissionService {
         dto.setCreatedAt(permission.getCreatedAt());
         dto.setUpdatedAt(permission.getUpdatedAt());
         return dto;
+    }
+
+    private void recalculateAttendance(Long employeeId, LocalDate startDate, LocalDate endDate) {
+        LocalDate lastDate = endDate.isAfter(AppTimeZone.today()) ? AppTimeZone.today() : endDate;
+        if (startDate.isAfter(lastDate)) {
+            return;
+        }
+        for (LocalDate date = startDate; !date.isAfter(lastDate); date = date.plusDays(1)) {
+            attendanceCalculationService.calculateForDay(employeeId, date);
+            attendanceService.generateDailySummary(employeeId, date);
+        }
+    }
+
+    private String trimToNull(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
     }
 }

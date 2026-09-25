@@ -3,6 +3,7 @@ package com.hic.service;
 import com.hic.dto.TabelMonthlyDTO;
 import com.hic.model.DailyAttendanceSummary;
 import com.hic.model.Employee;
+import com.hic.model.EmployeePermission;
 import com.hic.model.HolidayPermission;
 import com.hic.model.LeaveRequest;
 import com.hic.model.Position;
@@ -94,11 +95,35 @@ class TabelServiceTest {
         holiday.setStartDate(LocalDate.of(2026, 4, 6));
         holiday.setEndDate(LocalDate.of(2026, 4, 6));
 
+        EmployeePermission creditedFullDay = new EmployeePermission();
+        creditedFullDay.setEmployeeId(11L);
+        creditedFullDay.setStartDate(LocalDate.of(2026, 4, 3));
+        creditedFullDay.setEndDate(LocalDate.of(2026, 4, 3));
+        creditedFullDay.setDeductFromWorkHours(false);
+        creditedFullDay.setStatus(EmployeePermission.Status.APPROVED);
+
+        EmployeePermission deductedHourly = new EmployeePermission();
+        deductedHourly.setEmployeeId(11L);
+        deductedHourly.setStartDate(LocalDate.of(2026, 4, 4));
+        deductedHourly.setEndDate(LocalDate.of(2026, 4, 4));
+        deductedHourly.setStartTime(LocalTime.of(15, 0));
+        deductedHourly.setEndTime(LocalTime.of(17, 0));
+        deductedHourly.setDeductFromWorkHours(true);
+        deductedHourly.setStatus(EmployeePermission.Status.APPROVED);
+
+        EmployeePermission deductedFullDay = new EmployeePermission();
+        deductedFullDay.setEmployeeId(11L);
+        deductedFullDay.setStartDate(LocalDate.of(2026, 4, 7));
+        deductedFullDay.setEndDate(LocalDate.of(2026, 4, 7));
+        deductedFullDay.setDeductFromWorkHours(true);
+        deductedFullDay.setStatus(EmployeePermission.Status.APPROVED);
+
         when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
         when(positionRepository.findByTenantId(7L)).thenReturn(List.of(position));
         when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(any(), any(), any(), any()))
                 .thenReturn(List.of(leaveRequest));
-        when(employeePermissionRepository.findByDateRange(any(), any(), any())).thenReturn(List.of());
+        when(employeePermissionRepository.findByDateRange(any(), any(), any()))
+                .thenReturn(List.of(creditedFullDay, deductedHourly, deductedFullDay));
         when(holidayPermissionRepository.findOverlapping(any(), any(), any())).thenReturn(List.of(holiday));
         when(dailyAttendanceSummaryRepository.findByEmployeeIdAndAttendanceDateBetween(11L,
                 LocalDate.of(2026, 4, 1), LocalDate.of(2026, 4, 30)))
@@ -127,6 +152,7 @@ class TabelServiceTest {
         assertEquals(8.5, row.getDaily().get(4));
         assertEquals("Q/I", row.getDaily().get(5));
         assertEquals("Q/I", row.getDaily().get(6));
+        assertEquals("Q/I", row.getDaily().get(7));
         assertNull(row.getDaily().get(11));
         assertEquals(2, row.getWorkingDays());
         assertEquals(17.5, row.getTotalHours());

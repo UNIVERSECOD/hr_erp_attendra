@@ -97,6 +97,15 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    path: '/permissions',
+    labelKey: 'layout.navPermissions',
+    icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75 11.25 15 15 9.75M6.75 3.75h10.5A2.25 2.25 0 0 1 19.5 6v12a2.25 2.25 0 0 1-2.25 2.25H6.75A2.25 2.25 0 0 1 4.5 18V6a2.25 2.25 0 0 1 2.25-2.25Z" />
+      </svg>
+    ),
+  },
+  {
     path: '/devices',
     labelKey: 'layout.navDevices',
     icon: (

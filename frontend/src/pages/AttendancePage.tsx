@@ -40,6 +40,8 @@ const statusStyles: Record<EmployeeAttendanceRow['status'], string> = {
   DAY_OFF: 'bg-gray-100 text-gray-600',
   OPEN_SESSION: 'bg-blue-100 text-blue-700',
   MISSING_EXIT: 'bg-red-100 text-red-700',
+  ON_PERMISSION: 'bg-cyan-100 text-cyan-800',
+  PERMITTED_EARLY_LEAVE: 'bg-indigo-100 text-indigo-700',
 }
 
 const defaultSummary: EmployeeAttendanceSummary = {
@@ -61,6 +63,8 @@ const statusLabels: Record<EmployeeAttendanceRow['status'], string> = {
   DAY_OFF: 'İstirahət günü',
   OPEN_SESSION: 'Açıq sessiya',
   MISSING_EXIT: 'Çıxış yoxdur',
+  ON_PERMISSION: 'İcazədə',
+  PERMITTED_EARLY_LEAVE: 'İcazəli erkən çıxış',
 }
 
 function formatEmployeeLabel(employee: EmployeeSearchResult) {

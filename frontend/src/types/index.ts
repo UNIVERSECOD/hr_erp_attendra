@@ -123,7 +123,10 @@ export interface EmployeeAttendanceRow {
   hoursWorked?: number
   lateMinutes?: number
   earlyLeaveMinutes?: number
-  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF' | 'OPEN_SESSION' | 'MISSING_EXIT'
+  permissionMinutes?: number
+  creditedPermissionMinutes?: number
+  hasPermission?: boolean
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF' | 'OPEN_SESSION' | 'MISSING_EXIT' | 'ON_PERMISSION' | 'PERMITTED_EARLY_LEAVE'
   notes?: string
   shiftType?: string
   sessions?: AttendanceSession[]
@@ -169,7 +172,9 @@ export interface DailyAttendanceSummary {
   hoursWorked?: number
   lateMinutes?: number
   earlyLeaveMinutes?: number
-  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF' | 'OPEN_SESSION' | 'MISSING_EXIT'
+  permissionMinutes?: number
+  creditedPermissionMinutes?: number
+  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'EARLY_LEAVE' | 'ON_LEAVE' | 'WORKDAY_COMPLETE' | 'DAY_OFF' | 'OPEN_SESSION' | 'MISSING_EXIT' | 'ON_PERMISSION' | 'PERMITTED_EARLY_LEAVE'
 }
 
 export interface LeaveRequest {
@@ -308,6 +313,9 @@ export interface EmployeePermission {
   permissionTypeId: number
   startDate: string
   endDate: string
+  startTime?: string
+  endTime?: string
+  deductFromWorkHours: boolean
   reason?: string
   status: 'ACTIVE' | 'INACTIVE' | 'APPROVED' | 'PENDING' | 'REJECTED'
   approvedBy?: number

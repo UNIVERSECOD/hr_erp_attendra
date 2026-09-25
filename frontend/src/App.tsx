@@ -16,6 +16,7 @@ const AttendancePage = lazy(() => import('./pages/AttendancePage.tsx'))
 const ReportsPage = lazy(() => import('./pages/ReportsPage.tsx'))
 const TabelPage = lazy(() => import('./pages/TabelPage.tsx'))
 const WorkSchedulePage = lazy(() => import('./pages/WorkSchedulePage.tsx'))
+const PermissionAssignmentPage = lazy(() => import('./pages/PermissionAssignmentPage.tsx'))
 const DevicesPage = lazy(() => import('./pages/DevicesPage.tsx'))
 const AccessLogsPage = lazy(() => import('./pages/AccessLogsPage.tsx'))
 const DeviceLogSearchPage = lazy(() => import('./pages/DeviceLogSearchPage.tsx'))
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="/reports" element={<HrRoute><AppLayout><ReportsPage /></AppLayout></HrRoute>} />
           <Route path="/tabel" element={<HrRoute><AppLayout><TabelPage /></AppLayout></HrRoute>} />
           <Route path="/work-schedule" element={<HrRoute><AppLayout><WorkSchedulePage /></AppLayout></HrRoute>} />
+          <Route path="/permissions" element={<HrRoute><AppLayout><PermissionAssignmentPage /></AppLayout></HrRoute>} />
           <Route path="/devices" element={<HrRoute><AppLayout><DevicesPage /></AppLayout></HrRoute>} />
           <Route path="/access-logs" element={<HrRoute><AppLayout><AccessLogsPage /></AppLayout></HrRoute>} />
           <Route path="/device-log-search" element={<HrRoute><AppLayout><DeviceLogSearchPage /></AppLayout></HrRoute>} />

@@ -6,6 +6,7 @@ import com.hic.model.Employee;
 import com.hic.repository.AttendanceLogRepository;
 import com.hic.repository.AttendanceRecordRepository;
 import com.hic.repository.EmployeeRepository;
+import com.hic.repository.EmployeePermissionRepository;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -21,11 +22,13 @@ public class AttendanceCalculationService {
     private final AttendanceLogRepository attendanceLogRepository;
     private final AttendanceRecordRepository attendanceRecordRepository;
     private final EmployeeRepository employeeRepository;
+    private final EmployeePermissionRepository employeePermissionRepository;
     private final HolidayService holidayService;
     private final LeaveService leaveService;
     private final AttendanceInferenceService attendanceInferenceService;
     private final AttendanceScheduleResolver attendanceScheduleResolver;
     private final AttendanceTimeCalculator attendanceTimeCalculator;
+    private final AttendancePermissionCalculator attendancePermissionCalculator;
 
     @Transactional
     public AttendanceRecord calculateForDay(Long employeeId, LocalDate workDate) {
@@ -60,17 +63,27 @@ public class AttendanceCalculationService {
 
         AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                 workDate, inference, schedule);
-        record.setWorkedMinutes(calculation.workedMinutes());
-        record.setOvertimeMinutes(calculation.overtimeMinutes());
-        record.setLateMinutes(calculation.lateMinutes());
-        record.setEarlyLeaveMinutes(calculation.earlyLeaveMinutes());
+        AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(
+                workDate,
+                inference,
+                schedule,
+                calculation,
+                employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(
+                        tenantId, employeeId, workDate, workDate)
+        );
+        record.setWorkedMinutes(permissionResult.workedMinutes());
+        record.setOvertimeMinutes(permissionResult.overtimeMinutes());
+        record.setLateMinutes(permissionResult.lateMinutes());
+        record.setEarlyLeaveMinutes(permissionResult.earlyLeaveMinutes());
+        record.setPermissionMinutes(permissionResult.permissionMinutes());
+        record.setCreditedPermissionMinutes(permissionResult.creditedPermissionMinutes());
 
         if (leaveService.hasActiveLeave(employeeId, workDate)) {
             record.setStatus("ON_LEAVE");
         } else if (holidayService.isHoliday(workDate)) {
             record.setStatus("HOLIDAY");
         } else {
-            record.setStatus(calculation.status().name());
+            record.setStatus(permissionResult.status().name());
         }
 
         return attendanceRecordRepository.save(record);

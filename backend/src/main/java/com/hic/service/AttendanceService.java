@@ -48,6 +48,7 @@ public class AttendanceService {
     private final AttendanceInferenceService attendanceInferenceService;
     private final AttendanceScheduleResolver attendanceScheduleResolver;
     private final AttendanceTimeCalculator attendanceTimeCalculator;
+    private final AttendancePermissionCalculator attendancePermissionCalculator;
 
     @Transactional
     public AttendanceLogDTO logAttendance(AttendanceDTO dto) {
@@ -95,6 +96,9 @@ public class AttendanceService {
         AttendanceScheduleResolver.DaySchedule daySchedule = attendanceScheduleResolver.resolve(employee, date);
         AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                 date, inference, daySchedule);
+        List<EmployeePermission> permissions = findPermissions(employeeId, date, date);
+        AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(
+                date, inference, daySchedule, calculation, permissions);
 
         Optional<DailyAttendanceSummary> existing = summaryRepository.findByEmployeeIdAndAttendanceDate(employeeId, date);
         DailyAttendanceSummary summary = existing.orElse(new DailyAttendanceSummary());
@@ -102,7 +106,7 @@ public class AttendanceService {
         summary.setEmployeeId(employeeId);
         summary.setAttendanceDate(date);
         summary.setIsHoliday(false);
-        summary.setIsLeave(false);
+        summary.setIsLeave(permissionResult.hasPermission());
         summary.setIsStandardDay(daySchedule.workingDay());
         boolean workedOnDayOff = !daySchedule.workingDay() && inference.firstEntry() != null;
         summary.setIsAdditionalDay(workedOnDayOff);
@@ -110,10 +114,12 @@ public class AttendanceService {
 
         summary.setCheckInTime(inference.firstEntry());
         summary.setCheckOutTime(inference.lastExit());
-        summary.setHoursWorked(calculation.workedMinutes() / 60.0);
-        summary.setLateMinutes(calculation.lateMinutes());
-        summary.setEarlyLeaveMinutes(calculation.earlyLeaveMinutes());
-        summary.setAttendanceStatus(calculation.status());
+        summary.setHoursWorked(permissionResult.workedMinutes() / 60.0);
+        summary.setLateMinutes(permissionResult.lateMinutes());
+        summary.setEarlyLeaveMinutes(permissionResult.earlyLeaveMinutes());
+        summary.setPermissionMinutes(permissionResult.permissionMinutes());
+        summary.setCreditedPermissionMinutes(permissionResult.creditedPermissionMinutes());
+        summary.setAttendanceStatus(permissionResult.status());
 
         return toSummaryDTO(summaryRepository.save(summary));
     }
@@ -152,7 +158,7 @@ public class AttendanceService {
             List<AttendanceLog> dayLogs = logs.stream()
                     .filter(log -> attendanceInferenceService.belongsToWorkDate(log, currentDate))
                     .toList();
-            boolean onLeave = overlapsLeave(approvedLeaves, currentDate) || overlapsPermission(approvedPermissions, currentDate);
+            boolean onLeave = overlapsLeave(approvedLeaves, currentDate);
             AttendanceInferenceService.AttendanceInference inference = attendanceInferenceService.inferDay(dayLogs, currentDate);
 
             // Prefer live work-date inference. Overnight sessions stay attached to check-in day.
@@ -161,10 +167,14 @@ public class AttendanceService {
             AttendanceScheduleResolver.DaySchedule daySchedule = attendanceScheduleResolver.resolve(employee, currentDate);
             AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                     currentDate, inference, daySchedule);
-            double hoursWorked = calculation.workedMinutes() / 60.0;
-            int lateMinutes = calculation.lateMinutes();
-            int earlyLeaveMinutes = calculation.earlyLeaveMinutes();
-            AttendanceStatus attendanceStatus = calculation.status();
+            AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(
+                    currentDate, inference, daySchedule, calculation, approvedPermissions);
+            double hoursWorked = permissionResult.workedMinutes() / 60.0;
+            int lateMinutes = permissionResult.lateMinutes();
+            int earlyLeaveMinutes = permissionResult.earlyLeaveMinutes();
+            int permissionMinutes = permissionResult.permissionMinutes();
+            int creditedPermissionMinutes = permissionResult.creditedPermissionMinutes();
+            AttendanceStatus attendanceStatus = permissionResult.status();
 
             if (summary != null && summary.getHoursWorked() != null && dayLogs.isEmpty()) {
                 hoursWorked = summary.getHoursWorked();
@@ -172,6 +182,10 @@ public class AttendanceService {
                 lastCheckOut = summary.getCheckOutTime();
                 lateMinutes = summary.getLateMinutes() != null ? summary.getLateMinutes() : 0;
                 earlyLeaveMinutes = summary.getEarlyLeaveMinutes() != null ? summary.getEarlyLeaveMinutes() : 0;
+                permissionMinutes = summary.getPermissionMinutes() != null ? summary.getPermissionMinutes() : 0;
+                creditedPermissionMinutes = summary.getCreditedPermissionMinutes() != null
+                        ? summary.getCreditedPermissionMinutes()
+                        : 0;
                 if (summary.getAttendanceStatus() != null) {
                     attendanceStatus = summary.getAttendanceStatus();
                 }
@@ -184,6 +198,9 @@ public class AttendanceService {
             row.setHoursWorked(hoursWorked);
             row.setLateMinutes(lateMinutes);
             row.setEarlyLeaveMinutes(earlyLeaveMinutes);
+            row.setPermissionMinutes(permissionMinutes);
+            row.setCreditedPermissionMinutes(creditedPermissionMinutes);
+            row.setHasPermission(permissionResult.hasPermission());
             row.setStatus(onLeave ? AttendanceStatus.ON_LEAVE : attendanceStatus);
             row.setNotes(buildNotes(approvedLeaves, approvedPermissions, currentDate));
             row.setShiftType(daySchedule.shiftType());
@@ -202,7 +219,11 @@ public class AttendanceService {
                 .filter(row -> row.getStatus() == AttendanceStatus.PRESENT
                         || row.getStatus() == AttendanceStatus.LATE
                         || row.getStatus() == AttendanceStatus.EARLY_LEAVE
-                        || row.getStatus() == AttendanceStatus.WORKDAY_COMPLETE)
+                        || row.getStatus() == AttendanceStatus.WORKDAY_COMPLETE
+                        || row.getStatus() == AttendanceStatus.PERMITTED_EARLY_LEAVE
+                        || (row.getStatus() == AttendanceStatus.ON_PERMISSION
+                        && row.getHoursWorked() != null
+                        && row.getHoursWorked() > 0))
                 .count());
         summary.setTotalHours(rows.stream()
                 .map(EmployeeAttendanceRowDTO::getHoursWorked)
@@ -211,7 +232,10 @@ public class AttendanceService {
                 .sum());
         summary.setAbsentDays(rows.stream().filter(row -> row.getStatus() == AttendanceStatus.ABSENT).count());
         summary.setLateDays(rows.stream().filter(row -> row.getLateMinutes() != null && row.getLateMinutes() > 0).count());
-        summary.setLeaveDays(rows.stream().filter(row -> row.getStatus() == AttendanceStatus.ON_LEAVE).count());
+        summary.setLeaveDays(rows.stream().filter(row ->
+                row.getStatus() == AttendanceStatus.ON_LEAVE
+                        || row.getStatus() == AttendanceStatus.ON_PERMISSION
+                        || row.getStatus() == AttendanceStatus.PERMITTED_EARLY_LEAVE).count());
         return summary;
     }
 
@@ -240,6 +264,8 @@ public class AttendanceService {
         dto.setHoursWorked(s.getHoursWorked());
         dto.setLateMinutes(s.getLateMinutes());
         dto.setEarlyLeaveMinutes(s.getEarlyLeaveMinutes());
+        dto.setPermissionMinutes(s.getPermissionMinutes());
+        dto.setCreditedPermissionMinutes(s.getCreditedPermissionMinutes());
         dto.setIsStandardDay(s.getIsStandardDay());
         dto.setIsAdditionalDay(s.getIsAdditionalDay());
         dto.setIsExtraDay(s.getIsExtraDay());
@@ -279,23 +305,39 @@ public class AttendanceService {
                 !leave.getStartDate().isAfter(date) && !leave.getEndDate().isBefore(date));
     }
 
-    private boolean overlapsPermission(List<EmployeePermission> permissions, LocalDate date) {
-        return permissions.stream().anyMatch(permission ->
-                !permission.getStartDate().isAfter(date) && !permission.getEndDate().isBefore(date));
-    }
-
     private String buildNotes(List<LeaveRequest> leaves, List<EmployeePermission> permissions, LocalDate date) {
-        Optional<EmployeePermission> permission = permissions.stream()
+        List<EmployeePermission> dayPermissions = permissions.stream()
                 .filter(item -> !item.getStartDate().isAfter(date) && !item.getEndDate().isBefore(date))
-                .findFirst();
-        if (permission.isPresent()) {
-            String reason = permission.get().getReason();
-            return reason != null && !reason.isBlank() ? reason : "Approved permission";
+                .toList();
+        if (!dayPermissions.isEmpty()) {
+            return dayPermissions.stream()
+                    .map(this::permissionNote)
+                    .collect(Collectors.joining("; "));
         }
 
         boolean onLeave = leaves.stream()
                 .anyMatch(item -> !item.getStartDate().isAfter(date) && !item.getEndDate().isBefore(date));
         return onLeave ? "Approved leave" : null;
+    }
+
+    private String permissionNote(EmployeePermission permission) {
+        String period = permission.isFullDay()
+                ? "Tam gün icazə"
+                : "İcazə " + permission.getStartTime() + "–" + permission.getEndTime();
+        String reason = permission.getReason() == null || permission.getReason().isBlank()
+                ? ""
+                : " · " + permission.getReason();
+        String workTimeEffect = Boolean.TRUE.equals(permission.getDeductFromWorkHours())
+                ? " · İş vaxtından çıxılır"
+                : " · İş vaxtına daxildir";
+        return period + reason + workTimeEffect;
+    }
+
+    private List<EmployeePermission> findPermissions(Long employeeId, LocalDate start, LocalDate end) {
+        Long tenantId = TenantContext.getTenantId();
+        return tenantId != null
+                ? employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(tenantId, employeeId, start, end)
+                : employeePermissionRepository.findByEmployeeIdAndDateRange(employeeId, start, end);
     }
 
     private OffsetDateTime toOffsetDateTime(LocalDateTime localDateTime) {

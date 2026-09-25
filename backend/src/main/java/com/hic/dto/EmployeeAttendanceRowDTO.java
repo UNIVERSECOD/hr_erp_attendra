@@ -16,6 +16,9 @@ public class EmployeeAttendanceRowDTO {
     private Double hoursWorked;
     private Integer lateMinutes;
     private Integer earlyLeaveMinutes;
+    private Integer permissionMinutes;
+    private Integer creditedPermissionMinutes;
+    private Boolean hasPermission;
     private AttendanceStatus status;
     private String notes;
     /** Employee shift type (e.g. FIRST_ENTRY = serbest növbə). */

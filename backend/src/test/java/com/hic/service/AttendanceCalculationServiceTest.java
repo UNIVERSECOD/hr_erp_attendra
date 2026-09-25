@@ -6,6 +6,7 @@ import com.hic.model.Employee;
 import com.hic.repository.AttendanceLogRepository;
 import com.hic.repository.AttendanceRecordRepository;
 import com.hic.repository.EmployeeRepository;
+import com.hic.repository.EmployeePermissionRepository;
 import com.hic.util.TenantContext;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -40,6 +41,9 @@ class AttendanceCalculationServiceTest {
     private EmployeeRepository employeeRepository;
 
     @Mock
+    private EmployeePermissionRepository employeePermissionRepository;
+
+    @Mock
     private HolidayService holidayService;
 
     @Mock
@@ -53,6 +57,9 @@ class AttendanceCalculationServiceTest {
 
     @Spy
     private AttendanceTimeCalculator attendanceTimeCalculator = new AttendanceTimeCalculator();
+
+    @Spy
+    private AttendancePermissionCalculator attendancePermissionCalculator = new AttendancePermissionCalculator();
 
     @InjectMocks
     private AttendanceCalculationService attendanceCalculationService;

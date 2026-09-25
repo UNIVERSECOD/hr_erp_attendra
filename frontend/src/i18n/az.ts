@@ -66,6 +66,7 @@ export const az = {
     navReports: 'Davamiyyət hesabatları',
     navTabel: 'Tabel',
     navWorkSchedule: 'İş qrafiki',
+    navPermissions: 'İcazələr',
     navDevices: 'Cihazlar',
     navImport: 'Cihazdan idxal',
     navDeviceSearch: 'Cihaz axtarışı',

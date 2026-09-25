@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @Data
 public class EmployeePermissionDTO {
@@ -14,6 +15,9 @@ public class EmployeePermissionDTO {
     private Long permissionTypeId;
     private LocalDate startDate;
     private LocalDate endDate;
+    private LocalTime startTime;
+    private LocalTime endTime;
+    private Boolean deductFromWorkHours;
     private String reason;
     private EmployeePermission.Status status;
     private Long approvedBy;

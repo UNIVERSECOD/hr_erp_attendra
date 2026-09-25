@@ -31,9 +31,7 @@ public class ReportService {
         for (Employee emp : employees) {
             List<DailyAttendanceSummary> summaries = summaryRepository.findByEmployeeIdAndAttendanceDateBetween(emp.getId(), start, end);
             long presentDays = summaries.stream()
-                    .filter(s -> s.getAttendanceStatus() == DailyAttendanceSummary.AttendanceStatus.PRESENT
-                            || s.getAttendanceStatus() == DailyAttendanceSummary.AttendanceStatus.LATE
-                            || s.getAttendanceStatus() == DailyAttendanceSummary.AttendanceStatus.WORKDAY_COMPLETE)
+                    .filter(this::countsAsPresentDay)
                     .count();
             long absentDays = summaries.stream().filter(s -> s.getAttendanceStatus() == DailyAttendanceSummary.AttendanceStatus.ABSENT).count();
             long lateDays = summaries.stream().filter(s -> s.getAttendanceStatus() == DailyAttendanceSummary.AttendanceStatus.LATE).count();
@@ -115,5 +113,17 @@ public class ReportService {
                     org.springframework.data.domain.Pageable.unpaged()).getContent();
         }
         return employeeRepository.findAll();
+    }
+
+    private boolean countsAsPresentDay(DailyAttendanceSummary summary) {
+        DailyAttendanceSummary.AttendanceStatus status = summary.getAttendanceStatus();
+        return status == DailyAttendanceSummary.AttendanceStatus.PRESENT
+                || status == DailyAttendanceSummary.AttendanceStatus.LATE
+                || status == DailyAttendanceSummary.AttendanceStatus.EARLY_LEAVE
+                || status == DailyAttendanceSummary.AttendanceStatus.WORKDAY_COMPLETE
+                || status == DailyAttendanceSummary.AttendanceStatus.PERMITTED_EARLY_LEAVE
+                || (status == DailyAttendanceSummary.AttendanceStatus.ON_PERMISSION
+                && summary.getHoursWorked() != null
+                && summary.getHoursWorked() > 0);
     }
 }

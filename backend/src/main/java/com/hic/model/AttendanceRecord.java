@@ -42,6 +42,12 @@ public class AttendanceRecord {
     @Column(name = "early_leave_minutes", nullable = false)
     private Integer earlyLeaveMinutes = 0;
 
+    @Column(name = "permission_minutes", nullable = false)
+    private Integer permissionMinutes = 0;
+
+    @Column(name = "credited_permission_minutes", nullable = false)
+    private Integer creditedPermissionMinutes = 0;
+
     @Column(name = "timetable_id")
     private Long timetableId;
 

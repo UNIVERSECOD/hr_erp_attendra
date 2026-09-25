@@ -5,6 +5,7 @@ import lombok.Data;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 
 @Data
 @Entity
@@ -38,6 +39,15 @@ public class EmployeePermission {
     @Column(name = "end_date", nullable = false)
     private LocalDate endDate;
 
+    @Column(name = "start_time")
+    private LocalTime startTime;
+
+    @Column(name = "end_time")
+    private LocalTime endTime;
+
+    @Column(name = "deduct_from_work_hours", nullable = false)
+    private Boolean deductFromWorkHours = true;
+
     @Column(name = "reason", columnDefinition = "TEXT")
     private String reason;
 
@@ -60,6 +70,9 @@ public class EmployeePermission {
     @PrePersist
     protected void onCreate() {
         LocalDateTime now = LocalDateTime.now();
+        if (deductFromWorkHours == null) {
+            deductFromWorkHours = true;
+        }
         createdAt = now;
         updatedAt = now;
     }
@@ -67,5 +80,10 @@ public class EmployeePermission {
     @PreUpdate
     protected void onUpdate() {
         updatedAt = LocalDateTime.now();
+    }
+
+    @Transient
+    public boolean isFullDay() {
+        return startTime == null && endTime == null;
     }
 }

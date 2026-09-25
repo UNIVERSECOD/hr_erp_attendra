@@ -13,7 +13,7 @@ public class DailyAttendanceSummary {
 
     public enum AttendanceStatus {
         PRESENT, ABSENT, LATE, EARLY_LEAVE, ON_LEAVE, WORKDAY_COMPLETE, DAY_OFF,
-        OPEN_SESSION, MISSING_EXIT
+        OPEN_SESSION, MISSING_EXIT, ON_PERMISSION, PERMITTED_EARLY_LEAVE
     }
 
     @Id
@@ -43,6 +43,12 @@ public class DailyAttendanceSummary {
 
     @Column(name = "early_leave_minutes", nullable = false)
     private Integer earlyLeaveMinutes = 0;
+
+    @Column(name = "permission_minutes", nullable = false)
+    private Integer permissionMinutes = 0;
+
+    @Column(name = "credited_permission_minutes", nullable = false)
+    private Integer creditedPermissionMinutes = 0;
 
     @Column(name = "is_standard_day")
     private Boolean isStandardDay;

@@ -28,6 +28,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.List;
 import java.util.Optional;
 
@@ -65,6 +66,9 @@ class AttendanceServiceTest {
 
     @Spy
     private AttendanceTimeCalculator attendanceTimeCalculator = new AttendanceTimeCalculator();
+
+    @Spy
+    private AttendancePermissionCalculator attendancePermissionCalculator = new AttendancePermissionCalculator();
 
     @InjectMocks
     private AttendanceService attendanceService;
@@ -166,6 +170,44 @@ class AttendanceServiceTest {
         assertThat(result).isNotNull();
         assertThat(result.getAttendanceStatus()).isEqualTo(AttendanceStatus.ABSENT);
         assertThat(result.getHoursWorked()).isEqualTo(0.0);
+    }
+
+    @Test
+    void generateDailySummary_approvedHourlyPermissionCreditsEarlyExit() {
+        LocalDate date = LocalDate.of(2024, 1, 15);
+        Employee employee = new Employee();
+        employee.setId(1L);
+        employee.setShiftType("STANDARD");
+
+        AttendanceLog earlyExit = new AttendanceLog();
+        earlyExit.setEmployeeId(1L);
+        earlyExit.setCheckInTime(date.atTime(9, 0));
+        earlyExit.setCheckOutTime(date.atTime(15, 0));
+
+        EmployeePermission permission = new EmployeePermission();
+        permission.setEmployeeId(1L);
+        permission.setStartDate(date);
+        permission.setEndDate(date);
+        permission.setStartTime(LocalTime.of(15, 0));
+        permission.setEndTime(LocalTime.of(17, 0));
+        permission.setDeductFromWorkHours(false);
+        permission.setStatus(EmployeePermission.Status.APPROVED);
+
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(earlyExit));
+        when(employeePermissionRepository.findByEmployeeIdAndDateRange(1L, date, date))
+                .thenReturn(List.of(permission));
+        when(summaryRepository.findByEmployeeIdAndAttendanceDate(1L, date)).thenReturn(Optional.empty());
+        when(summaryRepository.save(any(DailyAttendanceSummary.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        DailyAttendanceSummaryDTO result = attendanceService.generateDailySummary(1L, date);
+
+        assertThat(result.getAttendanceStatus()).isEqualTo(AttendanceStatus.PERMITTED_EARLY_LEAVE);
+        assertThat(result.getHoursWorked()).isEqualTo(8.0);
+        assertThat(result.getPermissionMinutes()).isEqualTo(120);
+        assertThat(result.getCreditedPermissionMinutes()).isEqualTo(120);
+        assertThat(result.getEarlyLeaveMinutes()).isZero();
     }
 
     @Test

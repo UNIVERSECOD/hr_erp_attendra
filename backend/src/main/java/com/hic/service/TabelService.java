@@ -232,6 +232,9 @@ public class TabelService {
             if (!"ACTIVE".equals(status) && !"APPROVED".equals(status)) {
                 continue;
             }
+            if (!permission.isFullDay() || !Boolean.TRUE.equals(permission.getDeductFromWorkHours())) {
+                continue;
+            }
             addDateRange(result, permission.getEmployeeId(), permission.getStartDate(), permission.getEndDate(), start, end);
         }
 

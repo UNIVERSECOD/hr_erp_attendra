@@ -16,6 +16,9 @@ export const employeePermissionApi = {
     permissionTypeId: number
     startDate: string
     endDate: string
+    startTime?: string
+    endTime?: string
+    deductFromWorkHours: boolean
     reason?: string
     status?: string
   }) => client.post<{ data: EmployeePermission[] }>('/employee-permissions/bulk', data),
