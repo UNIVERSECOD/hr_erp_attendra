@@ -32,6 +32,7 @@ import org.springframework.data.domain.Pageable;
 import java.time.LocalDate;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -74,6 +75,9 @@ class EmployeeServiceTest {
     @Mock
     private ShiftAssignmentService shiftAssignmentService;
 
+    @Mock
+    private EmployeeAreaAssignmentService employeeAreaAssignmentService;
+
     @InjectMocks
     private EmployeeService employeeService;
 
@@ -105,6 +109,25 @@ class EmployeeServiceTest {
         lenient().when(employeeFaceImageService.getLatestEmployeeFacePublicUrl(anyLong()))
                 .thenReturn(Optional.empty());
         lenient().when(userScopeService.resolveBranchScope(any())).thenReturn(null);
+        lenient().when(employeeAreaAssignmentService.normalizeAndValidateAreaIds(any(), any(), any()))
+                .thenAnswer(invocation -> {
+                    List<Long> requested = invocation.getArgument(0);
+                    Long primary = invocation.getArgument(1);
+                    if (primary != null) {
+                        return requested == null || requested.isEmpty()
+                                ? List.of(primary)
+                                : java.util.stream.Stream.concat(java.util.stream.Stream.of(primary), requested.stream())
+                                .distinct()
+                                .toList();
+                    }
+                    return requested == null ? List.of() : requested;
+                });
+        lenient().when(employeeAreaAssignmentService.replaceEmployeeAreas(any(), anyList(), any()))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(), List.of()));
+        lenient().when(employeeAreaAssignmentService.loadAreaBatch(any()))
+                .thenReturn(new EmployeeAreaAssignmentService.AreaBatch(Map.of(), Map.of()));
+        lenient().when(employeeAreaAssignmentService.getAreaIds(anyLong())).thenReturn(List.of());
+        lenient().when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(any(), any())).thenReturn(List.of());
     }
 
     @Test
@@ -145,11 +168,12 @@ class EmployeeServiceTest {
         assertThat(result.getFirstName()).isEqualTo("John");
         assertThat(result.getEmploymentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
         verify(employeeRepository).save(any(Employee.class));
-        verify(isapiEmployeeUserSyncService).syncEmployee(any(Employee.class), anyList());
+        verify(isapiEmployeeUserSyncService, never()).syncEmployee(any(Employee.class), anyList());
     }
 
     @Test
     void create_isapiSyncFails_stillPersistsEmployee() {
+        DeviceConfig targetDevice = device(10L, "101", 1L);
         when(departmentRepository.existsById(1L)).thenReturn(true);
         when(employeeRepository.count()).thenReturn(0L);
         when(employeeRepository.save(any(Employee.class))).thenAnswer(inv -> {
@@ -158,6 +182,9 @@ class EmployeeServiceTest {
             return e;
         });
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(any(Employee.class), anyList(), any()))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(10L), List.of()));
+        when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(targetDevice));
         doThrow(new DeviceSyncException("ISAPI user sync is unavailable"))
                 .when(isapiEmployeeUserSyncService).syncEmployee(any(Employee.class), anyList());
 
@@ -226,10 +253,14 @@ class EmployeeServiceTest {
 
     @Test
     void update_isapiSyncFails_stillUpdatesEmployee() {
+        DeviceConfig targetDevice = device(10L, "101", 1L);
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(departmentRepository.existsById(1L)).thenReturn(true);
         when(employeeRepository.save(any(Employee.class))).thenReturn(testEmployee);
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(any(Employee.class), anyList(), any()))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(10L), List.of()));
+        when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(targetDevice));
         doThrow(new DeviceSyncException("sync unavailable"))
                 .when(isapiEmployeeUserSyncService).syncEmployee(any(Employee.class), anyList());
 
@@ -271,7 +302,9 @@ class EmployeeServiceTest {
 
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of(access));
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(firstDevice, secondDevice));
+        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(1L));
+        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(1L), null))
+                .thenReturn(List.of(10L, 11L));
         when(deviceConfigRepository.findAllById(List.of(10L, 11L)))
                 .thenReturn(List.of(firstDevice, secondDevice));
 
@@ -288,7 +321,9 @@ class EmployeeServiceTest {
 
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(device));
+        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(1L));
+        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(1L), null))
+                .thenReturn(List.of(10L));
         when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(device));
         doThrow(new DeviceSyncException("device offline"))
                 .when(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(101L));
@@ -345,61 +380,58 @@ class EmployeeServiceTest {
     }
 
     @Test
-    void update_branchChangedWithoutDeviceIds_resolvesDevicesByNewBranch() {
+    void update_multipleAreas_usesAssignmentServiceResult() {
         testEmployee.setBranchId(1L);
         testEmployeeDTO.setBranchId(2L);
-
-        Door branchDoor = new Door();
-        branchDoor.setId(5L);
-        branchDoor.setBranchId(2L);
+        testEmployeeDTO.setAreaIds(List.of(2L, 3L));
 
         com.hic.model.DeviceConfig branchDevice = new com.hic.model.DeviceConfig();
         branchDevice.setId(20L);
+        branchDevice.setDeviceId("202");
         branchDevice.setBranchId(2L);
         branchDevice.setTenantId(testEmployee.getTenantId());
 
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(departmentRepository.existsById(1L)).thenReturn(true);
         when(employeeRepository.save(any(Employee.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(branchDevice));
+        when(employeeAreaAssignmentService.normalizeAndValidateAreaIds(List.of(2L, 3L), 2L, null))
+                .thenReturn(List.of(2L, 3L));
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(testEmployee, List.of(2L, 3L), 2L))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(20L), List.of()));
         when(deviceConfigRepository.findAllById(List.of(20L))).thenReturn(List.of(branchDevice));
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));
 
         EmployeeResponseDTO result = employeeService.update(1L, testEmployeeDTO);
 
         assertThat(result).isNotNull();
-        verify(deviceConfigRepository, times(2)).findAll();
-        verify(employeeDeviceAccessRepository).deleteByEmployeeId(1L);
+        assertThat(testEmployee.getBranchId()).isEqualTo(2L);
+        verify(employeeAreaAssignmentService).replaceEmployeeAreas(testEmployee, List.of(2L, 3L), 2L);
+        verify(isapiEmployeeUserSyncService).syncEmployee(testEmployee, List.of(202L));
     }
 
     @Test
-    void update_doorLinkedDeviceFromWrongBranch_isNotAutoAssigned() {
+    void update_preservesManualAccessReturnedByAssignmentService() {
         testEmployee.setBranchId(1L);
         testEmployeeDTO.setBranchId(1L);
 
-        Door branchDoor = new Door();
-        branchDoor.setId(5L);
-        branchDoor.setBranchId(1L);
-
         com.hic.model.DeviceConfig wrongBranchDevice = new com.hic.model.DeviceConfig();
         wrongBranchDevice.setId(10L);
+        wrongBranchDevice.setDeviceId("101");
         wrongBranchDevice.setBranchId(2L);
-        wrongBranchDevice.setDoorId(5L);
         wrongBranchDevice.setTenantId(testEmployee.getTenantId());
 
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(departmentRepository.existsById(1L)).thenReturn(true);
         when(employeeRepository.save(any(Employee.class))).thenReturn(testEmployee);
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(wrongBranchDevice));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(testEmployee, List.of(1L), 1L))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(10L), List.of()));
+        when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(wrongBranchDevice));
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));
 
         EmployeeResponseDTO result = employeeService.update(1L, testEmployeeDTO);
 
         assertThat(result).isNotNull();
-        verify(employeeDeviceAccessRepository).deleteByEmployeeId(1L);
-        verify(deviceConfigRepository, never()).findAllById(List.of(10L));
+        verify(isapiEmployeeUserSyncService).syncEmployee(testEmployee, List.of(101L));
     }
 
     @Test
@@ -412,8 +444,8 @@ class EmployeeServiceTest {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(departmentRepository.existsById(1L)).thenReturn(true);
         when(employeeRepository.save(any(Employee.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(firstDevice, secondDevice));
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(testEmployee, List.of(1L), 1L))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(10L, 11L), List.of()));
         when(deviceConfigRepository.findAllById(List.of(10L, 11L)))
                 .thenReturn(List.of(firstDevice, secondDevice));
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));
@@ -433,8 +465,8 @@ class EmployeeServiceTest {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(departmentRepository.existsById(1L)).thenReturn(true);
         when(employeeRepository.save(any(Employee.class))).thenAnswer(inv -> inv.getArgument(0));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
-        when(deviceConfigRepository.findAll()).thenReturn(List.of(oldDevice, newDevice));
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(testEmployee, List.of(2L), 2L))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(20L), List.of(10L)));
         when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(oldDevice));
         when(deviceConfigRepository.findAllById(List.of(20L))).thenReturn(List.of(newDevice));
         when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));

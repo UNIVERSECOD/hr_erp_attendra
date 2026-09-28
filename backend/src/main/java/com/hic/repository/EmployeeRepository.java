@@ -20,6 +20,21 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     Page<Employee> findByTenantId(Long tenantId, Pageable pageable);
     Page<Employee> findByTenantIdAndBranchId(Long tenantId, Long branchId, Pageable pageable);
 
+    @Query("""
+            SELECT e FROM Employee e
+            WHERE e.tenantId = :tenantId
+              AND EXISTS (
+                  SELECT ea.id FROM EmployeeArea ea
+                  WHERE ea.employeeId = e.id AND ea.branchId = :branchId
+              )
+            """)
+    Page<Employee> findByTenantIdAndAreaId(
+            @Param("tenantId") Long tenantId,
+            @Param("branchId") Long branchId,
+            Pageable pageable);
+
+    List<Employee> findAllByTenantIdOrderByFirstNameAscLastNameAsc(Long tenantId);
+
     List<Employee> findByTenantIdAndDepartmentId(Long tenantId, Long departmentId);
     List<Employee> findByTenantIdAndShiftType(Long tenantId, String shiftType);
 
@@ -79,7 +94,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
                                    Pageable pageable);
 
     @Query("SELECT e FROM Employee e WHERE e.tenantId = :tenantId " +
-           "AND (:branchId IS NULL OR e.branchId = :branchId) AND (" +
+           "AND (:branchId IS NULL OR e.branchId = :branchId OR EXISTS (" +
+           "SELECT ea.id FROM EmployeeArea ea WHERE ea.employeeId = e.id AND ea.branchId = :branchId)) AND (" +
            "LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
@@ -116,7 +132,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
            "LOWER(e.email) LIKE LOWER(CONCAT('%', :query, '%'))")
     Page<Employee> search(@Param("query") String query, Pageable pageable);
 
-    @Query("SELECT e FROM Employee e WHERE (:branchId IS NULL OR e.branchId = :branchId) AND (" +
+    @Query("SELECT e FROM Employee e WHERE (:branchId IS NULL OR e.branchId = :branchId OR EXISTS (" +
+           "SELECT ea.id FROM EmployeeArea ea WHERE ea.employeeId = e.id AND ea.branchId = :branchId)) AND (" +
            "LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
            "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +

@@ -1,5 +1,5 @@
 import client from './client.ts'
-import { DeviceConfig } from '../types'
+import { DeviceConfig, DeviceEmployeeAssignmentView, DeviceEmployeeSyncResult } from '../types'
 
 type DeviceWritePayload = Partial<DeviceConfig> & {
   password?: string
@@ -26,4 +26,10 @@ export const deviceApi = {
   getHistory: (id: number) => client.get(`/devices/${id}/history`),
   assignDoor: (id: number, data: { doorId?: number; role?: string }) =>
     client.post<{ data: DeviceConfig }>(`/devices/${id}/assign-door`, data),
+  getEmployeeAssignments: (id: number) =>
+    client.get<{ data: DeviceEmployeeAssignmentView }>(`/devices/${id}/employees`),
+  updateEmployeeAssignments: (id: number, manualEmployeeIds: number[]) =>
+    client.put<{ data: DeviceEmployeeAssignmentView }>(`/devices/${id}/employees`, { manualEmployeeIds }),
+  syncEmployees: (id: number) =>
+    client.post<{ data: DeviceEmployeeSyncResult }>(`/devices/${id}/employees/sync`),
 }

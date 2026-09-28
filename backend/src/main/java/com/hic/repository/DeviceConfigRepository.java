@@ -11,6 +11,7 @@ import java.util.Optional;
 public interface DeviceConfigRepository extends JpaRepository<DeviceConfig, Long> {
     // Tenant-aware methods
     List<DeviceConfig> findByTenantId(Long tenantId);
+    List<DeviceConfig> findByTenantIdAndBranchId(Long tenantId, Long branchId);
     List<DeviceConfig> findByTenantIdAndStatus(Long tenantId, String status);
     Optional<DeviceConfig> findByTenantIdAndDeviceId(Long tenantId, String deviceId);
     long countByTenantIdAndStatus(Long tenantId, String status);

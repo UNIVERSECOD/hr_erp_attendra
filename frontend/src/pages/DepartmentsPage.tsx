@@ -93,7 +93,7 @@ export default function DepartmentsPage() {
       return
     }
     if (!form.branchId) {
-      setFormError('Filial seçilməsi mütləqdir.')
+      setFormError('Ərazi seçilməsi mütləqdir.')
       return
     }
     setSaving(true)
@@ -238,7 +238,7 @@ export default function DepartmentsPage() {
               onChange={(e) => setSelectedBranchId(e.target.value ? Number(e.target.value) : '')}
               className="w-full md:w-64 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-300"
             >
-              <option value="">Bütün filiallar</option>
+              <option value="">Bütün ərazilər</option>
               {branches.map((branch) => (
                 <option key={branch.id} value={branch.id}>{branch.name}</option>
               ))}
@@ -368,7 +368,7 @@ export default function DepartmentsPage() {
 
               {/* Branch */}
               <div>
-                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Filial *</label>
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Ərazi *</label>
                 <select
                   value={form.branchId}
                   onChange={(e) => setForm({ ...form, branchId: e.target.value ? Number(e.target.value) : '' })}

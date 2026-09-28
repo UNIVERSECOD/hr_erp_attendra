@@ -5,6 +5,7 @@ import com.hic.exception.BadRequestException;
 import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.Branch;
 import com.hic.repository.BranchRepository;
+import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeeRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -19,6 +20,7 @@ public class BranchService {
 
     private final BranchRepository branchRepository;
     private final EmployeeRepository employeeRepository;
+    private final EmployeeAreaRepository employeeAreaRepository;
 
     public List<BranchDTO> getAll(Long tenantId) {
         List<Branch> branches = branchRepository.findByTenantId(tenantId);
@@ -71,7 +73,8 @@ public class BranchService {
         Branch branch = branchRepository.findByIdAndTenantId(id, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Branch", id));
 
-        if (employeeRepository.countByTenantIdAndBranchId(tenantId, branch.getId()) > 0) {
+        if (employeeAreaRepository.countByTenantIdAndBranchId(tenantId, branch.getId()) > 0
+                || employeeRepository.countByTenantIdAndBranchId(tenantId, branch.getId()) > 0) {
             throw new BadRequestException("Cannot delete branch with assigned employees");
         }
 

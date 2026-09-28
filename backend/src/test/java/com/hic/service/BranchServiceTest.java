@@ -5,6 +5,7 @@ import com.hic.exception.BadRequestException;
 import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.Branch;
 import com.hic.repository.BranchRepository;
+import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeeRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -28,6 +29,9 @@ class BranchServiceTest {
 
     @Mock
     private EmployeeRepository employeeRepository;
+
+    @Mock
+    private EmployeeAreaRepository employeeAreaRepository;
 
     @InjectMocks
     private BranchService branchService;
@@ -54,6 +58,22 @@ class BranchServiceTest {
 
         when(branchRepository.findByIdAndTenantId(7L, 10L)).thenReturn(Optional.of(branch));
         when(employeeRepository.countByTenantIdAndBranchId(10L, 7L)).thenReturn(3L);
+
+        assertThatThrownBy(() -> branchService.delete(10L, 7L))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("Cannot delete branch");
+        verify(branchRepository, never()).delete(any(Branch.class));
+    }
+
+    @Test
+    void delete_areaWithAdditionalMembership_throwsBadRequest() {
+        Branch branch = new Branch();
+        branch.setId(7L);
+        branch.setTenantId(10L);
+        branch.setName("Narimanov");
+
+        when(branchRepository.findByIdAndTenantId(7L, 10L)).thenReturn(Optional.of(branch));
+        when(employeeAreaRepository.countByTenantIdAndBranchId(10L, 7L)).thenReturn(1L);
 
         assertThatThrownBy(() -> branchService.delete(10L, 7L))
                 .isInstanceOf(BadRequestException.class)

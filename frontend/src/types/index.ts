@@ -62,6 +62,8 @@ export interface Employee {
   contractNumber?: string
   branchId?: number
   branchName?: string
+  areaIds?: number[]
+  areaNames?: string[]
   contractEndDate?: string
   annualLeaveDuration?: number
   annualLeaveBalance?: number
@@ -98,6 +100,37 @@ export interface EmployeeSearchResult {
   departmentName?: string
   branchId?: number
   shiftType?: string
+}
+
+export interface DeviceEmployeeOption {
+  employeeId: number
+  employeeCode: string
+  fullName: string
+  finNumber?: string
+  areaIds: number[]
+  areaNames: string[]
+  areaAssigned: boolean
+  manuallyAssigned: boolean
+  assigned: boolean
+}
+
+export interface DeviceEmployeeAssignmentView {
+  deviceConfigId: number
+  deviceName?: string
+  areaId?: number
+  areaName?: string
+  employees: DeviceEmployeeOption[]
+}
+
+export interface DeviceEmployeeSyncResult {
+  deviceConfigId: number
+  total: number
+  succeeded: number
+  failed: number
+  facesSynced: number
+  facesSkipped: number
+  facesFailed: number
+  errors: string[]
 }
 
 export interface AttendanceLog {

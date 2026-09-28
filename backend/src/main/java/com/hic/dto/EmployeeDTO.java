@@ -33,6 +33,7 @@ public class EmployeeDTO {
     private String serialNumber;
     private String contractNumber;
     private Long branchId;
+    private List<Long> areaIds;
 
     @NotNull(message = "Department is required")
     private Long departmentId;

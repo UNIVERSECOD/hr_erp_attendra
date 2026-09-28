@@ -14,15 +14,10 @@ import java.time.LocalDateTime;
 
 @Data
 @Entity
-@Table(name = "employee_device_access", uniqueConstraints = {
-        @UniqueConstraint(name = "uq_employee_device_access_employee_device", columnNames = {"employee_id", "device_config_id"})
+@Table(name = "employee_areas", uniqueConstraints = {
+        @UniqueConstraint(name = "uq_employee_areas_employee_branch", columnNames = {"employee_id", "branch_id"})
 })
-public class EmployeeDeviceAccess {
-
-    public enum AssignmentSource {
-        AREA,
-        MANUAL
-    }
+public class EmployeeArea {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -34,17 +29,13 @@ public class EmployeeDeviceAccess {
     @Column(name = "employee_id", nullable = false)
     private Long employeeId;
 
-    @Column(name = "device_config_id", nullable = false)
-    private Long deviceConfigId;
+    @Column(name = "branch_id", nullable = false)
+    private Long branchId;
 
-    @jakarta.persistence.Enumerated(jakarta.persistence.EnumType.STRING)
-    @Column(name = "assignment_source", nullable = false)
-    private AssignmentSource assignmentSource = AssignmentSource.MANUAL;
+    @Column(name = "is_primary", nullable = false)
+    private boolean primary;
 
-    @Column(name = "source_branch_id")
-    private Long sourceBranchId;
-
-    @Column(name = "created_at", updatable = false)
+    @Column(name = "created_at", updatable = false, nullable = false)
     private LocalDateTime createdAt;
 
     @PrePersist

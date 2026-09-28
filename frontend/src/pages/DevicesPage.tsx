@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import { useDeviceStore } from '../store/deviceStore.ts'
-import { DeviceConfig, Branch, Door } from '../types'
+import { DeviceConfig, Branch, Door, DeviceEmployeeAssignmentView } from '../types'
 import { branchApi } from '../api/branchApi.ts'
 import { doorApi } from '../api/doorApi.ts'
 import { deviceApi } from '../api/deviceApi.ts'
@@ -50,6 +50,15 @@ export default function DevicesPage() {
   const [managerDoors, setManagerDoors] = useState<Door[]>([])
   const [managerLoading, setManagerLoading] = useState(false)
   const [doorDeleteConfirm, setDoorDeleteConfirm] = useState<Door | null>(null)
+  const [assignmentDevice, setAssignmentDevice] = useState<DeviceConfig | null>(null)
+  const [assignmentView, setAssignmentView] = useState<DeviceEmployeeAssignmentView | null>(null)
+  const [manualEmployeeIds, setManualEmployeeIds] = useState<number[]>([])
+  const [assignmentLoading, setAssignmentLoading] = useState(false)
+  const [assignmentSaving, setAssignmentSaving] = useState(false)
+  const [assignmentError, setAssignmentError] = useState<string | null>(null)
+  const [assignmentSearch, setAssignmentSearch] = useState('')
+  const [groupAreaId, setGroupAreaId] = useState<number | ''>('')
+  const [employeeSyncingId, setEmployeeSyncingId] = useState<number | null>(null)
   // Live clock tick — re-renders every 30 s so online/offline badge updates automatically
   const [, setTick] = useState(0)
   const tickRef = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -210,6 +219,84 @@ export default function DevicesPage() {
     }
   }
 
+  const openEmployeeAssignments = async (device: DeviceConfig) => {
+    setAssignmentDevice(device)
+    setAssignmentView(null)
+    setManualEmployeeIds([])
+    setAssignmentSearch('')
+    setGroupAreaId('')
+    setAssignmentError(null)
+    setAssignmentLoading(true)
+    try {
+      const response = await deviceApi.getEmployeeAssignments(device.id)
+      const view = response.data?.data
+      setAssignmentView(view)
+      setManualEmployeeIds(view?.employees.filter((employee) => employee.manuallyAssigned)
+        .map((employee) => employee.employeeId) ?? [])
+    } catch (error: unknown) {
+      setAssignmentError(getApiErrorMessage(error, 'Əməkdaş təyinatları yüklənmədi.'))
+    } finally {
+      setAssignmentLoading(false)
+    }
+  }
+
+  const toggleManualEmployee = (employeeId: number) => {
+    setManualEmployeeIds((current) => current.includes(employeeId)
+      ? current.filter((id) => id !== employeeId)
+      : [...current, employeeId])
+  }
+
+  const addAreaGroup = () => {
+    if (!assignmentView || groupAreaId === '') return
+    const groupEmployeeIds = assignmentView.employees
+      .filter((employee) => !employee.areaAssigned && employee.areaIds.includes(Number(groupAreaId)))
+      .map((employee) => employee.employeeId)
+    setManualEmployeeIds((current) => [...new Set([...current, ...groupEmployeeIds])])
+  }
+
+  const saveEmployeeAssignments = async () => {
+    if (!assignmentDevice) return
+    setAssignmentSaving(true)
+    setAssignmentError(null)
+    try {
+      const response = await deviceApi.updateEmployeeAssignments(assignmentDevice.id, manualEmployeeIds)
+      const view = response.data?.data
+      setAssignmentView(view)
+      setManualEmployeeIds(view?.employees.filter((employee) => employee.manuallyAssigned)
+        .map((employee) => employee.employeeId) ?? [])
+      setSyncFeedback({ type: 'success', message: 'Cihazın əməkdaş təyinatları yadda saxlanıldı.' })
+      setAssignmentDevice(null)
+    } catch (error: unknown) {
+      setAssignmentError(getApiErrorMessage(error, 'Əməkdaş təyinatlarını saxlamaq alınmadı.'))
+    } finally {
+      setAssignmentSaving(false)
+    }
+  }
+
+  const handleEmployeeSync = async (device: DeviceConfig) => {
+    setEmployeeSyncingId(device.id)
+    setSyncFeedback(null)
+    try {
+      const response = await deviceApi.syncEmployees(device.id)
+      const result = response.data?.data
+      if (!result) throw new Error('Sinxron nəticəsi alınmadı')
+      const message = `${result.succeeded}/${result.total} əməkdaş sinxronlaşdırıldı` +
+        (result.facesSynced ? `, ${result.facesSynced} üz şəkli göndərildi` : '') +
+        (result.failed || result.facesFailed ? `; ${result.failed + result.facesFailed} xəta` : '.')
+      setSyncFeedback({
+        type: result.failed || result.facesFailed ? 'error' : 'success',
+        message: result.errors?.length ? `${message} ${result.errors.join(' | ')}` : message,
+      })
+    } catch (error: unknown) {
+      setSyncFeedback({
+        type: 'error',
+        message: getApiErrorMessage(error, 'Əməkdaşları cihaza sinxronlaşdırmaq alınmadı.'),
+      })
+    } finally {
+      setEmployeeSyncingId(null)
+    }
+  }
+
   // Combine immediate bridge state with the last successful sync freshness.
   const activeCount = devices.filter((d: DeviceConfig) => isDeviceOnline(d.status, d.lastSyncTime, d.online)).length
   const inactiveCount = devices.length - activeCount
@@ -333,7 +420,7 @@ export default function DevicesPage() {
         ) : (
           <div className="space-y-3">
             {devices.map((device: DeviceConfig) => (
-              <div key={device.id} className="bg-white rounded-xl shadow-sm p-5 flex items-center gap-5">
+              <div key={device.id} className="bg-white rounded-xl shadow-sm p-5 flex flex-wrap items-center gap-5">
                 {/* Icon */}
                 <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: '#f3e8ff' }}>
                   <svg className="w-6 h-6" style={{ color: '#a855f7' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -379,6 +466,11 @@ export default function DevicesPage() {
                     )}
                   </div>
                   <p className="text-xs text-gray-400 font-mono">{device.deviceId}</p>
+                  {device.branchId && (
+                    <p className="text-xs text-gray-500 mt-0.5">
+                      {branches.find((branch) => branch.id === device.branchId)?.name || 'Ərazi təyin edilib'}
+                    </p>
+                  )}
                 </div>
 
                 {/* IP */}
@@ -403,7 +495,7 @@ export default function DevicesPage() {
                 </div>
 
                 {/* Actions */}
-                <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="flex flex-wrap items-center justify-end gap-2 flex-shrink-0">
                   <button
                     onClick={() => handleSync(device.id)}
                     disabled={syncingId === device.id}
@@ -414,6 +506,23 @@ export default function DevicesPage() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                     </svg>
                     {syncingId === device.id ? 'Sinxronlaşdırılır...' : 'Sinxron'}
+                  </button>
+                  <button
+                    onClick={() => openEmployeeAssignments(device)}
+                    className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+                  >
+                    Əməkdaşlar
+                  </button>
+                  <button
+                    onClick={() => handleEmployeeSync(device)}
+                    disabled={employeeSyncingId === device.id}
+                    className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50"
+                    title="Təyin edilmiş əməkdaşları və mövcud üz şəkillərini cihaza göndər"
+                  >
+                    <svg className={`w-3.5 h-3.5 ${employeeSyncingId === device.id ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v12m0 0l-4-4m4 4l4-4M5 20h14" />
+                    </svg>
+                    {employeeSyncingId === device.id ? 'Göndərilir...' : 'Əməkdaş sinxronu'}
                   </button>
                   <button
                     onClick={() => openEdit(device)}
@@ -499,7 +608,7 @@ export default function DevicesPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ərazi</label>
                 <select
                   value={form.branchId}
                   onChange={(e) => {
@@ -515,7 +624,7 @@ export default function DevicesPage() {
                   }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 >
-                  <option value="">Filial seçin...</option>
+                  <option value="">Ərazi seçin...</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}
@@ -598,13 +707,133 @@ export default function DevicesPage() {
         </div>
       )}
 
+      {/* Device employee assignment modal */}
+      {assignmentDevice && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-3xl p-6 max-h-[88vh] flex flex-col">
+            <div className="flex items-start justify-between gap-3 mb-4">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">Cihaz əməkdaşları</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  {assignmentDevice.deviceName || assignmentDevice.deviceId}
+                  {assignmentView?.areaName ? ` · ${assignmentView.areaName}` : ''}
+                </p>
+              </div>
+              <button
+                onClick={() => setAssignmentDevice(null)}
+                className="p-2 text-gray-400 hover:text-gray-700"
+                aria-label="Bağla"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {assignmentError && (
+              <div className="mb-3 border border-red-200 bg-red-50 text-red-700 rounded-lg px-3 py-2 text-sm">
+                {assignmentError}
+              </div>
+            )}
+
+            {assignmentLoading ? (
+              <div className="py-12 text-center text-gray-500">Yüklənir...</div>
+            ) : assignmentView ? (
+              <>
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <input
+                    value={assignmentSearch}
+                    onChange={(event) => setAssignmentSearch(event.target.value)}
+                    placeholder="Ad, kod və ya FIN axtar"
+                    className="flex-1 min-w-[220px] border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                  <select
+                    value={groupAreaId}
+                    onChange={(event) => setGroupAreaId(event.target.value ? Number(event.target.value) : '')}
+                    className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="">Qrup üçün ərazi seçin</option>
+                    {branches.map((branch) => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addAreaGroup}
+                    disabled={groupAreaId === ''}
+                    className="px-3 py-2 text-sm font-medium border border-gray-300 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Qrupu əlavə et
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-500 mb-2">
+                  Cihazın öz ərazisindəki əməkdaşlar avtomatik seçilir. Digər əməkdaşları fərdi və ya ərazi qrupu ilə əlavə edə bilərsiniz.
+                </p>
+                <div className="border border-gray-200 rounded-lg overflow-y-auto flex-1 min-h-[260px]">
+                  {assignmentView.employees
+                    .filter((employee) => {
+                      const query = assignmentSearch.trim().toLowerCase()
+                      return !query || `${employee.fullName} ${employee.employeeCode} ${employee.finNumber || ''}`
+                        .toLowerCase().includes(query)
+                    })
+                    .map((employee) => {
+                      const checked = employee.areaAssigned || manualEmployeeIds.includes(employee.employeeId)
+                      return (
+                        <label
+                          key={employee.employeeId}
+                          className="flex items-center gap-3 px-3 py-2.5 border-b border-gray-100 last:border-b-0 hover:bg-gray-50"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={employee.areaAssigned}
+                            onChange={() => toggleManualEmployee(employee.employeeId)}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="block text-sm font-medium text-gray-900 truncate">{employee.fullName}</span>
+                            <span className="block text-xs text-gray-500 truncate">
+                              {employee.employeeCode}{employee.finNumber ? ` · ${employee.finNumber}` : ''}
+                              {employee.areaNames?.length ? ` · ${employee.areaNames.join(', ')}` : ''}
+                            </span>
+                          </span>
+                          <span className={`text-xs ${employee.areaAssigned ? 'text-emerald-700' : checked ? 'text-blue-700' : 'text-gray-400'}`}>
+                            {employee.areaAssigned ? 'Ərazi ilə' : checked ? 'Fərdi' : 'Təyin edilməyib'}
+                          </span>
+                        </label>
+                      )
+                    })}
+                </div>
+              </>
+            ) : null}
+
+            <div className="flex justify-end gap-3 mt-5">
+              <button
+                onClick={() => setAssignmentDevice(null)}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Ləğv et
+              </button>
+              <button
+                onClick={saveEmployeeAssignments}
+                disabled={assignmentSaving || assignmentLoading || !assignmentView}
+                className="px-4 py-2 text-sm text-white rounded-lg disabled:opacity-50"
+                style={{ background: '#a855f7' }}
+              >
+                {assignmentSaving ? 'Yadda saxlanılır...' : 'Yadda saxla'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Door Manager Modal */}
       {showDoorManager && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md mx-4 p-6">
             <h2 className="text-xl font-bold text-gray-900 mb-4">Qapıları idarə et</h2>
             <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ərazi</label>
               <select
                 value={managerBranchId}
                 onChange={(e) => {
@@ -615,7 +844,7 @@ export default function DevicesPage() {
                 }}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
               >
-                <option value="">Filial seçin...</option>
+                <option value="">Ərazi seçin...</option>
                 {branches.map((b) => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -626,7 +855,7 @@ export default function DevicesPage() {
                 <div className="text-center text-gray-400 text-sm py-4">Yüklənir...</div>
               ) : managerDoors.length === 0 ? (
                 <div className="text-center text-gray-400 text-sm py-4">
-                  {managerBranchId ? 'Bu filial üçün qapı tapılmadı.' : 'Qapıları görmək üçün filial seçin.'}
+                  {managerBranchId ? 'Bu ərazi üçün qapı tapılmadı.' : 'Qapıları görmək üçün ərazi seçin.'}
                 </div>
               ) : (
                 managerDoors.map((door) => (

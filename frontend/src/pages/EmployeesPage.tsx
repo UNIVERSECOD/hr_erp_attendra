@@ -40,6 +40,7 @@ interface EmployeeFormData {
   departmentId: number | ''
   contractNumber: string
   branchId: number | ''
+  areaIds: number[]
   hireDate: string
   contractEndDate: string
   annualLeaveDuration: number | ''
@@ -80,6 +81,7 @@ const defaultForm: EmployeeFormData = {
   departmentId: '',
   contractNumber: '',
   branchId: '',
+  areaIds: [],
   hireDate: new Date().toISOString().split('T')[0],
   contractEndDate: '',
   annualLeaveDuration: 30,
@@ -239,6 +241,7 @@ export default function EmployeesPage() {
       departmentId: emp.departmentId || '',
       contractNumber: emp.contractNumber || '',
       branchId: emp.branchId || '',
+      areaIds: emp.areaIds?.length ? emp.areaIds : (emp.branchId ? [emp.branchId] : []),
       hireDate: emp.hireDate || defaultForm.hireDate,
       contractEndDate: emp.contractEndDate || '',
       annualLeaveDuration: emp.annualLeaveDuration ?? 30,
@@ -392,6 +395,7 @@ export default function EmployeesPage() {
     }
 
     if (step === 2) {
+      if (!form.branchId) errors.branchId = 'Əsas ərazi seçilməlidir.'
       if (!form.departmentId) errors.departmentId = 'Departament seçilməlidir.'
       if (!form.timetableId) errors.timetableId = 'İş cədvəli seçilməlidir.'
     }
@@ -537,6 +541,7 @@ export default function EmployeesPage() {
         positionId: form.positionId ? Number(form.positionId) : undefined,
         contractNumber: form.contractNumber,
         branchId: form.branchId ? Number(form.branchId) : undefined,
+        areaIds: form.areaIds,
         hireDate: form.hireDate,
         contractEndDate: form.contractEndDate || undefined,
         annualLeaveDuration: form.annualLeaveDuration === '' ? undefined : Number(form.annualLeaveDuration),
@@ -714,7 +719,9 @@ export default function EmployeesPage() {
     ) || (
       filterShift === 'FLEXIBLE' && ['FLEXIBLE', 'FIRST_ENTRY', 'SERBEST', 'FREE_SHIFT', 'FREE'].includes((e.shiftType ?? '').toUpperCase())
     )
-    const matchBranch = !filterBranch || String(e.branchId) === filterBranch
+    const matchBranch = !filterBranch || (e.areaIds?.length
+      ? e.areaIds.some((areaId) => String(areaId) === filterBranch)
+      : String(e.branchId) === filterBranch)
     return matchSearch && matchDept && matchStatus && matchShift && matchBranch
   })
 
@@ -800,7 +807,7 @@ export default function EmployeesPage() {
           </select>
 
           <select value={filterBranch} onChange={e => setFilterBranch(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-400">
-            <option value="">Bütün filiallar</option>
+            <option value="">Bütün ərazilər</option>
             {branches.map(b => <option key={b.id} value={String(b.id)}>{b.name}</option>)}
           </select>
         </div>
@@ -832,7 +839,7 @@ export default function EmployeesPage() {
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ATA ADI</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">DEPARTAMENT</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">VƏZİFƏ</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">FİLİAL</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">ƏRAZİLƏR</th>
                   <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">STATUS</th>
                 </tr>
               </thead>
@@ -914,7 +921,9 @@ export default function EmployeesPage() {
                       <td className="px-4 py-3 text-gray-600">{emp.fatherName || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{emp.departmentName || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{emp.positionName || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{emp.branchName || branchLabelById(emp.branchId)}</td>
+                      <td className="px-4 py-3 text-gray-600">
+                        {emp.areaNames?.length ? emp.areaNames.join(', ') : (emp.branchName || branchLabelById(emp.branchId))}
+                      </td>
                       <td className="px-4 py-3">
                         <span className="px-2 py-0.5 rounded-full text-xs font-medium"
                           style={emp.employmentStatus === 'ACTIVE'
@@ -1098,22 +1107,32 @@ export default function EmployeesPage() {
             {currentStep === 2 && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1">FİLİAL / OFİS MƏKANI</label>
+                  <label className="block text-xs font-semibold text-gray-500 mb-1">
+                    ƏSAS ƏRAZİ <span className="text-red-600">*</span>
+                  </label>
                   <select
                     value={form.branchId}
                     onChange={(e) => {
                       const val = e.target.value ? Number(e.target.value) : ''
                       setFormField('branchId', val)
+                      setFormField('areaIds', val
+                        ? [Number(val), ...form.areaIds.filter((id) => id !== Number(val))]
+                        : form.areaIds)
                       setFormField('departmentId', '')
                       setFormField('positionId', '')
                     }}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    aria-required="true"
+                    aria-invalid={Boolean(fieldErrors.branchId)}
+                    className={`w-full border rounded-lg px-3 py-2 text-sm ${fieldErrors.branchId ? 'border-red-500 focus:border-red-500' : 'border-gray-300'}`}
                   >
                     <option value="">Seçin...</option>
                     {branches.map((b) => (
                       <option key={b.id} value={b.id}>{b.name}</option>
                     ))}
                   </select>
+                  {fieldErrors.branchId && (
+                    <p className="mt-1 text-xs text-red-600" role="alert">{fieldErrors.branchId}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">
@@ -1140,6 +1159,35 @@ export default function EmployeesPage() {
                   {fieldErrors.departmentId && (
                     <p className="mt-1 text-xs text-red-600" role="alert">{fieldErrors.departmentId}</p>
                   )}
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs font-semibold text-gray-500 mb-2">ƏLAVƏ ƏRAZİLƏR</label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 border border-gray-200 rounded-lg p-3 max-h-40 overflow-y-auto">
+                    {branches.length === 0 ? (
+                      <p className="text-sm text-gray-500">Ərazi tapılmadı.</p>
+                    ) : branches.map((branch) => {
+                      const isPrimary = Number(form.branchId) === branch.id
+                      const checked = form.areaIds.includes(branch.id)
+                      return (
+                        <label key={branch.id} className="flex items-center gap-2 text-sm text-gray-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            disabled={isPrimary}
+                            onChange={(e) => setFormField(
+                              'areaIds',
+                              e.target.checked
+                                ? [...new Set([...form.areaIds, branch.id])]
+                                : form.areaIds.filter((id) => id !== branch.id)
+                            )}
+                          />
+                          <span>{branch.name}</span>
+                          {isPrimary && <span className="text-xs text-violet-600">Əsas</span>}
+                        </label>
+                      )
+                    })}
+                  </div>
+                  <p className="mt-1 text-xs text-gray-500">Əməkdaş seçilən ərazilərin cihazlarına təyin ediləcək.</p>
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-gray-500 mb-1">VƏZİFƏ</label>

@@ -27,6 +27,9 @@ public class EmployeeResponseDTO {
     private String serialNumber;
     private String contractNumber;
     private Long branchId;
+    private String branchName;
+    private List<Long> areaIds;
+    private List<String> areaNames;
     private Long departmentId;
     private String departmentName;
     private Long positionId;

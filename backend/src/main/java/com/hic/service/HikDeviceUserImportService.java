@@ -10,10 +10,12 @@ import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.Branch;
 import com.hic.model.DeviceConfig;
 import com.hic.model.Employee;
+import com.hic.model.EmployeeArea;
 import com.hic.model.EmployeeDeviceAccess;
 import com.hic.repository.BranchRepository;
 import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.EmployeeDeviceAccessRepository;
+import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.TenantRepository;
 import com.hic.util.EncryptionUtil;
@@ -87,6 +89,7 @@ public class HikDeviceUserImportService {
     private final DeviceConfigRepository deviceConfigRepository;
     private final EmployeeRepository employeeRepository;
     private final EmployeeDeviceAccessRepository employeeDeviceAccessRepository;
+    private final EmployeeAreaRepository employeeAreaRepository;
     private final BranchRepository branchRepository;
     private final TenantRepository tenantRepository;
     private final EncryptionUtil encryptionUtil;
@@ -425,7 +428,8 @@ public class HikDeviceUserImportService {
             result.setSkippedExisting(result.getSkippedExisting() + 1);
             Employee existing = sameBranchExisting.get();
             ensureDeviceEmployeeNo(existing, person.employeeNo);
-            int linked = linkMissingAccess(existing, person.deviceConfigIds);
+            ensureAreaMembership(existing, branchId);
+            int linked = linkMissingAccess(existing, person.deviceConfigIds, branchId);
             result.setAccessLinked(result.getAccessLinked() + linked);
             person.employeePk = existing.getId();
             return;
@@ -436,7 +440,8 @@ public class HikDeviceUserImportService {
         if (crossBranchSamePerson.isPresent()) {
             Employee existing = crossBranchSamePerson.get();
             ensureDeviceEmployeeNo(existing, person.employeeNo);
-            int linked = linkMissingAccess(existing, person.deviceConfigIds);
+            ensureAreaMembership(existing, branchId);
+            int linked = linkMissingAccess(existing, person.deviceConfigIds, branchId);
             result.setAccessLinked(result.getAccessLinked() + linked);
             result.setCrossBranchLinked(result.getCrossBranchLinked() + 1);
             result.setSkippedExisting(result.getSkippedExisting() + 1);
@@ -447,7 +452,8 @@ public class HikDeviceUserImportService {
         Employee emp = mapToEmployee(person, tenantId, branchId, prefixedId);
         enforceEmployeeQuota(tenantId);
         Employee saved = employeeRepository.save(emp);
-        int linked = linkMissingAccess(saved, person.deviceConfigIds);
+        ensureAreaMembership(saved, branchId);
+        int linked = linkMissingAccess(saved, person.deviceConfigIds, branchId);
         result.setAccessLinked(result.getAccessLinked() + linked);
         result.setCreated(result.getCreated() + 1);
         person.employeePk = saved.getId();
@@ -561,7 +567,14 @@ public class HikDeviceUserImportService {
                     allBranchDeviceIds.add(d.getId());
                 }
             }
-            int linked = linkMissingAccess(employee, allBranchDeviceIds);
+            Long sourceAreaId = branchDevices.stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(DeviceConfig::getBranchId)
+                    .filter(java.util.Objects::nonNull)
+                    .findFirst()
+                    .orElse(employee.getBranchId());
+            ensureAreaMembership(employee, sourceAreaId);
+            int linked = linkMissingAccess(employee, allBranchDeviceIds, sourceAreaId);
             result.setAccessLinked(result.getAccessLinked() + linked);
 
             Set<Long> foundOnScan = new LinkedHashSet<>(person.deviceConfigIds);
@@ -872,7 +885,7 @@ public class HikDeviceUserImportService {
         }
     }
 
-    private int linkMissingAccess(Employee employee, Set<Long> deviceConfigIds) {
+    private int linkMissingAccess(Employee employee, Set<Long> deviceConfigIds, Long sourceAreaId) {
         int linked = 0;
         Long tenantId = employee.getTenantId();
         for (Long deviceConfigId : deviceConfigIds) {
@@ -884,10 +897,26 @@ public class HikDeviceUserImportService {
             access.setTenantId(tenantId);
             access.setEmployeeId(employee.getId());
             access.setDeviceConfigId(deviceConfigId);
+            access.setAssignmentSource(EmployeeDeviceAccess.AssignmentSource.AREA);
+            access.setSourceBranchId(sourceAreaId);
             employeeDeviceAccessRepository.save(access);
             linked++;
         }
         return linked;
+    }
+
+    private void ensureAreaMembership(Employee employee, Long areaId) {
+        if (employee == null || employee.getId() == null || areaId == null
+                || employeeAreaRepository.existsByEmployeeIdAndBranchId(employee.getId(), areaId)) {
+            return;
+        }
+        EmployeeArea membership = new EmployeeArea();
+        membership.setTenantId(employee.getTenantId());
+        membership.setEmployeeId(employee.getId());
+        membership.setBranchId(areaId);
+        membership.setPrimary(employeeAreaRepository
+                .findByEmployeeIdOrderByPrimaryDescBranchIdAsc(employee.getId()).isEmpty());
+        employeeAreaRepository.save(membership);
     }
 
     private Employee mapToEmployee(AggregatedPerson person, Long tenantId, Long branchId, String prefixedId) {

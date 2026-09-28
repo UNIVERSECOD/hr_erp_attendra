@@ -244,7 +244,7 @@ export default function PositionsPage() {
             {formError && <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg mb-4 text-sm">{formError}</div>}
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Filial</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Ərazi</label>
                 <select
                   value={modalBranchId}
                   onChange={(e) => {
@@ -253,7 +253,7 @@ export default function PositionsPage() {
                   }}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                 >
-                  <option value="">Bütün filiallar</option>
+                  <option value="">Bütün ərazilər</option>
                   {branches.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                 </select>
               </div>

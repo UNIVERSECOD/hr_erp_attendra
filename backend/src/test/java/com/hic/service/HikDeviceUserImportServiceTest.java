@@ -5,9 +5,11 @@ import com.hic.dto.DeviceEmployeeImportDTO;
 import com.hic.model.Branch;
 import com.hic.model.DeviceConfig;
 import com.hic.model.Employee;
+import com.hic.model.EmployeeArea;
 import com.hic.repository.BranchRepository;
 import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.EmployeeDeviceAccessRepository;
+import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.TenantRepository;
 import com.hic.util.EncryptionUtil;
@@ -48,6 +50,7 @@ class HikDeviceUserImportServiceTest {
     @Mock private DeviceConfigRepository deviceConfigRepository;
     @Mock private EmployeeRepository employeeRepository;
     @Mock private EmployeeDeviceAccessRepository employeeDeviceAccessRepository;
+    @Mock private EmployeeAreaRepository employeeAreaRepository;
     @Mock private BranchRepository branchRepository;
     @Mock private TenantRepository tenantRepository;
     @Mock private EncryptionUtil encryptionUtil;
@@ -63,6 +66,7 @@ class HikDeviceUserImportServiceTest {
                 deviceConfigRepository,
                 employeeRepository,
                 employeeDeviceAccessRepository,
+                employeeAreaRepository,
                 branchRepository,
                 tenantRepository,
                 encryptionUtil,
@@ -137,7 +141,19 @@ class HikDeviceUserImportServiceTest {
         assertThat(empCaptor.getValue().getEmployeeId()).isEqualTo("BAK-1001");
         assertThat(empCaptor.getValue().getDeviceEmployeeNo()).isEqualTo("1001");
         assertThat(empCaptor.getValue().getBranchId()).isEqualTo(10L);
-        verify(employeeDeviceAccessRepository, times(2)).save(any());
+        ArgumentCaptor<com.hic.model.EmployeeDeviceAccess> accessCaptor =
+                ArgumentCaptor.forClass(com.hic.model.EmployeeDeviceAccess.class);
+        verify(employeeDeviceAccessRepository, times(2)).save(accessCaptor.capture());
+        assertThat(accessCaptor.getAllValues())
+                .allSatisfy(access -> {
+                    assertThat(access.getAssignmentSource())
+                            .isEqualTo(com.hic.model.EmployeeDeviceAccess.AssignmentSource.AREA);
+                    assertThat(access.getSourceBranchId()).isEqualTo(10L);
+                });
+        ArgumentCaptor<EmployeeArea> areaCaptor = ArgumentCaptor.forClass(EmployeeArea.class);
+        verify(employeeAreaRepository).save(areaCaptor.capture());
+        assertThat(areaCaptor.getValue().getBranchId()).isEqualTo(10L);
+        assertThat(areaCaptor.getValue().isPrimary()).isTrue();
         verify(isapiEmployeeUserSyncService, never()).syncEmployee(any(), any());
     }
 
@@ -239,6 +255,12 @@ class HikDeviceUserImportServiceTest {
                 .thenReturn(List.of(existingHome));
         when(employeeDeviceAccessRepository.existsByEmployeeIdAndDeviceConfigId(9L, 5L))
                 .thenReturn(false);
+        EmployeeArea homeMembership = new EmployeeArea();
+        homeMembership.setEmployeeId(9L);
+        homeMembership.setBranchId(10L);
+        homeMembership.setPrimary(true);
+        when(employeeAreaRepository.findByEmployeeIdOrderByPrimaryDescBranchIdAsc(9L))
+                .thenReturn(List.of(homeMembership));
 
         DeviceEmployeeImportDTO.ImportResult result = service.importUsersFromBranch(
                 new DeviceEmployeeImportDTO.ImportRequest(20L, null, false));
@@ -248,6 +270,10 @@ class HikDeviceUserImportServiceTest {
         assertThat(result.getAccessLinked()).isEqualTo(1);
         verify(employeeRepository, never()).save(any());
         verify(employeeDeviceAccessRepository).save(any());
+        ArgumentCaptor<EmployeeArea> areaCaptor = ArgumentCaptor.forClass(EmployeeArea.class);
+        verify(employeeAreaRepository).save(areaCaptor.capture());
+        assertThat(areaCaptor.getValue().getBranchId()).isEqualTo(20L);
+        assertThat(areaCaptor.getValue().isPrimary()).isFalse();
     }
 
     @Test

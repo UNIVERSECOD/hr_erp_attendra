@@ -187,7 +187,7 @@ export default function TabelPage() {
                 className="rounded-lg border px-3 py-2"
               />
               <select value={branchId} onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : '')} className="rounded-lg border px-3 py-2">
-                <option value="">Bütün filiallar</option>
+                <option value="">Bütün ərazilər</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name}</option>
                 ))}

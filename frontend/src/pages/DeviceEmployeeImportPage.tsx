@@ -36,7 +36,7 @@ export default function DeviceEmployeeImportPage() {
         setBranches(branchRes.data?.data ?? [])
         setDevices(deviceRes.data?.data ?? [])
       })
-      .catch(() => setError('Filial və cihaz siyahısı yüklənmədi'))
+      .catch(() => setError('Ərazi və cihaz siyahısı yüklənmədi'))
       .finally(() => setLoadingMeta(false))
   }, [isHeadOfficeHr])
 
@@ -76,11 +76,11 @@ export default function DeviceEmployeeImportPage() {
 
   const handleImport = async () => {
     if (branchId === '') {
-      setError('Filial seçin')
+      setError('Ərazi seçin')
       return
     }
     if (branchDevices.length === 0) {
-      setError('Bu filialda cihaz yoxdur')
+      setError('Bu ərazidə cihaz yoxdur')
       return
     }
     if (useDeviceSubset && selectedDeviceIds.length === 0) {
@@ -112,9 +112,9 @@ export default function DeviceEmployeeImportPage() {
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Cihazdan əməkdaş idxalı</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Qurulum komandası üçün: filial cihazlarındakı mövcud istifadəçiləri və üz şəkillərini sistemə köçürür.
-            Əməkdaş kodu filial prefiksi ilə yazılır (məs. <span className="font-medium text-gray-700">BAK-1001</span>),
-            cihazdakı şəxs ID isə punch/sync üçün saxlanır. Bir cihazda tapılan şəxsi eyni filialın digər
+            Qurulum komandası üçün: ərazi cihazlarındakı mövcud istifadəçiləri və üz şəkillərini sistemə köçürür.
+            Əməkdaş kodu ərazi prefiksi ilə yazılır (məs. <span className="font-medium text-gray-700">BAK-1001</span>),
+            cihazdakı şəxs ID isə punch/sync üçün saxlanır. Bir cihazda tapılan şəxsi eyni ərazinin digər
             cihazlarına da yaza bilərsiniz.
           </p>
         </div>
@@ -125,13 +125,13 @@ export default function DeviceEmployeeImportPage() {
           ) : (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Ev filialı</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Əsas ərazi</label>
                 <select
                   className="w-full max-w-md rounded-lg border border-gray-300 px-3 py-2 text-sm"
                   value={branchId}
                   onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : '')}
                 >
-                  <option value="">Filial seçin</option>
+                  <option value="">Ərazi seçin</option>
                   {branches.map((b) => (
                     <option key={b.id} value={b.id}>{b.name}{b.code ? ` (${b.code})` : ''}</option>
                   ))}
@@ -140,7 +140,7 @@ export default function DeviceEmployeeImportPage() {
                   <p className="text-xs text-gray-500 mt-1.5">
                     Prefiks: <span className="font-mono font-medium text-gray-800">{previewPrefix}</span>
                     {' '}→ employeeId nümunəsi: <span className="font-mono">{previewPrefix}-1001</span>
-                    {!selectedBranch.code && ' (filial kodu yoxdur — addan götürülür; daha yaxşı nəticə üçün Filiallar-da kod təyin edin)'}
+                    {!selectedBranch.code && ' (ərazi kodu yoxdur — addan götürülür; daha yaxşı nəticə üçün Ərazilər-də kod təyin edin)'}
                   </p>
                 )}
               </div>
@@ -149,7 +149,7 @@ export default function DeviceEmployeeImportPage() {
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3 flex-wrap">
                     <p className="text-sm text-gray-600">
-                      Bu filialda <span className="font-semibold">{branchDevices.length}</span> cihaz var.
+                      Bu ərazidə <span className="font-semibold">{branchDevices.length}</span> cihaz var.
                       Standart: hamısı skan edilir.
                     </p>
                     <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
@@ -164,7 +164,7 @@ export default function DeviceEmployeeImportPage() {
 
                   {branchDevices.length === 0 ? (
                     <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-                      Bu filialda cihaz yoxdur. Əvvəlcə Cihazlar səhifəsindən cihaz əlavə edin.
+                      Bu ərazidə cihaz yoxdur. Əvvəlcə Cihazlar səhifəsindən cihaz əlavə edin.
                     </p>
                   ) : (
                     <div className="grid gap-2 sm:grid-cols-2">
@@ -216,10 +216,10 @@ export default function DeviceEmployeeImportPage() {
                   />
                   <span>
                     <span className="block text-sm font-medium text-gray-900">
-                      Filialın digər cihazlarına da yaz
+                      Ərazinin digər cihazlarına da yaz
                     </span>
                     <span className="block text-xs text-gray-500 mt-0.5">
-                      Bir cihazda tapılan şəxs eyni filialın digər cihazlarında yoxdursa, ora da əlavə olunur
+                      Bir cihazda tapılan şəxs eyni ərazinin digər cihazlarında yoxdursa, ora da əlavə olunur
                       (ad və üz şəkli ilə, əgər üz varsa).
                     </span>
                   </span>
@@ -255,7 +255,7 @@ export default function DeviceEmployeeImportPage() {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <Stat label="Yaradılan" value={result.created} tone="green" />
               <Stat label="Mövcud (keçildi)" value={result.skippedExisting} />
-              <Stat label="Digər filial link" value={result.crossBranchLinked || 0} tone="green" />
+              <Stat label="Digər ərazi əlaqəsi" value={result.crossBranchLinked || 0} tone="green" />
               <Stat label="Konflikt" value={result.skippedConflict} tone="amber" />
               <Stat label="Xəta" value={result.errors} tone="red" />
               <Stat label="Cihaz skanı" value={result.devicesScanned} />
@@ -273,7 +273,7 @@ export default function DeviceEmployeeImportPage() {
 
             {(result.branchPrefix || result.branchName) && (
               <p className="text-sm text-gray-600">
-                Ev filialı: <span className="font-medium">{result.branchName}</span>
+                Əsas ərazi: <span className="font-medium">{result.branchName}</span>
                 {result.branchPrefix ? <> · prefiks <span className="font-mono">{result.branchPrefix}</span></> : null}
               </p>
             )}

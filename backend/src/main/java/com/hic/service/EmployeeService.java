@@ -56,6 +56,7 @@ public class EmployeeService {
     private final UserScopeService userScopeService;
     private final TenantRepository tenantRepository;
     private final ShiftAssignmentService shiftAssignmentService;
+    private final EmployeeAreaAssignmentService employeeAreaAssignmentService;
 
     public PaginatedResponse<EmployeeResponseDTO> getAll(int page, int size, String sortBy) {
         return getAll(page, size, sortBy, null);
@@ -67,7 +68,7 @@ public class EmployeeService {
         Long effectiveBranchId = userScopeService.resolveBranchScope(requestedBranchId);
         Page<Employee> employeePage;
         if (tenantId != null && effectiveBranchId != null) {
-            employeePage = employeeRepository.findByTenantIdAndBranchId(tenantId, effectiveBranchId, pageable);
+            employeePage = employeeRepository.findByTenantIdAndAreaId(tenantId, effectiveBranchId, pageable);
         } else if (tenantId != null) {
             employeePage = employeeRepository.findByTenantId(tenantId, pageable);
         } else {
@@ -86,7 +87,7 @@ public class EmployeeService {
         Pageable pageable = PageRequest.of(page, size);
         Long tenantId = TenantContext.getTenantId();
         Page<Employee> employeePage = tenantId != null
-                ? employeeRepository.findByTenantIdAndBranchId(tenantId, branchId, pageable)
+                ? employeeRepository.findByTenantIdAndAreaId(tenantId, branchId, pageable)
                 : employeeRepository.findByDepartmentIdIn(
                         departmentRepository.findByBranchId(branchId).stream()
                                 .map(Department::getId)
@@ -167,6 +168,9 @@ public class EmployeeService {
 
         Long tenantId = TenantContext.getTenantId();
         enforceEmployeeQuota(tenantId);
+        List<Long> areaIds = employeeAreaAssignmentService.normalizeAndValidateAreaIds(
+                dto.getAreaIds(), dto.getBranchId(), tenantId);
+        Long primaryAreaId = resolvePrimaryAreaId(areaIds, dto.getBranchId());
 
         if (dto.getFinNumber() != null && !dto.getFinNumber().isBlank()) {
             if (tenantId != null) {
@@ -184,6 +188,7 @@ public class EmployeeService {
 
         Employee employee = new Employee();
         mapDtoToEmployee(dto, employee);
+        employee.setBranchId(primaryAreaId);
         if (tenantId != null) {
             employee.setTenantId(tenantId);
         }
@@ -198,9 +203,9 @@ public class EmployeeService {
             shiftAssignmentService.syncScheduleFromEmployee(saved, null, saved.getTimetableId(), effectiveFrom);
             saved = employeeRepository.save(saved);
         }
-        List<Long> deviceIdsToAssign = resolveDeviceIdsByBranch(saved, tenantId);
-        List<Long> assignedDeviceIds = replaceEmployeeDeviceAccess(saved, deviceIdsToAssign, tenantId);
-        syncEmployeeToDevicesSafely(saved, assignedDeviceIds);
+        EmployeeAreaAssignmentService.AssignmentChange assignment =
+                employeeAreaAssignmentService.replaceEmployeeAreas(saved, areaIds, primaryAreaId);
+        syncEmployeeToDevicesSafely(saved, assignment.deviceIds());
         return toResponseDTO(saved);
     }
 
@@ -211,6 +216,9 @@ public class EmployeeService {
 
         validateDepartmentExists(dto.getDepartmentId());
         Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : TenantContext.getTenantId();
+        List<Long> areaIds = employeeAreaAssignmentService.normalizeAndValidateAreaIds(
+                dto.getAreaIds(), dto.getBranchId(), tenantId);
+        Long primaryAreaId = resolvePrimaryAreaId(areaIds, dto.getBranchId());
 
         if (dto.getFinNumber() != null && !dto.getFinNumber().isBlank()) {
             if (tenantId != null) {
@@ -231,25 +239,18 @@ public class EmployeeService {
         }
 
         Long previousTimetableId = employee.getTimetableId();
-        Long previousBranchId = employee.getBranchId();
-        List<Long> previousDeviceIds = getEmployeeDeviceIds(employee.getId());
         mapDtoToEmployee(dto, employee);
+        employee.setBranchId(primaryAreaId);
         if (!java.util.Objects.equals(previousTimetableId, employee.getTimetableId())) {
             shiftAssignmentService.syncScheduleFromEmployee(
                     employee, previousTimetableId, employee.getTimetableId(), AppTimeZone.today());
         }
 
         Employee saved = employeeRepository.save(employee);
-        List<Long> homeBranchDevices = resolveDeviceIdsByBranch(saved, tenantId);
-        Set<Long> previousLocationDevices = new LinkedHashSet<>(previousDeviceIds);
-        previousLocationDevices.addAll(resolveDeviceIdsByBranch(previousBranchId, tenantId));
-        List<Long> removedDeviceIds = previousLocationDevices.stream()
-                .filter(deviceId -> !homeBranchDevices.contains(deviceId))
-                .toList();
-
-        deleteEmployeeFromDevicesSafely(saved, removedDeviceIds);
-        List<Long> assignedDeviceIds = replaceEmployeeDeviceAccess(saved, homeBranchDevices, tenantId);
-        syncEmployeeToDevicesSafely(saved, assignedDeviceIds);
+        EmployeeAreaAssignmentService.AssignmentChange assignment =
+                employeeAreaAssignmentService.replaceEmployeeAreas(saved, areaIds, primaryAreaId);
+        deleteEmployeeFromDevicesSafely(saved, assignment.removedDeviceIds());
+        syncEmployeeToDevicesSafely(saved, assignment.deviceIds());
         return toResponseDTO(saved);
     }
 
@@ -283,7 +284,11 @@ public class EmployeeService {
         Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : TenantContext.getTenantId();
 
         Set<Long> targetDeviceIds = new LinkedHashSet<>(getEmployeeDeviceIds(id));
-        targetDeviceIds.addAll(resolveDeviceIdsByBranch(employee, tenantId));
+        List<Long> employeeAreaIds = employeeAreaAssignmentService.getAreaIds(id);
+        if (employeeAreaIds.isEmpty() && employee.getBranchId() != null) {
+            employeeAreaIds = List.of(employee.getBranchId());
+        }
+        targetDeviceIds.addAll(employeeAreaAssignmentService.resolveDeviceIdsForAreas(employeeAreaIds, tenantId));
         deleteEmployeeFromDevices(employee, List.copyOf(targetDeviceIds));
 
         employeeFaceImageService.deleteFaceImages(id);
@@ -326,13 +331,16 @@ public class EmployeeService {
     }
 
     private EmployeeResponseDTO toResponseDTO(Employee employee) {
-        return toResponseDTO(employee, null, null, null);
+        EmployeeAreaAssignmentService.AreaBatch areaBatch =
+                employeeAreaAssignmentService.loadAreaBatch(List.of(employee.getId()));
+        return toResponseDTO(employee, null, null, null, areaBatch);
     }
 
     private EmployeeResponseDTO toResponseDTO(Employee employee,
                                                Map<Long, String> departmentNames,
                                                Map<Long, String> positionNames,
-                                               Map<Long, List<Long>> employeeDeviceIds) {
+                                               Map<Long, List<Long>> employeeDeviceIds,
+                                               EmployeeAreaAssignmentService.AreaBatch areaBatch) {
         EmployeeResponseDTO dto = new EmployeeResponseDTO();
         dto.setId(employee.getId());
         dto.setEmployeeId(employee.getEmployeeId());
@@ -351,6 +359,16 @@ public class EmployeeService {
         dto.setSerialNumber(employee.getSerialNumber());
         dto.setContractNumber(employee.getContractNumber());
         dto.setBranchId(employee.getBranchId());
+        List<Long> areaIds = areaBatch.areaIdsByEmployee().getOrDefault(employee.getId(), List.of());
+        List<String> areaNames = areaBatch.areaNamesByEmployee().getOrDefault(employee.getId(), List.of());
+        if (areaIds.isEmpty() && employee.getBranchId() != null) {
+            areaIds = List.of(employee.getBranchId());
+        }
+        dto.setAreaIds(areaIds);
+        dto.setAreaNames(areaNames);
+        if (!areaNames.isEmpty()) {
+            dto.setBranchName(areaNames.get(0));
+        }
         dto.setDepartmentId(employee.getDepartmentId());
         dto.setPositionId(employee.getPositionId());
         dto.setHireDate(employee.getHireDate());
@@ -420,78 +438,18 @@ public class EmployeeService {
                                         .sorted(Comparator.naturalOrder())
                                         .toList()))
                 ));
+        EmployeeAreaAssignmentService.AreaBatch areaBatch =
+                employeeAreaAssignmentService.loadAreaBatch(employeeIds);
         return employees.stream()
-                .map(e -> toResponseDTO(e, deptNames, posNames, employeeDeviceIds))
+                .map(e -> toResponseDTO(e, deptNames, posNames, employeeDeviceIds, areaBatch))
                 .collect(Collectors.toList());
     }
 
-    private List<Long> replaceEmployeeDeviceAccess(Employee employee, List<Long> requestedDeviceIds, Long tenantId) {
-        List<Long> validDeviceIds = validateDeviceIds(requestedDeviceIds, tenantId);
-        // Cross-branch device access is allowed (home branch + optional other-branch doors).
-        employeeDeviceAccessRepository.deleteByEmployeeId(employee.getId());
-        employeeDeviceAccessRepository.flush();
-        if (validDeviceIds.isEmpty()) {
-            return List.of();
+    private Long resolvePrimaryAreaId(List<Long> areaIds, Long requestedPrimaryAreaId) {
+        if (requestedPrimaryAreaId != null && areaIds.contains(requestedPrimaryAreaId)) {
+            return requestedPrimaryAreaId;
         }
-
-        List<EmployeeDeviceAccess> accessRows = validDeviceIds.stream()
-                .map(deviceId -> {
-                    EmployeeDeviceAccess access = new EmployeeDeviceAccess();
-                    access.setTenantId(employee.getTenantId());
-                    access.setEmployeeId(employee.getId());
-                    access.setDeviceConfigId(deviceId);
-                    return access;
-                })
-                .toList();
-        employeeDeviceAccessRepository.saveAll(accessRows);
-        employeeDeviceAccessRepository.flush();
-        return validDeviceIds;
-    }
-
-    private List<Long> validateDeviceIds(List<Long> requestedDeviceIds, Long tenantId) {
-        if (requestedDeviceIds == null || requestedDeviceIds.isEmpty()) {
-            return List.of();
-        }
-
-        List<Long> normalized = requestedDeviceIds.stream()
-                .filter(id -> id != null && id > 0)
-                .collect(Collectors.collectingAndThen(Collectors.toCollection(LinkedHashSet::new), List::copyOf));
-        if (normalized.isEmpty()) {
-            return List.of();
-        }
-
-        List<DeviceConfig> deviceConfigs = deviceConfigRepository.findAllById(normalized);
-        Set<Long> allowedIds = deviceConfigs.stream()
-                .filter(device -> tenantId == null || device.getTenantId() == null || tenantId.equals(device.getTenantId()))
-                .map(DeviceConfig::getId)
-                .collect(Collectors.toSet());
-
-        List<Long> invalidIds = normalized.stream()
-                .filter(id -> !allowedIds.contains(id))
-                .toList();
-        if (!invalidIds.isEmpty()) {
-            throw new BadRequestException("Invalid or unauthorized device ids: " + invalidIds);
-        }
-        return normalized;
-    }
-
-    private List<Long> resolveDeviceIdsByBranch(Employee employee, Long tenantId) {
-        return resolveDeviceIdsByBranch(employee.getBranchId(), tenantId);
-    }
-
-    private List<Long> resolveDeviceIdsByBranch(Long branchId, Long tenantId) {
-        if (branchId == null) {
-            return List.of();
-        }
-
-        List<DeviceConfig> allDevices = deviceConfigRepository.findAll();
-        return allDevices.stream()
-                .filter(d -> tenantId == null || d.getTenantId() == null || tenantId.equals(d.getTenantId()))
-                .filter(d -> branchId.equals(d.getBranchId()))
-                .map(DeviceConfig::getId)
-                .distinct()
-                .sorted()
-                .toList();
+        return areaIds.isEmpty() ? null : areaIds.get(0);
     }
 
     private void enforceEmployeeQuota(Long tenantId) {
@@ -535,11 +493,10 @@ public class EmployeeService {
     }
 
     private void syncEmployeeToDevicesSafely(Employee employee, List<Long> assignedDeviceIds) {
+        if (assignedDeviceIds == null || assignedDeviceIds.isEmpty()) {
+            return;
+        }
         try {
-            if (assignedDeviceIds == null || assignedDeviceIds.isEmpty()) {
-                isapiEmployeeUserSyncService.syncEmployee(employee, List.of());
-                return;
-            }
             List<DeviceConfig> devices = deviceConfigRepository.findAllById(assignedDeviceIds);
             List<Long> isapiDeviceIds = devices.stream()
                     .map(DeviceConfig::getDeviceId)

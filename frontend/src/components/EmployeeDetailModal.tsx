@@ -46,7 +46,9 @@ export default function EmployeeDetailModal({
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [onClose])
 
-  const branchDisplay = employee.branchName || branchLabel || '—'
+  const branchDisplay = employee.areaNames?.length
+    ? employee.areaNames.join(', ')
+    : employee.branchName || branchLabel || '—'
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 p-4 md:p-6 overflow-y-auto">

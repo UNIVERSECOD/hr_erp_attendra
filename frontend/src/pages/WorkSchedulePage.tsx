@@ -13,13 +13,13 @@ const APPLY_SCOPES = ['ALL', 'SPECIFIC_DEPARTMENT', 'SPECIFIC_BRANCH']
 const APPLY_SCOPE_LABELS: Record<string, string> = {
   ALL: 'Bütün şirkət',
   SPECIFIC_DEPARTMENT: 'Departament',
-  SPECIFIC_BRANCH: 'Filial',
+  SPECIFIC_BRANCH: 'Ərazi',
 }
 const APPLY_TYPES = ['EMPLOYEE', 'DEPARTMENT', 'BRANCH', 'GROUP']
 const APPLY_TYPE_LABELS: Record<string, string> = {
   EMPLOYEE: 'Əməkdaş',
   DEPARTMENT: 'Departament',
-  BRANCH: 'Filial',
+  BRANCH: 'Ərazi',
   GROUP: 'Qrup',
 }
 const PERMISSION_STATUSES = ['ACTIVE', 'INACTIVE', 'PENDING', 'APPROVED', 'REJECTED']

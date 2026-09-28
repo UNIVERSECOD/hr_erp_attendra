@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import Layout from '../components/Layout.tsx'
-import { Branch } from '../types'
+import { Branch, DeviceConfig } from '../types'
 import { useBranchStore } from '../store/branchStore.ts'
+import { deviceApi } from '../api/deviceApi.ts'
 
 interface BranchFormData {
   name: string
@@ -26,9 +27,13 @@ export default function BranchesPage() {
   const [form, setForm] = useState<BranchFormData>(defaultForm)
   const [formError, setFormError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
+  const [devices, setDevices] = useState<DeviceConfig[]>([])
 
   useEffect(() => {
     fetchBranches()
+    deviceApi.getAll()
+      .then((response) => setDevices(response.data?.data ?? []))
+      .catch(() => setDevices([]))
   }, [fetchBranches])
 
   const sortedBranches = useMemo(
@@ -64,7 +69,7 @@ export default function BranchesPage() {
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     if (!form.name.trim()) {
-      setFormError('Filial adı tələb olunur')
+      setFormError('Ərazi adı tələb olunur')
       return
     }
 
@@ -83,7 +88,7 @@ export default function BranchesPage() {
       }
       closeModal()
     } catch (err) {
-      setFormError((err as Error).message || 'Filial yadda saxlanılmadı')
+      setFormError((err as Error).message || 'Ərazi yadda saxlanılmadı')
     }
   }
 
@@ -101,13 +106,13 @@ export default function BranchesPage() {
     <Layout>
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Filiallar</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Ərazilər</h1>
           <button
             onClick={openCreate}
             className="px-4 py-2 rounded-lg text-white font-medium"
             style={{ background: '#a855f7' }}
           >
-            + Filial əlavə et
+            + Ərazi əlavə et
           </button>
         </div>
 
@@ -122,14 +127,15 @@ export default function BranchesPage() {
                 <th className="px-4 py-3 text-left">Ünvan</th>
                 <th className="px-4 py-3 text-left">Status</th>
                 <th className="px-4 py-3 text-left">Baş ofis</th>
+                <th className="px-4 py-3 text-left">Cihazlar</th>
                 <th className="px-4 py-3 text-right">Əməliyyat</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td className="px-4 py-6 text-gray-500" colSpan={6}>Yüklənir...</td></tr>
+                <tr><td className="px-4 py-6 text-gray-500" colSpan={7}>Yüklənir...</td></tr>
               ) : sortedBranches.length === 0 ? (
-                <tr><td className="px-4 py-6 text-gray-500" colSpan={6}>Filial tapılmadı</td></tr>
+                <tr><td className="px-4 py-6 text-gray-500" colSpan={7}>Ərazi tapılmadı</td></tr>
               ) : (
                 sortedBranches.map((branch) => (
                   <tr key={branch.id} className="border-t border-gray-100">
@@ -142,6 +148,19 @@ export default function BranchesPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-gray-700">{branch.isHeadOffice ? 'Bəli' : 'Xeyr'}</td>
+                    <td className="px-4 py-3 text-gray-700">
+                      {devices.filter((device) => device.branchId === branch.id).length === 0 ? (
+                        <span className="text-gray-400">Cihaz yoxdur</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-1">
+                          {devices.filter((device) => device.branchId === branch.id).map((device) => (
+                            <span key={device.id} className="px-2 py-0.5 rounded bg-violet-50 text-violet-700 text-xs">
+                              {device.deviceName || device.deviceId}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="px-4 py-3 text-right space-x-2">
                       <button onClick={() => openEdit(branch)} className="px-3 py-1.5 rounded border border-gray-300 text-gray-700">Redaktə et</button>
                       <button onClick={() => setDeleteTarget(branch)} className="px-3 py-1.5 rounded border border-red-300 text-red-600">Sil</button>
@@ -157,7 +176,7 @@ export default function BranchesPage() {
       {openModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <form onSubmit={handleSubmit} className="w-full max-w-lg bg-white rounded-xl p-6 shadow-lg space-y-4">
-            <h2 className="text-xl font-semibold text-gray-900">{editingBranch ? 'Filialı redaktə et' : 'Yeni filial'}</h2>
+            <h2 className="text-xl font-semibold text-gray-900">{editingBranch ? 'Ərazini redaktə et' : 'Yeni ərazi'}</h2>
             {formError && <div className="p-2 rounded bg-red-50 text-red-700 text-sm">{formError}</div>}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Ad</label>
@@ -195,7 +214,7 @@ export default function BranchesPage() {
       {deleteTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="w-full max-w-md bg-white rounded-xl p-6 space-y-4">
-            <h3 className="text-lg font-semibold text-gray-900">Filialı silmək istədiyinizə əminsiniz?</h3>
+            <h3 className="text-lg font-semibold text-gray-900">Ərazini silmək istədiyinizə əminsiniz?</h3>
             <p className="text-sm text-gray-600">{deleteTarget.name}</p>
             <div className="flex justify-end gap-2">
               <button onClick={() => setDeleteTarget(null)} className="px-4 py-2 border rounded-lg text-gray-700">İmtina</button>
