@@ -23,6 +23,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
@@ -194,6 +195,30 @@ class EmployeeServiceTest {
         assertThat(result.getId()).isEqualTo(1L);
         verify(employeeRepository).save(any(Employee.class));
         verify(isapiEmployeeUserSyncService).syncEmployee(any(Employee.class), anyList());
+    }
+
+    @Test
+    void createForImportStoresAssignmentsWithoutCallingPhysicalDevices() {
+        testEmployeeDTO.setBranchId(1L);
+        testEmployeeDTO.setAreaIds(List.of(1L));
+        when(departmentRepository.existsById(1L)).thenReturn(true);
+        when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> {
+            Employee employee = invocation.getArgument(0);
+            employee.setId(1L);
+            return employee;
+        });
+        when(employeeAreaAssignmentService.replaceEmployeeAreas(any(Employee.class), eq(List.of(1L)), eq(1L)))
+                .thenReturn(new EmployeeAreaAssignmentService.AssignmentChange(List.of(10L), List.of()));
+
+        employeeService.createForImport(testEmployeeDTO, "BULK-001");
+
+        ArgumentCaptor<Employee> employeeCaptor = ArgumentCaptor.forClass(Employee.class);
+        verify(employeeRepository).save(employeeCaptor.capture());
+        assertThat(employeeCaptor.getValue().getEmployeeId()).isEqualTo("BULK-001");
+        verify(employeeAreaAssignmentService)
+                .replaceEmployeeAreas(any(Employee.class), eq(List.of(1L)), eq(1L));
+        verify(deviceConfigRepository, never()).findAllById(any());
+        verify(isapiEmployeeUserSyncService, never()).syncEmployee(any(Employee.class), anyList());
     }
 
     @Test

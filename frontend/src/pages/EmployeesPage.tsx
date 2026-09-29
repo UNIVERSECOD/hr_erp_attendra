@@ -3,6 +3,7 @@ import Layout from '../components/Layout.tsx'
 import EmployeeDetailModal from '../components/EmployeeDetailModal.tsx'
 import EmployeeAvatar from '../components/EmployeeAvatar.tsx'
 import EmployeePhotoCapture from '../components/EmployeePhotoCapture.tsx'
+import DataTransferControls from '../components/DataTransferControls.tsx'
 import { useEmployeeStore } from '../store/employeeStore.ts'
 import { useBranchStore } from '../store/branchStore.ts'
 import { Department, Employee, Position, Timetable } from '../types'
@@ -741,7 +742,11 @@ export default function EmployeesPage() {
               <span className="text-yellow-600 font-medium">{onLeaveCount} məzuniyyətdə</span>
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <DataTransferControls
+              entity="employees"
+              onImported={() => fetchEmployees(0, 20)}
+            />
             <button
               onClick={() => fetchEmployees(currentPage, 20)}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"

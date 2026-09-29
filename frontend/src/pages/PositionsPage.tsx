@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import DataTransferControls from '../components/DataTransferControls.tsx'
 import { Position, Department } from '../types'
 import { positionApi } from '../api/positionApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
@@ -131,7 +132,8 @@ export default function PositionsPage() {
               {positions.length} kateqoriyalaşdırılmış iş vəzifəsi departamentlər üzrə
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <DataTransferControls entity="positions" onImported={fetchPositions} />
             <button
               onClick={fetchPositions}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"

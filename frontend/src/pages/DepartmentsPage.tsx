@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import DataTransferControls from '../components/DataTransferControls.tsx'
 import { Department, Employee } from '../types'
 import { departmentApi } from '../api/departmentApi.ts'
 import { employeeApi } from '../api/employeeApi.ts'
@@ -200,7 +201,11 @@ export default function DepartmentsPage() {
               {departments.length} departament - işçilərin təşkili üçün ierarxik strukturlar
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <DataTransferControls
+              entity="departments"
+              onImported={() => fetchDepartments(selectedBranchId === '' ? undefined : selectedBranchId)}
+            />
             <button
               onClick={() => fetchDepartments(selectedBranchId === '' ? undefined : selectedBranchId)}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"

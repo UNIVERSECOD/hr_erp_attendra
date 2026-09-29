@@ -164,6 +164,20 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeResponseDTO create(EmployeeDTO dto) {
+        return toResponseDTO(createEmployee(dto, null, true));
+    }
+
+    /**
+     * Creates an employee during a validated bulk import. Area/device assignments are stored in
+     * the database, but no request is sent to physical terminals. Operators can later use the
+     * explicit employee synchronization action for the target area.
+     */
+    @Transactional
+    public void createForImport(EmployeeDTO dto, String requestedEmployeeId) {
+        createEmployee(dto, requestedEmployeeId, false);
+    }
+
+    private Employee createEmployee(EmployeeDTO dto, String requestedEmployeeId, boolean syncDevices) {
         validateDepartmentExists(dto.getDepartmentId());
 
         Long tenantId = TenantContext.getTenantId();
@@ -192,7 +206,11 @@ public class EmployeeService {
         if (tenantId != null) {
             employee.setTenantId(tenantId);
         }
-        employee.setEmployeeId(generateEmployeeId(tenantId));
+        String employeeId = requestedEmployeeId != null && !requestedEmployeeId.isBlank()
+                ? requestedEmployeeId.trim()
+                : generateEmployeeId(tenantId);
+        validateEmployeeIdAvailable(tenantId, employeeId);
+        employee.setEmployeeId(employeeId);
         if (employee.getEmploymentStatus() == null) {
             employee.setEmploymentStatus(EmploymentStatus.ACTIVE);
         }
@@ -205,8 +223,10 @@ public class EmployeeService {
         }
         EmployeeAreaAssignmentService.AssignmentChange assignment =
                 employeeAreaAssignmentService.replaceEmployeeAreas(saved, areaIds, primaryAreaId);
-        syncEmployeeToDevicesSafely(saved, assignment.deviceIds());
-        return toResponseDTO(saved);
+        if (syncDevices) {
+            syncEmployeeToDevicesSafely(saved, assignment.deviceIds());
+        }
+        return saved;
     }
 
     @Transactional
@@ -535,8 +555,26 @@ public class EmployeeService {
     }
 
     private String generateEmployeeId(Long tenantId) {
-        long count = tenantId != null ? employeeRepository.countByTenantId(tenantId) + 1 : employeeRepository.count() + 1;
-        return String.format("EMP%04d", count);
+        long sequence = tenantId != null
+                ? employeeRepository.countByTenantId(tenantId) + 1
+                : employeeRepository.count() + 1;
+        String candidate;
+        do {
+            candidate = String.format("EMP%04d", sequence++);
+        } while (employeeIdExists(tenantId, candidate));
+        return candidate;
+    }
+
+    private void validateEmployeeIdAvailable(Long tenantId, String employeeId) {
+        if (employeeIdExists(tenantId, employeeId)) {
+            throw new BadRequestException("Bu əməkdaş ID artıq mövcuddur: " + employeeId);
+        }
+    }
+
+    private boolean employeeIdExists(Long tenantId, String employeeId) {
+        return tenantId != null
+                ? employeeRepository.findByTenantIdAndEmployeeIdIgnoreCase(tenantId, employeeId).isPresent()
+                : employeeRepository.findByEmployeeIdIgnoreCase(employeeId).isPresent();
     }
 
     public List<String> getDistinctAreas() {
