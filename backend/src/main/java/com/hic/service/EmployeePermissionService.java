@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @Service
@@ -43,38 +44,11 @@ public class EmployeePermissionService {
         Long tenantId = requireTenant();
         validatePeriod(startDate, endDate, startTime, endTime, reason);
 
-        Employee employee = employeeRepository.findById(employeeId)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee", employeeId));
-        PermissionType permissionType = permissionTypeRepository.findById(permissionTypeId)
-                .orElseThrow(() -> new ResourceNotFoundException("PermissionType", permissionTypeId));
-
-        ensureSameTenant(tenantId, employee.getTenantId(), "Employee");
-        ensureSameTenant(tenantId, permissionType.getTenantId(), "PermissionType");
-
-        if (requiresReason(permissionType.getCode()) && (reason == null || reason.isBlank())) {
-            throw new BadRequestException("Reason is required for selected permission type");
-        }
-
-        EmployeePermission permission = new EmployeePermission();
-        permission.setTenantId(tenantId);
-        permission.setEmployeeId(employeeId);
-        permission.setPermissionTypeId(permissionTypeId);
-        permission.setStartDate(startDate);
-        permission.setEndDate(endDate);
-        permission.setStartTime(startTime);
-        permission.setEndTime(endTime);
-        permission.setDeductFromWorkHours(deductFromWorkHours == null || deductFromWorkHours);
-        permission.setReason(trimToNull(reason));
-        permission.setStatus(status == null ? EmployeePermission.Status.PENDING : status);
-
-        if (permission.getStatus() == EmployeePermission.Status.APPROVED || permission.getStatus() == EmployeePermission.Status.ACTIVE) {
-            permission.setApprovedBy(TenantContext.getUserId());
-            permission.setApprovalDate(AppTimeZone.now());
-        }
-
-        EmployeePermission saved = permissionRepository.save(permission);
-        recalculateAttendance(employeeId, startDate, endDate);
-        return toDTO(saved);
+        Employee employee = requireEmployee(employeeId, tenantId);
+        PermissionType permissionType = requirePermissionType(permissionTypeId, tenantId);
+        validateReason(permissionType, reason);
+        return savePermission(employee, permissionType, startDate, endDate, startTime, endTime,
+                deductFromWorkHours, reason, status);
     }
 
     @Transactional
@@ -155,20 +129,80 @@ public class EmployeePermissionService {
             throw new BadRequestException("At least one employee is required");
         }
 
-        List<EmployeePermissionDTO> results = new ArrayList<>();
-        for (Long employeeId : employeeIds) {
-            try {
-                results.add(grantPermission(
-                        employeeId, permissionTypeId, startDate, endDate,
-                        startTime, endTime, deductFromWorkHours, reason, status));
-            } catch (RuntimeException ignored) {
-                // continue processing remaining employees
+        Long tenantId = requireTenant();
+        validatePeriod(startDate, endDate, startTime, endTime, reason);
+        PermissionType permissionType = requirePermissionType(permissionTypeId, tenantId);
+        validateReason(permissionType, reason);
+
+        List<Employee> employees = new ArrayList<>();
+        for (Long employeeId : new LinkedHashSet<>(employeeIds)) {
+            if (employeeId == null) {
+                throw new BadRequestException("Employee ID is required");
             }
+            employees.add(requireEmployee(employeeId, tenantId));
         }
-        if (results.isEmpty()) {
-            throw new BadRequestException("No permission could be granted in bulk operation");
+
+        List<EmployeePermissionDTO> results = new ArrayList<>();
+        for (Employee employee : employees) {
+            results.add(savePermission(
+                    employee, permissionType, startDate, endDate,
+                    startTime, endTime, deductFromWorkHours, reason, status));
         }
         return results;
+    }
+
+    private Employee requireEmployee(Long employeeId, Long tenantId) {
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee", employeeId));
+        ensureSameTenant(tenantId, employee.getTenantId(), "Employee");
+        return employee;
+    }
+
+    private PermissionType requirePermissionType(Long permissionTypeId, Long tenantId) {
+        PermissionType permissionType = permissionTypeRepository.findById(permissionTypeId)
+                .orElseThrow(() -> new ResourceNotFoundException("PermissionType", permissionTypeId));
+        ensureSameTenant(tenantId, permissionType.getTenantId(), "PermissionType");
+        return permissionType;
+    }
+
+    private void validateReason(PermissionType permissionType, String reason) {
+        if (requiresReason(permissionType.getCode()) && (reason == null || reason.isBlank())) {
+            throw new BadRequestException("Reason is required for selected permission type");
+        }
+    }
+
+    private EmployeePermissionDTO savePermission(
+            Employee employee,
+            PermissionType permissionType,
+            LocalDate startDate,
+            LocalDate endDate,
+            LocalTime startTime,
+            LocalTime endTime,
+            Boolean deductFromWorkHours,
+            String reason,
+            EmployeePermission.Status status
+    ) {
+        EmployeePermission permission = new EmployeePermission();
+        permission.setTenantId(employee.getTenantId());
+        permission.setEmployeeId(employee.getId());
+        permission.setPermissionTypeId(permissionType.getId());
+        permission.setStartDate(startDate);
+        permission.setEndDate(endDate);
+        permission.setStartTime(startTime);
+        permission.setEndTime(endTime);
+        permission.setDeductFromWorkHours(deductFromWorkHours == null || deductFromWorkHours);
+        permission.setReason(trimToNull(reason));
+        permission.setStatus(status == null ? EmployeePermission.Status.PENDING : status);
+
+        if (permission.getStatus() == EmployeePermission.Status.APPROVED
+                || permission.getStatus() == EmployeePermission.Status.ACTIVE) {
+            permission.setApprovedBy(TenantContext.getUserId());
+            permission.setApprovalDate(AppTimeZone.now());
+        }
+
+        EmployeePermission saved = permissionRepository.save(permission);
+        recalculateAttendance(employee.getId(), startDate, endDate);
+        return toDTO(saved);
     }
 
     private EmployeePermission findByIdAndTenant(Long id, Long tenantId) {

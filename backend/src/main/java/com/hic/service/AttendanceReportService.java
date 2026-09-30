@@ -3,12 +3,16 @@ package com.hic.service;
 import com.hic.dto.AttendanceReportRowDTO;
 import com.hic.dto.PaginatedResponse;
 import com.hic.model.AttendanceLog;
+import com.hic.model.Branch;
 import com.hic.model.Department;
+import com.hic.model.DeviceConfig;
 import com.hic.model.Employee;
 import com.hic.model.Position;
 import com.hic.model.Timetable;
 import com.hic.repository.AttendanceLogRepository;
+import com.hic.repository.BranchRepository;
 import com.hic.repository.DepartmentRepository;
+import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.FaceDataRepository;
 import com.hic.repository.PositionRepository;
@@ -49,6 +53,8 @@ public class AttendanceReportService {
 
     private final AttendanceLogRepository attendanceLogRepository;
     private final EmployeeRepository employeeRepository;
+    private final DeviceConfigRepository deviceConfigRepository;
+    private final BranchRepository branchRepository;
     private final DepartmentRepository departmentRepository;
     private final PositionRepository positionRepository;
     private final FaceDataRepository faceDataRepository;
@@ -175,6 +181,21 @@ public class AttendanceReportService {
         Map<Long, String> positionNames = positionRepository.findAllById(positionIds).stream()
                 .collect(Collectors.toMap(Position::getId, Position::getPositionName));
 
+        List<DeviceConfig> devices = tenantId != null
+                ? deviceConfigRepository.findByTenantId(tenantId)
+                : deviceConfigRepository.findAll();
+        Set<Long> branchIds = devices.stream()
+                .map(DeviceConfig::getBranchId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        branchIds.addAll(employeeMap.values().stream()
+                .map(Employee::getBranchId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet()));
+        Map<Long, String> branchNames = branchRepository.findAllById(branchIds).stream()
+                .collect(Collectors.toMap(Branch::getId, Branch::getName));
+        Map<String, String> areaNamesByDeviceIdentifier = buildAreaNamesByDeviceIdentifier(devices, branchNames);
+
         Map<Long, List<AttendanceLog>> logsByEmployee = logs.stream()
                 .filter(log -> log.getEmployeeId() != null && log.getCheckInTime() != null)
                 .collect(Collectors.groupingBy(AttendanceLog::getEmployeeId));
@@ -230,7 +251,13 @@ public class AttendanceReportService {
 
             for (LabeledSession labeled : sessionLogs) {
                 AttendanceReportRowDTO dto = buildSessionRow(
-                        employee, labeled.log(), labeled.shiftType(), departmentNames, positionNames);
+                        employee,
+                        labeled.log(),
+                        labeled.shiftType(),
+                        departmentNames,
+                        positionNames,
+                        branchNames,
+                        areaNamesByDeviceIdentifier);
                 if (predicate.test(dto)) {
                     rows.add(dto);
                 }
@@ -252,7 +279,9 @@ public class AttendanceReportService {
                         dayShiftType,
                         dayEntry.getValue(),
                         departmentNames,
-                        positionNames
+                        positionNames,
+                        branchNames,
+                        areaNamesByDeviceIdentifier
                 );
                 if (predicate.test(dto)) {
                     rows.add(dto);
@@ -274,9 +303,12 @@ public class AttendanceReportService {
             AttendanceLog log,
             String scheduleShiftType,
             Map<Long, String> departmentNames,
-            Map<Long, String> positionNames
+            Map<Long, String> positionNames,
+            Map<Long, String> branchNames,
+            Map<String, String> areaNamesByDeviceIdentifier
     ) {
-        AttendanceReportRowDTO dto = baseEmployeeRow(employee, departmentNames, positionNames);
+        AttendanceReportRowDTO dto = baseEmployeeRow(employee, departmentNames, positionNames, branchNames);
+        dto.setArea(resolveLogArea(log, areaNamesByDeviceIdentifier, dto.getArea()));
         dto.setAttendanceLogId(log.getId());
         dto.setDate(log.getCheckInTime().toLocalDate());
         dto.setCheckInTime(toOffsetDateTime(log.getCheckInTime()));
@@ -299,9 +331,22 @@ public class AttendanceReportService {
             String scheduleShiftType,
             List<AttendanceLog> dayLogs,
             Map<Long, String> departmentNames,
-            Map<Long, String> positionNames
+            Map<Long, String> positionNames,
+            Map<Long, String> branchNames,
+            Map<String, String> areaNamesByDeviceIdentifier
     ) {
-        AttendanceReportRowDTO dto = baseEmployeeRow(employee, departmentNames, positionNames);
+        AttendanceReportRowDTO dto = baseEmployeeRow(employee, departmentNames, positionNames, branchNames);
+        String visitedAreas = dayLogs.stream()
+                .sorted(Comparator.comparing(AttendanceLog::getCheckInTime,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(log -> resolveLogArea(log, areaNamesByDeviceIdentifier, null))
+                .filter(Objects::nonNull)
+                .filter(value -> !value.isBlank())
+                .distinct()
+                .collect(Collectors.joining(", "));
+        if (!visitedAreas.isBlank()) {
+            dto.setArea(visitedAreas);
+        }
         Long firstLogId = dayLogs.stream()
                 .filter(l -> l.getCheckInTime() != null)
                 .min(Comparator.comparing(AttendanceLog::getCheckInTime)
@@ -327,7 +372,8 @@ public class AttendanceReportService {
     private AttendanceReportRowDTO baseEmployeeRow(
             Employee employee,
             Map<Long, String> departmentNames,
-            Map<Long, String> positionNames
+            Map<Long, String> positionNames,
+            Map<Long, String> branchNames
     ) {
         AttendanceReportRowDTO dto = new AttendanceReportRowDTO();
         dto.setEmployeePk(employee.getId());
@@ -336,10 +382,44 @@ public class AttendanceReportService {
         dto.setFin(employee.getFinNumber());
         dto.setDepartment(departmentNames.get(employee.getDepartmentId()));
         dto.setPosition(positionNames.get(employee.getPositionId()));
-        dto.setArea(employee.getArea());
+        dto.setArea(branchNames.get(employee.getBranchId()));
         faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(employee.getId())
                 .ifPresent(face -> dto.setPhotoUrl("/api/faces/employee/" + employee.getId() + "/image"));
         return dto;
+    }
+
+    private Map<String, String> buildAreaNamesByDeviceIdentifier(
+            List<DeviceConfig> devices,
+            Map<Long, String> branchNames
+    ) {
+        Map<String, String> result = new HashMap<>();
+        for (DeviceConfig device : devices) {
+            String areaName = branchNames.get(device.getBranchId());
+            if (areaName == null || areaName.isBlank()) {
+                continue;
+            }
+            if (device.getId() != null) {
+                result.put(String.valueOf(device.getId()), areaName);
+            }
+            if (device.getDeviceId() != null && !device.getDeviceId().isBlank()) {
+                result.put(device.getDeviceId().trim(), areaName);
+            }
+        }
+        return result;
+    }
+
+    private String resolveLogArea(
+            AttendanceLog log,
+            Map<String, String> areaNamesByDeviceIdentifier,
+            String fallback
+    ) {
+        if (log != null && log.getDeviceId() != null && !log.getDeviceId().isBlank()) {
+            String areaName = areaNamesByDeviceIdentifier.get(log.getDeviceId().trim());
+            if (areaName != null && !areaName.isBlank()) {
+                return areaName;
+            }
+        }
+        return fallback;
     }
 
     /** A session is reported in the period containing its check-in work date. */

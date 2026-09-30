@@ -1,6 +1,7 @@
 package com.hic.service;
 
 import com.hic.exception.BadRequestException;
+import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.Employee;
 import com.hic.model.EmployeePermission;
 import com.hic.model.PermissionType;
@@ -16,12 +17,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -110,5 +113,29 @@ class EmployeePermissionServiceTest {
                         false, "note", EmployeePermission.Status.APPROVED));
 
         assertEquals("Start and end time must be different", ex.getMessage());
+    }
+
+    @Test
+    void bulkGrantPermission_validatesEveryEmployeeBeforeSaving() {
+        LocalDate today = AppTimeZone.today();
+        Employee employee = new Employee();
+        employee.setId(1L);
+        employee.setTenantId(1L);
+
+        PermissionType permissionType = new PermissionType();
+        permissionType.setId(4L);
+        permissionType.setTenantId(1L);
+        permissionType.setCode("HOURLY_PERMISSION");
+
+        when(permissionTypeRepository.findById(4L)).thenReturn(java.util.Optional.of(permissionType));
+        when(employeeRepository.findById(1L)).thenReturn(java.util.Optional.of(employee));
+        when(employeeRepository.findById(2L)).thenReturn(java.util.Optional.empty());
+
+        assertThrows(ResourceNotFoundException.class, () -> service.bulkGrantPermission(
+                List.of(1L, 2L), 4L, today, today,
+                LocalTime.of(15, 0), LocalTime.of(17, 0),
+                false, "Ailə işi", EmployeePermission.Status.APPROVED));
+
+        verify(permissionRepository, never()).save(any(EmployeePermission.class));
     }
 }

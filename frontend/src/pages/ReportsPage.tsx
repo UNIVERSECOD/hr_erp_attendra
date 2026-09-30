@@ -3,10 +3,10 @@ import Layout from '../components/Layout.tsx'
 import { attendanceApi } from '../api/attendanceApi.ts'
 import { positionApi } from '../api/positionApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
-import { employeeApi } from '../api/employeeApi.ts'
+import { branchApi } from '../api/branchApi.ts'
 import { useAttendanceReportStore } from '../store/attendanceReportStore.ts'
 import { t } from '../i18n/index.ts'
-import { AttendanceReportRow, Position, Department } from '../types'
+import { AttendanceReportRow, Position, Department, Branch } from '../types'
 import { formatAttendanceDateTime } from '../utils/dateTime.ts'
 
 const SHIFT_TABS = [
@@ -81,7 +81,7 @@ export default function ReportsPage() {
 
   const [positions, setPositions] = useState<Position[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
-  const [areas, setAreas] = useState<string[]>([])
+  const [areas, setAreas] = useState<Branch[]>([])
 
   useEffect(() => {
     void fetchReport()
@@ -92,7 +92,7 @@ export default function ReportsPage() {
       const [posRes, deptRes, areaRes] = await Promise.allSettled([
         positionApi.getAll(),
         departmentApi.getAll(),
-        employeeApi.getDistinctAreas(),
+        branchApi.getAll(),
       ])
       if (posRes.status === 'fulfilled') setPositions(posRes.value.data.data ?? [])
       if (deptRes.status === 'fulfilled') setDepartments(deptRes.value.data.data ?? [])
@@ -208,8 +208,8 @@ export default function ReportsPage() {
               className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400 w-full bg-white"
             >
               <option value="">Hamısı (Ərazi)</option>
-              {areas.map((a) => (
-                <option key={a} value={a}>{a}</option>
+              {areas.map((area) => (
+                <option key={area.id} value={area.name}>{area.name}</option>
               ))}
             </select>
           </div>

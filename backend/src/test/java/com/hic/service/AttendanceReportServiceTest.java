@@ -3,10 +3,14 @@ package com.hic.service;
 import com.hic.dto.AttendanceReportRowDTO;
 import com.hic.dto.PaginatedResponse;
 import com.hic.model.AttendanceLog;
+import com.hic.model.Branch;
+import com.hic.model.DeviceConfig;
 import com.hic.model.Employee;
 import com.hic.model.Timetable;
 import com.hic.repository.AttendanceLogRepository;
+import com.hic.repository.BranchRepository;
 import com.hic.repository.DepartmentRepository;
+import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.FaceDataRepository;
 import com.hic.repository.PositionRepository;
@@ -36,6 +40,8 @@ class AttendanceReportServiceTest {
 
     @Mock private AttendanceLogRepository attendanceLogRepository;
     @Mock private EmployeeRepository employeeRepository;
+    @Mock private DeviceConfigRepository deviceConfigRepository;
+    @Mock private BranchRepository branchRepository;
     @Mock private DepartmentRepository departmentRepository;
     @Mock private PositionRepository positionRepository;
     @Mock private FaceDataRepository faceDataRepository;
@@ -437,6 +443,49 @@ class AttendanceReportServiceTest {
         assertThat(all.getContent()).hasSize(2);
         assertThat(all.getContent()).extracting(AttendanceReportRowDTO::getAttendanceLogId)
                 .containsExactlyInAnyOrder(1L, 2L);
+    }
+
+    @Test
+    void getReport_usesAttendanceDeviceAreaAndFiltersByIt() {
+        LocalDate day = LocalDate.of(2026, 9, 30);
+        Employee employee = employee(1L, "EMP-1", "Ayla", "Aliyeva", 10L, "FLEXIBLE");
+
+        Timetable timetable = new Timetable();
+        timetable.setId(10L);
+        timetable.setShiftType("FLEXIBLE");
+
+        AttendanceLog attendanceLog = log(1L, day.atTime(8, 0), day.atTime(17, 0));
+        attendanceLog.setDeviceId("42");
+
+        DeviceConfig device = new DeviceConfig();
+        device.setId(8L);
+        device.setTenantId(1L);
+        device.setDeviceId("42");
+        device.setBranchId(3L);
+
+        Branch branch = new Branch();
+        branch.setId(3L);
+        branch.setTenantId(1L);
+        branch.setName("Sahil ərazisi");
+
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(attendanceLog));
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee));
+        when(timetableRepository.findAllById(any())).thenReturn(List.of(timetable));
+        when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(device));
+        when(branchRepository.findAllById(any())).thenReturn(List.of(branch));
+        when(departmentRepository.findAllById(any())).thenReturn(List.of());
+        when(positionRepository.findAllById(any())).thenReturn(List.of());
+        when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
+
+        PaginatedResponse<AttendanceReportRowDTO> matching = attendanceReportService.getReport(
+                day, day, "", null, null, null, null, null, "Sahil ərazisi", 0, 50);
+        PaginatedResponse<AttendanceReportRowDTO> nonMatching = attendanceReportService.getReport(
+                day, day, "", null, null, null, null, null, "Başqa ərazi", 0, 50);
+
+        assertThat(matching.getContent()).hasSize(1);
+        assertThat(matching.getContent().get(0).getArea()).isEqualTo("Sahil ərazisi");
+        assertThat(nonMatching.getContent()).isEmpty();
     }
 
     private static Employee employee(Long id, String code, String first, String last, Long timetableId, String shiftType) {

@@ -3,12 +3,14 @@ package com.hic.service;
 import com.hic.dto.TabelMonthlyDTO;
 import com.hic.model.DailyAttendanceSummary;
 import com.hic.model.Employee;
+import com.hic.model.EmployeeArea;
 import com.hic.model.EmployeePermission;
 import com.hic.model.HolidayPermission;
 import com.hic.model.LeaveRequest;
 import com.hic.model.Position;
 import com.hic.repository.DailyAttendanceSummaryRepository;
 import com.hic.repository.EmployeePermissionRepository;
+import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.HolidayPermissionRepository;
 import com.hic.repository.LeaveRequestRepository;
@@ -37,6 +39,8 @@ class TabelServiceTest {
 
     @Mock
     private EmployeeRepository employeeRepository;
+    @Mock
+    private EmployeeAreaRepository employeeAreaRepository;
     @Mock
     private PositionRepository positionRepository;
     @Mock
@@ -156,5 +160,39 @@ class TabelServiceTest {
         assertNull(row.getDaily().get(11));
         assertEquals(2, row.getWorkingDays());
         assertEquals(17.5, row.getTotalHours());
+    }
+
+    @Test
+    void getMonthlyTabel_includesEmployeeAssignedToSelectedAdditionalArea() {
+        TenantContext.setTenantId(7L);
+
+        Employee employee = new Employee();
+        employee.setId(11L);
+        employee.setTenantId(7L);
+        employee.setBranchId(1L);
+        employee.setFirstName("Ayla");
+        employee.setLastName("Aliyeva");
+
+        EmployeeArea membership = new EmployeeArea();
+        membership.setTenantId(7L);
+        membership.setEmployeeId(11L);
+        membership.setBranchId(3L);
+
+        when(employeeAreaRepository.findByBranchId(3L)).thenReturn(List.of(membership));
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        when(positionRepository.findByTenantId(7L)).thenReturn(List.of());
+        when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(any(), any(), any(), any()))
+                .thenReturn(List.of());
+        when(employeePermissionRepository.findByDateRange(any(), any(), any())).thenReturn(List.of());
+        when(holidayPermissionRepository.findOverlapping(any(), any(), any())).thenReturn(List.of());
+        when(dailyAttendanceSummaryRepository.findByEmployeeIdAndAttendanceDateBetween(any(), any(), any()))
+                .thenReturn(List.of());
+        when(attendanceScheduleResolver.resolve(any(), any())).thenReturn(
+                new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", false, null, null, 60, 30, 30));
+
+        TabelMonthlyDTO result = tabelService.getMonthlyTabel(2026, 4, 3L, null, null, null);
+
+        assertEquals(1, result.getEmployees());
+        assertEquals(11L, result.getRows().get(0).getEmployeePk());
     }
 }

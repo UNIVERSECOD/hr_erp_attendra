@@ -8,6 +8,7 @@ import com.hic.model.HolidayPermission;
 import com.hic.model.LeaveRequest;
 import com.hic.model.Position;
 import com.hic.repository.DailyAttendanceSummaryRepository;
+import com.hic.repository.EmployeeAreaRepository;
 import com.hic.repository.EmployeePermissionRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.HolidayPermissionRepository;
@@ -44,6 +45,7 @@ public class TabelService {
     private static final String QI_CODE = "Q/I";
 
     private final EmployeeRepository employeeRepository;
+    private final EmployeeAreaRepository employeeAreaRepository;
     private final PositionRepository positionRepository;
     private final DailyAttendanceSummaryRepository dailyAttendanceSummaryRepository;
     private final LeaveRequestRepository leaveRequestRepository;
@@ -63,9 +65,18 @@ public class TabelService {
         LocalDate start = yearMonth.atDay(1);
         LocalDate end = yearMonth.atEndOfMonth();
 
+        Set<Long> areaEmployeeIds = branchId == null
+                ? Set.of()
+                : employeeAreaRepository.findByBranchId(branchId).stream()
+                .filter(membership -> tenantId.equals(membership.getTenantId()))
+                .map(com.hic.model.EmployeeArea::getEmployeeId)
+                .collect(java.util.stream.Collectors.toSet());
+
         List<Employee> employees = employeeRepository.findByTenantId(tenantId, Pageable.unpaged()).getContent()
                 .stream()
-                .filter(employee -> branchId == null || branchId.equals(employee.getBranchId()))
+                .filter(employee -> branchId == null
+                        || branchId.equals(employee.getBranchId())
+                        || areaEmployeeIds.contains(employee.getId()))
                 .filter(employee -> departmentId == null || departmentId.equals(employee.getDepartmentId()))
                 .filter(employee -> positionId == null || positionId.equals(employee.getPositionId()))
                 .filter(employee -> matchesSearch(employee, search))
