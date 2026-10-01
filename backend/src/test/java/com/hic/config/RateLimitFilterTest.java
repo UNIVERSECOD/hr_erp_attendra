@@ -17,6 +17,7 @@ class RateLimitFilterTest {
     void setUp() {
         filter = new RateLimitFilter();
         ReflectionTestUtils.setField(filter, "loginMaxPerMinute", 1);
+        ReflectionTestUtils.setField(filter, "trustedProxies", "127.0.0.1,::1,172.16.0.0/12");
     }
 
     @Test
@@ -37,9 +38,40 @@ class RateLimitFilterTest {
         assertThat(secondResponse.getStatus()).isEqualTo(429);
     }
 
+    @Test
+    void untrustedClientCannotBypassLimitWithForwardedHeaders() throws Exception {
+        MockHttpServletResponse firstResponse = perform(
+                "POST", "/api/auth/login", "203.0.113.20", "198.51.100.1");
+        MockHttpServletResponse secondResponse = perform(
+                "POST", "/api/auth/login", "203.0.113.20", "198.51.100.2");
+
+        assertThat(firstResponse.getStatus()).isEqualTo(200);
+        assertThat(secondResponse.getStatus()).isEqualTo(429);
+    }
+
+    @Test
+    void trustedProxyUsesValidatedRealClientAddress() throws Exception {
+        MockHttpServletResponse firstResponse = perform(
+                "POST", "/api/auth/login", "172.18.0.5", "198.51.100.1");
+        MockHttpServletResponse secondResponse = perform(
+                "POST", "/api/auth/login", "172.18.0.5", "198.51.100.2");
+
+        assertThat(firstResponse.getStatus()).isEqualTo(200);
+        assertThat(secondResponse.getStatus()).isEqualTo(200);
+    }
+
     private MockHttpServletResponse perform(String method, String path) throws Exception {
+        return perform(method, path, "127.0.0.1", null);
+    }
+
+    private MockHttpServletResponse perform(
+            String method, String path, String remoteAddress, String realIp) throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest(method, path);
-        request.setRemoteAddr("127.0.0.1");
+        request.setRemoteAddr(remoteAddress);
+        if (realIp != null) {
+            request.addHeader("X-Real-IP", realIp);
+            request.addHeader("X-Forwarded-For", "192.0.2.200");
+        }
         MockHttpServletResponse response = new MockHttpServletResponse();
 
         filter.doFilter(request, response, new MockFilterChain());

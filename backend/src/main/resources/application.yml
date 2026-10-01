@@ -49,6 +49,8 @@ encryption:
 rate-limit:
   # Only auth endpoints are rate-limited (see RateLimitFilter).
   login-max-per-minute: ${RATE_LIMIT_LOGIN_MAX:10}
+  # Forwarded client addresses are accepted only from the local/Docker reverse proxy.
+  trusted-proxies: ${RATE_LIMIT_TRUSTED_PROXIES:127.0.0.1,::1,172.16.0.0/12}
 
 logging:
   level:

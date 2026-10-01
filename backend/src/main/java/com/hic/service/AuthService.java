@@ -168,11 +168,11 @@ public class AuthService {
     }
 
     public boolean verifyToken(String token) {
-        return jwtUtil.validateToken(token);
+        return jwtUtil.validateToken(token) && jwtUtil.isAccessToken(token);
     }
 
     public String refreshToken(String refreshToken) {
-        if (!jwtUtil.validateToken(refreshToken)) {
+        if (!jwtUtil.validateToken(refreshToken) || !jwtUtil.isRefreshToken(refreshToken)) {
             throw new UnauthorizedException("Invalid or expired refresh token");
         }
         String username = jwtUtil.extractUsername(refreshToken);
@@ -182,7 +182,7 @@ public class AuthService {
     }
 
     public UserDTO getUserFromToken(String token) {
-        if (!jwtUtil.validateToken(token)) {
+        if (!jwtUtil.validateToken(token) || !jwtUtil.isAccessToken(token)) {
             throw new UnauthorizedException("Invalid or expired token");
         }
         String username = jwtUtil.extractUsername(token);

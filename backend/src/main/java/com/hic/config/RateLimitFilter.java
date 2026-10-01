@@ -7,10 +7,12 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.net.InetAddress;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,6 +28,9 @@ public class RateLimitFilter extends OncePerRequestFilter {
 
     @Value("${rate-limit.login-max-per-minute:10}")
     private int loginMaxPerMinute;
+
+    @Value("${rate-limit.trusted-proxies:127.0.0.1,::1,172.16.0.0/12}")
+    private String trustedProxies;
 
     private static final long WINDOW_MS = 60_000L;
 
@@ -72,11 +77,51 @@ public class RateLimitFilter extends OncePerRequestFilter {
     }
 
     private String getClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
+        String remoteAddress = request.getRemoteAddr();
+        if (!isTrustedProxy(remoteAddress)) {
+            return remoteAddress;
         }
-        return request.getRemoteAddr();
+
+        String realIp = normalizeIp(request.getHeader("X-Real-IP"));
+        return realIp != null ? realIp : remoteAddress;
+    }
+
+    private boolean isTrustedProxy(String remoteAddress) {
+        if (remoteAddress == null || trustedProxies == null) {
+            return false;
+        }
+
+        for (String proxyRange : trustedProxies.split(",")) {
+            String candidate = proxyRange.trim();
+            if (candidate.isEmpty()) {
+                continue;
+            }
+            try {
+                if (new IpAddressMatcher(candidate).matches(remoteAddress)) {
+                    return true;
+                }
+            } catch (IllegalArgumentException ignored) {
+                log.warn("Ignoring invalid trusted proxy range: {}", candidate);
+            }
+        }
+        return false;
+    }
+
+    private String normalizeIp(String value) {
+        if (value == null) {
+            return null;
+        }
+
+        String candidate = value.trim();
+        if (candidate.isEmpty() || !candidate.matches("[0-9a-fA-F:.]+")) {
+            return null;
+        }
+
+        try {
+            return InetAddress.getByName(candidate).getHostAddress();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     /**

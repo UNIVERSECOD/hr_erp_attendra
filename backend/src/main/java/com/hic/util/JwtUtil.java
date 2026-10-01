@@ -16,6 +16,10 @@ import java.util.Map;
 @Component
 public class JwtUtil {
 
+    private static final String TOKEN_TYPE_CLAIM = "tokenType";
+    private static final String ACCESS_TOKEN_TYPE = "access";
+    private static final String REFRESH_TOKEN_TYPE = "refresh";
+
     @Value("${jwt.secret}")
     private String secret;
 
@@ -36,6 +40,7 @@ public class JwtUtil {
 
     public String generateToken(String username, UserType userType, Long tenantId, Long userId) {
         Map<String, Object> claims = new HashMap<>();
+        claims.put(TOKEN_TYPE_CLAIM, ACCESS_TOKEN_TYPE);
         claims.put("userType", userType.name());
         if (tenantId != null) {
             claims.put("tenantId", tenantId);
@@ -47,7 +52,9 @@ public class JwtUtil {
     }
 
     public String generateRefreshToken(String username) {
-        return buildToken(new HashMap<>(), username, refreshExpiration);
+        Map<String, Object> claims = new HashMap<>();
+        claims.put(TOKEN_TYPE_CLAIM, REFRESH_TOKEN_TYPE);
+        return buildToken(claims, username, refreshExpiration);
     }
 
     private String buildToken(Map<String, Object> extraClaims, String subject, long expirationMs) {
@@ -67,6 +74,36 @@ public class JwtUtil {
                     .build()
                     .parseSignedClaims(token);
             return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isAccessToken(String token) {
+        try {
+            Claims claims = extractClaims(token);
+            String tokenType = claims.get(TOKEN_TYPE_CLAIM, String.class);
+            if (ACCESS_TOKEN_TYPE.equals(tokenType)) {
+                return true;
+            }
+
+            // Tokens issued before token-type separation remain usable until their normal expiry.
+            return tokenType == null && claims.get("userType", String.class) != null;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public boolean isRefreshToken(String token) {
+        try {
+            Claims claims = extractClaims(token);
+            String tokenType = claims.get(TOKEN_TYPE_CLAIM, String.class);
+            if (REFRESH_TOKEN_TYPE.equals(tokenType)) {
+                return true;
+            }
+
+            // Legacy refresh tokens did not have either tokenType or userType claims.
+            return tokenType == null && claims.get("userType", String.class) == null;
         } catch (Exception e) {
             return false;
         }

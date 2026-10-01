@@ -34,63 +34,50 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
         // Always clear tenant context at start of each request
         TenantContext.clear();
 
-        String authHeader = request.getHeader("Authorization");
-
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
-            filterChain.doFilter(request, response);
-            return;
-        }
-
-        String token = authHeader.substring(7);
-
         try {
-            if (jwtUtil.validateToken(token)) {
-                String username = jwtUtil.extractUsername(token);
-                var userType = jwtUtil.extractUserType(token);
-                Long tenantId = jwtUtil.extractTenantId(token);
-                Long userId = jwtUtil.extractUserId(token);
-
-                if (username != null && SecurityContextHolder.getContext().getAuthentication() == null) {
-                    String role = userType != null ? "ROLE_" + userType.name() : "ROLE_USER";
-                    var authToken = new UsernamePasswordAuthenticationToken(
-                            username,
-                            null,
-                            Collections.singletonList(new SimpleGrantedAuthority(role))
-                    );
-                    authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-                    SecurityContextHolder.getContext().setAuthentication(authToken);
-
-                    // Set tenant context from JWT claims
-                    if (tenantId != null) {
-                        TenantContext.setTenantId(tenantId);
-                    } else {
-                        // Fallback: load tenant from user record for backward compatibility
-                        userRepository.findByUsername(username).ifPresent(user -> {
-                            if (user.getTenantId() != null) {
-                                TenantContext.setTenantId(user.getTenantId());
-                            }
-                        });
-                    }
-
-                    if (userId != null) {
-                        TenantContext.setUserId(userId);
-                    } else {
-                        userRepository.findByUsername(username).ifPresent(user ->
-                                TenantContext.setUserId(user.getId()));
-                    }
-
-                    TenantContext.setUsername(username);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("JWT authentication failed: {}", e.getMessage());
-        }
-
-        try {
+            authenticateRequest(request);
             filterChain.doFilter(request, response);
         } finally {
             // Always clear tenant context after request to prevent thread reuse leaks
             TenantContext.clear();
+        }
+    }
+
+    private void authenticateRequest(HttpServletRequest request) {
+        String authHeader = request.getHeader("Authorization");
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+            return;
+        }
+
+        String token = authHeader.substring(7);
+        try {
+            if (!jwtUtil.validateToken(token) || !jwtUtil.isAccessToken(token)) {
+                return;
+            }
+
+            String username = jwtUtil.extractUsername(token);
+            if (username == null || SecurityContextHolder.getContext().getAuthentication() != null) {
+                return;
+            }
+
+            userRepository.findByUsername(username)
+                    .filter(user -> !user.isPasswordSetupRequired())
+                    .ifPresent(user -> {
+                        String role = "ROLE_" + user.getUserType().name();
+                        var authToken = new UsernamePasswordAuthenticationToken(
+                                user.getUsername(),
+                                null,
+                                Collections.singletonList(new SimpleGrantedAuthority(role))
+                        );
+                        authToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                        SecurityContextHolder.getContext().setAuthentication(authToken);
+
+                        TenantContext.setTenantId(user.getTenantId());
+                        TenantContext.setUserId(user.getId());
+                        TenantContext.setUsername(user.getUsername());
+                    });
+        } catch (Exception e) {
+            log.warn("JWT authentication failed: {}", e.getMessage());
         }
     }
 }

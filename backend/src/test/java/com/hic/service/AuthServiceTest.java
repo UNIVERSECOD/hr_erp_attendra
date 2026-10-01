@@ -414,6 +414,7 @@ class AuthServiceTest {
     @Test
     void verifyToken_validToken_returnsTrue() {
         when(jwtUtil.validateToken("valid-token")).thenReturn(true);
+        when(jwtUtil.isAccessToken("valid-token")).thenReturn(true);
         assertThat(authService.verifyToken("valid-token")).isTrue();
     }
 
@@ -426,6 +427,7 @@ class AuthServiceTest {
     @Test
     void refreshToken_validRefreshToken_returnsNewAccessToken() {
         when(jwtUtil.validateToken("valid-refresh-token")).thenReturn(true);
+        when(jwtUtil.isRefreshToken("valid-refresh-token")).thenReturn(true);
         when(jwtUtil.extractUsername("valid-refresh-token")).thenReturn("admin");
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(testUser));
         when(jwtUtil.generateToken(anyString(), any(UserType.class), any(), any())).thenReturn("new-access-token");
@@ -445,8 +447,19 @@ class AuthServiceTest {
     }
 
     @Test
+    void refreshToken_accessToken_throwsUnauthorizedException() {
+        when(jwtUtil.validateToken("access-token")).thenReturn(true);
+        when(jwtUtil.isRefreshToken("access-token")).thenReturn(false);
+
+        assertThatThrownBy(() -> authService.refreshToken("access-token"))
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessageContaining("Invalid or expired refresh token");
+    }
+
+    @Test
     void getUserFromToken_validToken_returnsUserDTO() {
         when(jwtUtil.validateToken("valid-token")).thenReturn(true);
+        when(jwtUtil.isAccessToken("valid-token")).thenReturn(true);
         when(jwtUtil.extractUsername("valid-token")).thenReturn("admin");
         when(userRepository.findByUsername("admin")).thenReturn(Optional.of(testUser));
 

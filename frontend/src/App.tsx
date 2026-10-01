@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { lazy, Suspense } from 'react'
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom'
+import { lazy, Suspense, useEffect } from 'react'
 import { useAuthStore } from './store/authStore.ts'
 import { t } from './i18n/index.ts'
 import AttendraBrand from './components/AttendraBrand.tsx'
+import { getSessionTimerDelay, hasUsableAccessToken } from './utils/jwt.ts'
 
 const LoginPage = lazy(() => import('./pages/LoginPage.tsx'))
 const InitialSetupPage = lazy(() => import('./pages/InitialSetupPage.tsx'))
@@ -26,22 +27,70 @@ const SettingsPage = lazy(() => import('./pages/SettingsPage.tsx'))
 const HR_ROLES = ['HEAD_OFFICE_HR', 'OFFICE_HR', 'DEPARTMENT_HR']
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated } = useAuthStore()
-  return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />
+  const { isAuthenticated, token } = useAuthStore()
+  return isAuthenticated && hasUsableAccessToken(token)
+    ? <>{children}</>
+    : <Navigate to="/login" replace />
 }
 
 function HrRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAuthStore()
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  const { isAuthenticated, token, user } = useAuthStore()
+  if (!isAuthenticated || !hasUsableAccessToken(token)) return <Navigate to="/login" replace />
   if (!user || !HR_ROLES.includes(user.userType)) return <Navigate to="/" replace />
   return <>{children}</>
 }
 
 function HeadOfficeHrRoute({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, user } = useAuthStore()
-  if (!isAuthenticated) return <Navigate to="/login" replace />
+  const { isAuthenticated, token, user } = useAuthStore()
+  if (!isAuthenticated || !hasUsableAccessToken(token)) return <Navigate to="/login" replace />
   if (!user || user.userType !== 'HEAD_OFFICE_HR') return <Navigate to="/" replace />
   return <>{children}</>
+}
+
+function SessionExpiryGuard() {
+  const { token, isAuthenticated, logout } = useAuthStore()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (!isAuthenticated || !token) return
+
+    let timeoutId: number | undefined
+
+    const endExpiredSession = () => {
+      if (hasUsableAccessToken(token)) return false
+      logout()
+      navigate('/login', { replace: true })
+      return true
+    }
+
+    const scheduleExpiryCheck = () => {
+      if (endExpiredSession()) return
+      const delay = getSessionTimerDelay(token)
+      if (delay === null) {
+        endExpiredSession()
+        return
+      }
+      timeoutId = window.setTimeout(scheduleExpiryCheck, delay)
+    }
+
+    const checkWhenActive = () => {
+      if (document.visibilityState === 'visible') {
+        endExpiredSession()
+      }
+    }
+
+    scheduleExpiryCheck()
+    window.addEventListener('focus', endExpiredSession)
+    document.addEventListener('visibilitychange', checkWhenActive)
+
+    return () => {
+      if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+      window.removeEventListener('focus', endExpiredSession)
+      document.removeEventListener('visibilitychange', checkWhenActive)
+    }
+  }, [isAuthenticated, logout, navigate, token])
+
+  return null
 }
 
 function AppLayout({ children }: { children: React.ReactNode }) {
@@ -55,6 +104,7 @@ function AppLayout({ children }: { children: React.ReactNode }) {
 export default function App() {
   return (
     <BrowserRouter>
+      <SessionExpiryGuard />
       <Suspense
         fallback={
           <div className="flex flex-col items-center justify-center gap-4 h-screen bg-white">
