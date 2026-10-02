@@ -14,6 +14,7 @@ import { deviceApi } from '../api/deviceApi.ts'
 import { deviceUserApi } from '../api/deviceUserApi.ts'
 import { timetableApi } from '../api/timetableApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
+import { todayInAppTimeZone } from '../utils/dateTime.ts'
 
 const UI_SHIFT_TYPES = ['STANDARD', 'FLEXIBLE'] as const
 const SHIFT_TYPE_LABELS: Record<string, string> = {
@@ -83,7 +84,7 @@ const defaultForm: EmployeeFormData = {
   contractNumber: '',
   branchId: '',
   areaIds: [],
-  hireDate: new Date().toISOString().split('T')[0],
+  hireDate: todayInAppTimeZone(),
   contractEndDate: '',
   annualLeaveDuration: 30,
   annualLeaveBalance: 30,
@@ -214,7 +215,7 @@ export default function EmployeesPage() {
       wizardImageObjectUrlRef.current = null
     }
     setEditingEmployee(null)
-    setForm(defaultForm)
+    setForm({ ...defaultForm, hireDate: todayInAppTimeZone() })
     setEmployeeDoors([])
     setWizardImageFile(null)
     setWizardImageRemovalRequested(false)
@@ -243,7 +244,7 @@ export default function EmployeesPage() {
       contractNumber: emp.contractNumber || '',
       branchId: emp.branchId || '',
       areaIds: emp.areaIds?.length ? emp.areaIds : (emp.branchId ? [emp.branchId] : []),
-      hireDate: emp.hireDate || defaultForm.hireDate,
+      hireDate: emp.hireDate || todayInAppTimeZone(),
       contractEndDate: emp.contractEndDate || '',
       annualLeaveDuration: emp.annualLeaveDuration ?? 30,
       annualLeaveBalance: emp.annualLeaveBalance ?? 30,
@@ -606,7 +607,15 @@ export default function EmployeesPage() {
         }
       }
 
-      await fetchEmployees(currentPage, 20)
+      const refreshPage = editingEmployee ? currentPage : Math.floor(totalElements / 20)
+      const refreshed = await fetchEmployees(refreshPage, 20)
+      if (!refreshed) {
+        if (!editingEmployee && savedEmployee) {
+          setEditingEmployee(savedEmployee)
+        }
+        setFormError('Əməkdaş saxlanıldı, amma siyahı yenilənmədi. Yenidən cəhd edin.')
+        return
+      }
       closeWizard()
       if (showProfileModal && selectedEmployee?.id === savedEmployee?.id) {
         openProfile(savedEmployee)
@@ -745,7 +754,9 @@ export default function EmployeesPage() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             <DataTransferControls
               entity="employees"
-              onImported={() => fetchEmployees(0, 20)}
+              onImported={async () => {
+                await fetchEmployees(0, 20)
+              }}
             />
             <button
               onClick={() => fetchEmployees(currentPage, 20)}

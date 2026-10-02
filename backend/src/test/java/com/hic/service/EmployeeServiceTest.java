@@ -12,6 +12,8 @@ import com.hic.model.Employee;
 import com.hic.model.EmployeeDeviceAccess;
 import com.hic.model.Employee.EmploymentStatus;
 import com.hic.model.Door;
+import com.hic.model.Position;
+import com.hic.model.Timetable;
 import com.hic.repository.DepartmentRepository;
 import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.DoorRepository;
@@ -19,6 +21,8 @@ import com.hic.repository.EmployeeDeviceAccessRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.PositionRepository;
 import com.hic.repository.TenantRepository;
+import com.hic.repository.TimetableRepository;
+import com.hic.util.TenantContext;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -51,6 +55,9 @@ class EmployeeServiceTest {
 
     @Mock
     private PositionRepository positionRepository;
+
+    @Mock
+    private TimetableRepository timetableRepository;
 
     @Mock
     private EmployeeFaceImageService employeeFaceImageService;
@@ -109,6 +116,14 @@ class EmployeeServiceTest {
 
         lenient().when(employeeFaceImageService.getLatestEmployeeFacePublicUrl(anyLong()))
                 .thenReturn(Optional.empty());
+        lenient().when(departmentRepository.existsById(1L)).thenReturn(true);
+        lenient().when(departmentRepository.findById(1L)).thenReturn(Optional.of(testDepartment));
+        lenient().when(timetableRepository.findById(anyLong())).thenAnswer(invocation -> {
+            Timetable timetable = new Timetable();
+            timetable.setId(invocation.getArgument(0));
+            timetable.setShiftType("STANDARD");
+            return Optional.of(timetable);
+        });
         lenient().when(userScopeService.resolveBranchScope(any())).thenReturn(null);
         lenient().when(employeeAreaAssignmentService.normalizeAndValidateAreaIds(any(), any(), any()))
                 .thenAnswer(invocation -> {
@@ -170,6 +185,96 @@ class EmployeeServiceTest {
         assertThat(result.getEmploymentStatus()).isEqualTo(EmploymentStatus.ACTIVE);
         verify(employeeRepository).save(any(Employee.class));
         verify(isapiEmployeeUserSyncService, never()).syncEmployee(any(Employee.class), anyList());
+    }
+
+    @Test
+    void create_selectedPositionAndTimetable_areReturnedImmediately() {
+        Position position = new Position();
+        position.setId(5L);
+        position.setPositionName("Surveyor");
+        position.setDepartmentId(1L);
+        Timetable timetable = new Timetable();
+        timetable.setId(7L);
+        timetable.setShiftType("STANDARD");
+
+        testEmployeeDTO.setPositionId(5L);
+        testEmployeeDTO.setTimetableId(7L);
+        testEmployeeDTO.setShiftType("STANDARD");
+        testEmployeeDTO.setEmergencyContact("+994501112233");
+        testEmployeeDTO.setAddress("Baku");
+
+        when(positionRepository.findById(5L)).thenReturn(Optional.of(position));
+        when(timetableRepository.findById(7L)).thenReturn(Optional.of(timetable));
+        when(employeeRepository.count()).thenReturn(0L);
+        when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> {
+            Employee employee = invocation.getArgument(0);
+            employee.setId(1L);
+            return employee;
+        });
+
+        EmployeeResponseDTO result = employeeService.create(testEmployeeDTO);
+
+        assertThat(result.getPositionId()).isEqualTo(5L);
+        assertThat(result.getPositionName()).isEqualTo("Surveyor");
+        assertThat(result.getTimetableId()).isEqualTo(7L);
+        assertThat(result.getShiftType()).isEqualTo("STANDARD");
+        assertThat(result.getEmergencyContact()).isEqualTo("+994501112233");
+        assertThat(result.getAddress()).isEqualTo("Baku");
+    }
+
+    @Test
+    void create_positionMustBelongToSelectedDepartment() {
+        Position position = new Position();
+        position.setId(5L);
+        position.setDepartmentId(2L);
+        testEmployeeDTO.setPositionId(5L);
+        when(positionRepository.findById(5L)).thenReturn(Optional.of(position));
+
+        assertThatThrownBy(() -> employeeService.create(testEmployeeDTO))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessageContaining("vəzifə departamentə aid deyil");
+        verify(employeeRepository, never()).save(any(Employee.class));
+    }
+
+    @Test
+    void create_departmentMustBelongToPrimaryArea() {
+        testDepartment.setTenantId(1L);
+        testDepartment.setBranchId(2L);
+        testEmployeeDTO.setBranchId(1L);
+        testEmployeeDTO.setAreaIds(List.of(1L));
+        TenantContext.setTenantId(1L);
+        try {
+            assertThatThrownBy(() -> employeeService.create(testEmployeeDTO))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasMessageContaining("departament əsas əraziyə aid deyil");
+            verify(employeeRepository, never()).save(any(Employee.class));
+        } finally {
+            TenantContext.clear();
+        }
+    }
+
+    @Test
+    void create_timetableMustBelongToCurrentTenant() {
+        testDepartment.setTenantId(1L);
+        testDepartment.setBranchId(1L);
+        testEmployeeDTO.setBranchId(1L);
+        testEmployeeDTO.setAreaIds(List.of(1L));
+        testEmployeeDTO.setTimetableId(7L);
+        Timetable timetable = new Timetable();
+        timetable.setId(7L);
+        timetable.setTenantId(2L);
+        timetable.setShiftType("STANDARD");
+        when(timetableRepository.findById(7L)).thenReturn(Optional.of(timetable));
+
+        TenantContext.setTenantId(1L);
+        try {
+            assertThatThrownBy(() -> employeeService.create(testEmployeeDTO))
+                    .isInstanceOf(BadRequestException.class)
+                    .hasMessageContaining("iş cədvəli cari şirkətə aid deyil");
+            verify(employeeRepository, never()).save(any(Employee.class));
+        } finally {
+            TenantContext.clear();
+        }
     }
 
     @Test
@@ -252,6 +357,21 @@ class EmployeeServiceTest {
 
         assertThat(result).isNotNull();
         verify(employeeRepository).save(any(Employee.class));
+    }
+
+    @Test
+    void update_preservesFieldsThatAreNotEditableInTheEmployeeForm() {
+        testEmployee.setCardId("CARD-100");
+        testEmployee.setFaceId("FACE-100");
+        testEmployee.setGroupName("Legacy group");
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
+        when(employeeRepository.save(any(Employee.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        EmployeeResponseDTO result = employeeService.update(1L, testEmployeeDTO);
+
+        assertThat(result.getCardId()).isEqualTo("CARD-100");
+        assertThat(result.getFaceId()).isEqualTo("FACE-100");
+        assertThat(result.getGroupName()).isEqualTo("Legacy group");
     }
 
     @Test

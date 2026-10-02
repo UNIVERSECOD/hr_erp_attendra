@@ -13,6 +13,7 @@ import com.hic.model.Employee;
 import com.hic.model.Employee.EmploymentStatus;
 import com.hic.model.EmployeeDeviceAccess;
 import com.hic.model.Position;
+import com.hic.model.Timetable;
 import com.hic.repository.DepartmentRepository;
 import com.hic.repository.DeviceConfigRepository;
 import com.hic.repository.DoorRepository;
@@ -20,6 +21,7 @@ import com.hic.repository.EmployeeDeviceAccessRepository;
 import com.hic.repository.EmployeeRepository;
 import com.hic.repository.PositionRepository;
 import com.hic.repository.TenantRepository;
+import com.hic.repository.TimetableRepository;
 import com.hic.util.AppTimeZone;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
@@ -48,6 +50,7 @@ public class EmployeeService {
     private final EmployeeRepository employeeRepository;
     private final DepartmentRepository departmentRepository;
     private final PositionRepository positionRepository;
+    private final TimetableRepository timetableRepository;
     private final EmployeeFaceImageService employeeFaceImageService;
     private final DeviceConfigRepository deviceConfigRepository;
     private final DoorRepository doorRepository;
@@ -178,13 +181,12 @@ public class EmployeeService {
     }
 
     private Employee createEmployee(EmployeeDTO dto, String requestedEmployeeId, boolean syncDevices) {
-        validateDepartmentExists(dto.getDepartmentId());
-
         Long tenantId = TenantContext.getTenantId();
         enforceEmployeeQuota(tenantId);
         List<Long> areaIds = employeeAreaAssignmentService.normalizeAndValidateAreaIds(
                 dto.getAreaIds(), dto.getBranchId(), tenantId);
         Long primaryAreaId = resolvePrimaryAreaId(areaIds, dto.getBranchId());
+        Timetable timetable = validateWorkReferences(dto, tenantId, primaryAreaId);
 
         if (dto.getFinNumber() != null && !dto.getFinNumber().isBlank()) {
             if (tenantId != null) {
@@ -202,6 +204,7 @@ public class EmployeeService {
 
         Employee employee = new Employee();
         mapDtoToEmployee(dto, employee);
+        applyTimetableShiftType(employee, timetable);
         employee.setBranchId(primaryAreaId);
         if (tenantId != null) {
             employee.setTenantId(tenantId);
@@ -234,11 +237,11 @@ public class EmployeeService {
         Employee employee = employeeRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
 
-        validateDepartmentExists(dto.getDepartmentId());
         Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : TenantContext.getTenantId();
         List<Long> areaIds = employeeAreaAssignmentService.normalizeAndValidateAreaIds(
                 dto.getAreaIds(), dto.getBranchId(), tenantId);
         Long primaryAreaId = resolvePrimaryAreaId(areaIds, dto.getBranchId());
+        Timetable timetable = validateWorkReferences(dto, tenantId, primaryAreaId);
 
         if (dto.getFinNumber() != null && !dto.getFinNumber().isBlank()) {
             if (tenantId != null) {
@@ -260,6 +263,7 @@ public class EmployeeService {
 
         Long previousTimetableId = employee.getTimetableId();
         mapDtoToEmployee(dto, employee);
+        applyTimetableShiftType(employee, timetable);
         employee.setBranchId(primaryAreaId);
         if (!java.util.Objects.equals(previousTimetableId, employee.getTimetableId())) {
             shiftAssignmentService.syncScheduleFromEmployee(
@@ -323,8 +327,12 @@ public class EmployeeService {
         employee.setMobilePhone(dto.getMobilePhone());
         employee.setEmail(dto.getEmail());
         employee.setFinNumber(dto.getFinNumber());
-        employee.setFaceId(dto.getFaceId());
-        employee.setCardId(dto.getCardId());
+        if (dto.getFaceId() != null) {
+            employee.setFaceId(dto.getFaceId());
+        }
+        if (dto.getCardId() != null) {
+            employee.setCardId(dto.getCardId());
+        }
         employee.setSerialNumber(dto.getSerialNumber());
         employee.setContractNumber(dto.getContractNumber());
         employee.setBranchId(dto.getBranchId());
@@ -334,7 +342,9 @@ public class EmployeeService {
         employee.setContractEndDate(dto.getContractEndDate());
         employee.setAnnualLeaveDuration(dto.getAnnualLeaveDuration());
         employee.setAnnualLeaveBalance(dto.getAnnualLeaveBalance());
-        employee.setGroupName(dto.getGroupName());
+        if (dto.getGroupName() != null) {
+            employee.setGroupName(dto.getGroupName());
+        }
         employee.setSalary(dto.getSalary());
         employee.setHourlyRate(dto.getHourlyRate());
         employee.setAllowance(dto.getAllowance());
@@ -506,9 +516,48 @@ public class EmployeeService {
                 page.getTotalPages(), page.getNumber(), page.getSize());
     }
 
-    private void validateDepartmentExists(Long departmentId) {
-        if (!departmentRepository.existsById(departmentId)) {
+    private Timetable validateWorkReferences(EmployeeDTO dto, Long tenantId, Long primaryAreaId) {
+        Long departmentId = dto.getDepartmentId();
+        if (departmentId == null || !departmentRepository.existsById(departmentId)) {
             throw new ResourceNotFoundException("Department", departmentId);
+        }
+
+        Department department = departmentRepository.findById(departmentId)
+                .orElseThrow(() -> new ResourceNotFoundException("Department", departmentId));
+        if (tenantId != null && !tenantId.equals(department.getTenantId())) {
+            throw new BadRequestException("Seçilmiş departament cari şirkətə aid deyil.");
+        }
+        if (tenantId != null && primaryAreaId != null
+                && !primaryAreaId.equals(department.getBranchId())) {
+            throw new BadRequestException("Seçilmiş departament əsas əraziyə aid deyil.");
+        }
+
+        if (dto.getPositionId() != null) {
+            Position position = positionRepository.findById(dto.getPositionId())
+                    .orElseThrow(() -> new ResourceNotFoundException("Position", dto.getPositionId()));
+            if (!departmentId.equals(position.getDepartmentId())) {
+                throw new BadRequestException("Seçilmiş vəzifə departamentə aid deyil.");
+            }
+            if (tenantId != null && !tenantId.equals(position.getTenantId())) {
+                throw new BadRequestException("Seçilmiş vəzifə cari şirkətə aid deyil.");
+            }
+        }
+
+        Long timetableId = dto.getTimetableId();
+        if (timetableId != null) {
+            Timetable timetable = timetableRepository.findById(timetableId)
+                    .orElseThrow(() -> new ResourceNotFoundException("Timetable", timetableId));
+            if (tenantId != null && !tenantId.equals(timetable.getTenantId())) {
+                throw new BadRequestException("Seçilmiş iş cədvəli cari şirkətə aid deyil.");
+            }
+            return timetable;
+        }
+        return null;
+    }
+
+    private void applyTimetableShiftType(Employee employee, Timetable timetable) {
+        if (timetable != null && timetable.getShiftType() != null && !timetable.getShiftType().isBlank()) {
+            employee.setShiftType(timetable.getShiftType());
         }
     }
 
