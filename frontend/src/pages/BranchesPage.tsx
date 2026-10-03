@@ -3,6 +3,7 @@ import Layout from '../components/Layout.tsx'
 import { Branch, DeviceConfig } from '../types'
 import { useBranchStore } from '../store/branchStore.ts'
 import { deviceApi } from '../api/deviceApi.ts'
+import { toast } from '../store/toastStore.ts'
 
 interface BranchFormData {
   name: string
@@ -83,12 +84,16 @@ export default function BranchesPage() {
       }
       if (editingBranch) {
         await updateBranch(editingBranch.id, payload)
+        toast.success('Ərazi yeniləndi')
       } else {
         await createBranch(payload)
+        toast.success('Ərazi əlavə edildi')
       }
       closeModal()
     } catch (err) {
-      setFormError((err as Error).message || 'Ərazi yadda saxlanılmadı')
+      const message = (err as Error).message || 'Ərazi yadda saxlanılmadı'
+      setFormError(message)
+      toast.error('Ərazi saxlanılmadı', message)
     }
   }
 
@@ -97,8 +102,10 @@ export default function BranchesPage() {
     try {
       await deleteBranch(deleteTarget.id)
       setDeleteTarget(null)
-    } catch {
+      toast.success('Ərazi silindi')
+    } catch (error) {
       setDeleteTarget(null)
+      toast.error('Ərazi silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
     }
   }
 

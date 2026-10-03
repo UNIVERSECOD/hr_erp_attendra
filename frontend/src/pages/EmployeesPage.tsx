@@ -15,6 +15,7 @@ import { deviceUserApi } from '../api/deviceUserApi.ts'
 import { timetableApi } from '../api/timetableApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { todayInAppTimeZone } from '../utils/dateTime.ts'
+import { toast } from '../store/toastStore.ts'
 
 const UI_SHIFT_TYPES = ['STANDARD', 'FLEXIBLE'] as const
 const SHIFT_TYPE_LABELS: Record<string, string> = {
@@ -547,9 +548,12 @@ export default function EmployeesPage() {
           const faceErrors = await deleteFaceForEmployee(savedEmployee)
           if (faceErrors.length > 0) {
             console.info('[handleSave] Hikvision face delete warnings:', faceErrors)
+            toast.warning('Şəkil profildən silindi', 'Bəzi cihazlardan silmək mümkün olmadı.')
           }
         } catch (e) {
-          setFormError(getApiErrorMessage(e, 'Profil şəkli silinmədi'))
+          const message = getApiErrorMessage(e, 'Profil şəkli silinmədi')
+          setFormError(message)
+          toast.error('Şəkil silinmədi', message)
           setSaving(false)
           return
         }
@@ -562,11 +566,15 @@ export default function EmployeesPage() {
             if (!editingEmployee) {
               setEditingEmployee(savedEmployee)
             }
-            setFormError(`Şəkil profilə saxlanıldı, amma cihaz sinxronu tamamlanmadı: ${faceErrors.join(' | ')}`)
+            const message = `Şəkil profilə saxlanıldı, amma cihaz sinxronu tamamlanmadı: ${faceErrors.join(' | ')}`
+            setFormError(message)
+            toast.warning('Əməkdaş saxlanıldı', message)
             return
           }
         } catch (e) {
-          setFormError((e as Error).message || 'Profil şəkli yadda saxlanılmadı')
+          const message = getApiErrorMessage(e, 'Profil şəkli yadda saxlanılmadı')
+          setFormError(message)
+          toast.error('Şəkil saxlanılmadı', message)
           setSaving(false)
           return
         }
@@ -578,15 +586,20 @@ export default function EmployeesPage() {
         if (!editingEmployee && savedEmployee) {
           setEditingEmployee(savedEmployee)
         }
-        setFormError('Əməkdaş saxlanıldı, amma siyahı yenilənmədi. Yenidən cəhd edin.')
+        const message = 'Əməkdaş saxlanıldı, amma siyahı yenilənmədi. Yenidən cəhd edin.'
+        setFormError(message)
+        toast.warning('Siyahı yenilənmədi', message)
         return
       }
       closeWizard()
+      toast.success(editingEmployee ? 'Əməkdaş yeniləndi' : 'Əməkdaş əlavə edildi')
       if (showProfileModal && selectedEmployee?.id === savedEmployee?.id) {
         openProfile(savedEmployee)
       }
     } catch (e: unknown) {
-      setFormError(getApiErrorMessage(e, 'Saxlamaq alınmadı'))
+      const message = getApiErrorMessage(e, 'Saxlamaq alınmadı')
+      setFormError(message)
+      toast.error('Əməkdaş saxlanılmadı', message)
     } finally {
       setSaving(false)
     }
@@ -602,8 +615,11 @@ export default function EmployeesPage() {
       if (selectedEmployee?.id === deleteConfirm.id) {
         closeProfile()
       }
+      toast.success('Əməkdaş silindi')
     } catch (e: unknown) {
-      setDeleteError(getApiErrorMessage(e, 'Əməkdaşı silmək alınmadı'))
+      const message = getApiErrorMessage(e, 'Əməkdaşı silmək alınmadı')
+      setDeleteError(message)
+      toast.error('Əməkdaş silinmədi', message)
     } finally {
       setDeletingEmployee(false)
     }
@@ -633,11 +649,17 @@ export default function EmployeesPage() {
     try {
       const faceErrors = await uploadFaceForEmployee(employee, file)
       if (faceErrors.length > 0) {
-        setUploadFaceError(`Şəkil profilə saxlanıldı, amma cihaz sinxronu tamamlanmadı: ${faceErrors.join(' | ')}`)
+        const message = `Şəkil profilə saxlanıldı, amma cihaz sinxronu tamamlanmadı: ${faceErrors.join(' | ')}`
+        setUploadFaceError(message)
+        toast.warning('Şəkil saxlanıldı', message)
+      } else {
+        toast.success('Şəkil yeniləndi')
       }
       await fetchEmployees(currentPage, 20)
     } catch (e: unknown) {
-      setUploadFaceError((e as Error).message || 'Şəkil yüklənmədi')
+      const message = getApiErrorMessage(e, 'Şəkil yüklənmədi')
+      setUploadFaceError(message)
+      toast.error('Şəkil yüklənmədi', message)
     } finally {
       setUploadingFaceEmployeeId(null)
       if (input) {
@@ -653,13 +675,18 @@ export default function EmployeesPage() {
       const faceErrors = await deleteFaceForEmployee(employee)
       if (faceErrors.length > 0) {
         console.info('[handleFaceDelete] Hikvision face delete warnings:', faceErrors)
+        toast.warning('Şəkil profildən silindi', 'Bəzi cihazlardan silmək mümkün olmadı.')
+      } else {
+        toast.success('Şəkil silindi')
       }
       await fetchEmployees(currentPage, 20)
       if (selectedEmployee?.id === employee.id) {
         await openProfile(employee)
       }
     } catch (e: unknown) {
-      setUploadFaceError(getApiErrorMessage(e, 'Şəkil silinmədi'))
+      const message = getApiErrorMessage(e, 'Şəkil silinmədi')
+      setUploadFaceError(message)
+      toast.error('Şəkil silinmədi', message)
     } finally {
       setDeletingFaceEmployeeId(null)
     }

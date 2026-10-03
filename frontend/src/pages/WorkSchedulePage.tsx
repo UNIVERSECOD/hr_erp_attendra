@@ -5,6 +5,7 @@ import { useScheduleStore } from '../store/scheduleStore.ts'
 import { Timetable, TimetableDayRule, Holiday, Permission, PermissionType } from '../types'
 import ShiftAssignmentPage from './ShiftAssignmentPage.tsx'
 import { statusLabel } from '../i18n/labels.ts'
+import { toast } from '../store/toastStore.ts'
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────
 /** UI-exposed shift types only. MORNING/NIGHT remain valid in DB/backend. */
@@ -212,7 +213,10 @@ function TimetableModal({ initial, onSave, onClose }: {
       await onSave(payload)
       onClose()
     }
-    catch { setError('Xəta baş verdi') }
+    catch {
+      setError('Xəta baş verdi')
+      toast.error('Qrafik saxlanılmadı', 'Xəta baş verdi')
+    }
     finally { setSaving(false) }
   }
 
@@ -281,8 +285,13 @@ function TimetableTab() {
   useEffect(() => { void fetchTimetables() }, [])
 
   const handleSave = async (data: Partial<Timetable>) => {
-    if (editing) await updateTimetable(editing.id, data)
-    else await createTimetable(data)
+    if (editing) {
+      await updateTimetable(editing.id, data)
+      toast.success('Qrafik yeniləndi')
+    } else {
+      await createTimetable(data)
+      toast.success('Qrafik əlavə edildi')
+    }
   }
 
   return (
@@ -372,7 +381,15 @@ function TimetableTab() {
       {confirmId !== null && (
         <ConfirmDialog
           message="Bu iş qrafikini silmək istədiyinizə əminsiniz?"
-          onConfirm={async () => { await deleteTimetable(confirmId); setConfirmId(null) }}
+          onConfirm={async () => {
+            try {
+              await deleteTimetable(confirmId)
+              setConfirmId(null)
+              toast.success('Qrafik silindi')
+            } catch (error: unknown) {
+              toast.error('Qrafik silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
+            }
+          }}
           onCancel={() => setConfirmId(null)}
         />
       )}
@@ -414,7 +431,10 @@ function HolidayModal({ initial, onSave, onClose }: {
     try {
       await onSave({ ...form, name: displayName as string })
       onClose()
-    } catch { setError('Xəta baş verdi') }
+    } catch {
+      setError('Xəta baş verdi')
+      toast.error('Bayram günü saxlanılmadı', 'Xəta baş verdi')
+    }
     finally { setSaving(false) }
   }
 
@@ -468,8 +488,13 @@ function HolidayTab() {
   useEffect(() => { void fetchHolidays() }, [])
 
   const handleSave = async (data: Partial<Holiday>) => {
-    if (editing) await updateHoliday(editing.id, data)
-    else await createHoliday(data)
+    if (editing) {
+      await updateHoliday(editing.id, data)
+      toast.success('Bayram günü yeniləndi')
+    } else {
+      await createHoliday(data)
+      toast.success('Bayram günü əlavə edildi')
+    }
   }
 
   return (
@@ -527,7 +552,15 @@ function HolidayTab() {
       {confirmId !== null && (
         <ConfirmDialog
           message="Bu bayram gününü silmək istədiyinizə əminsiniz?"
-          onConfirm={async () => { await deleteHoliday(confirmId); setConfirmId(null) }}
+          onConfirm={async () => {
+            try {
+              await deleteHoliday(confirmId)
+              setConfirmId(null)
+              toast.success('Bayram günü silindi')
+            } catch (error: unknown) {
+              toast.error('Bayram günü silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
+            }
+          }}
           onCancel={() => setConfirmId(null)}
         />
       )}
@@ -580,7 +613,10 @@ function PermissionModal({ initial, permissionTypes, onSave, onClose }: {
     if (form.endDate < form.startDate) { setError('Bitmə tarixi başlanğıc tarixindən əvvəl ola bilməz'); return }
     setSaving(true)
     try { await onSave(form); onClose() }
-    catch { setError('Xəta baş verdi') }
+    catch {
+      setError('Xəta baş verdi')
+      toast.error('İcazə saxlanılmadı', 'Xəta baş verdi')
+    }
     finally { setSaving(false) }
   }
 
@@ -651,8 +687,13 @@ function PermissionTab() {
   }, [])
 
   const handleSave = async (data: Partial<Permission>) => {
-    if (editing) await updatePermission(editing.id, data)
-    else await createPermission(data)
+    if (editing) {
+      await updatePermission(editing.id, data)
+      toast.success('İcazə yeniləndi')
+    } else {
+      await createPermission(data)
+      toast.success('İcazə əlavə edildi')
+    }
   }
 
   const getTypeName = (code: string) =>
@@ -723,7 +764,15 @@ function PermissionTab() {
       {confirmId !== null && (
         <ConfirmDialog
           message="Bu icazəni silmək istədiyinizə əminsiniz?"
-          onConfirm={async () => { await deletePermission(confirmId); setConfirmId(null) }}
+          onConfirm={async () => {
+            try {
+              await deletePermission(confirmId)
+              setConfirmId(null)
+              toast.success('İcazə silindi')
+            } catch (error: unknown) {
+              toast.error('İcazə silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
+            }
+          }}
           onCancel={() => setConfirmId(null)}
         />
       )}

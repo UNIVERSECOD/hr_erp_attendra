@@ -6,6 +6,7 @@ import { departmentApi } from '../api/departmentApi.ts'
 import { employeeApi } from '../api/employeeApi.ts'
 import { useDebounce } from '../hooks/useSearch.ts'
 import { useBranchStore } from '../store/branchStore.ts'
+import { toast } from '../store/toastStore.ts'
 
 interface DepartmentFormData {
   departmentName: string
@@ -108,13 +109,17 @@ export default function DepartmentsPage() {
       }
       if (editingDept) {
         await departmentApi.update(editingDept.id, payload)
+        toast.success('Departament yeniləndi')
       } else {
         await departmentApi.create(payload)
+        toast.success('Departament əlavə edildi')
       }
       setShowModal(false)
       await fetchDepartments(selectedBranchId === '' ? undefined : selectedBranchId)
     } catch (e: unknown) {
-      setFormError((e as Error).message || 'Saxlamaq alınmadı')
+      const message = (e as Error).message || 'Saxlamaq alınmadı'
+      setFormError(message)
+      toast.error('Departament saxlanılmadı', message)
     } finally {
       setSaving(false)
     }
@@ -126,8 +131,9 @@ export default function DepartmentsPage() {
       await departmentApi.delete(deleteConfirm.id)
       setDeleteConfirm(null)
       await fetchDepartments()
-    } catch {
-      // ignore
+      toast.success('Departament silindi')
+    } catch (error) {
+      toast.error('Departament silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
     }
   }
 
@@ -169,8 +175,9 @@ export default function DepartmentsPage() {
       await Promise.all(toAssign.map(e => employeeApi.update(e.id, { departmentId: assignDept.id })))
       setAssignDept(null)
       await fetchDepartments()
-    } catch {
-      // ignore
+      toast.success('Əməkdaşlar departamentə əlavə edildi')
+    } catch (error) {
+      toast.error('Təyinat saxlanılmadı', (error as Error).message || 'Əməkdaşları departamentə əlavə etmək alınmadı.')
     } finally {
       setAssignSaving(false)
     }

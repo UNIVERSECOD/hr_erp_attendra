@@ -6,6 +6,7 @@ import { roleLabel } from '../i18n/labels.ts'
 import { authApi } from '../api/authApi.ts'
 import { settingsApi } from '../api/settingsApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
+import { toast } from '../store/toastStore.ts'
 
 export default function SettingsPage() {
   const { user } = useAuthStore()
@@ -51,6 +52,7 @@ export default function SettingsPage() {
 
   const handleProfileSave = () => {
     setProfileSaved(true)
+    toast.success('Profil yadda saxlanıldı')
     setTimeout(() => setProfileSaved(false), 2500)
   }
 
@@ -62,8 +64,11 @@ export default function SettingsPage() {
       const { data } = await settingsApi.updateSystemSettings(syncInterval)
       setSyncInterval(data.data.syncIntervalMinutes)
       setSystemSaved(true)
+      toast.success('Sistem ayarları yadda saxlanıldı')
     } catch (requestError: unknown) {
-      setSystemError(getApiErrorMessage(requestError, t('settings.syncSettingsSaveFailed')))
+      const message = getApiErrorMessage(requestError, t('settings.syncSettingsSaveFailed'))
+      setSystemError(message)
+      toast.error('Ayarlar saxlanılmadı', message)
     } finally {
       setSystemSaving(false)
     }
@@ -102,8 +107,11 @@ export default function SettingsPage() {
       setNewPassword('')
       setConfirmPassword('')
       setPasswordSuccess(t('settings.passwordUpdated'))
+      toast.success(t('settings.passwordUpdated'))
     } catch (requestError: unknown) {
-      setPasswordError(getApiErrorMessage(requestError, t('settings.passwordUpdateFailed')))
+      const message = getApiErrorMessage(requestError, t('settings.passwordUpdateFailed'))
+      setPasswordError(message)
+      toast.error(t('settings.passwordUpdateFailed'), message)
     } finally {
       setPasswordSaving(false)
     }

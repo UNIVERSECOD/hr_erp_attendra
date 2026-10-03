@@ -5,6 +5,7 @@ import { Position, Department } from '../types'
 import { positionApi } from '../api/positionApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
 import { useBranchStore } from '../store/branchStore.ts'
+import { toast } from '../store/toastStore.ts'
 
 interface PositionFormData {
   positionName: string
@@ -94,13 +95,17 @@ export default function PositionsPage() {
       }
       if (editingPosition) {
         await positionApi.update(editingPosition.id, payload)
+        toast.success('Vəzifə yeniləndi')
       } else {
         await positionApi.create(payload)
+        toast.success('Vəzifə əlavə edildi')
       }
       setShowModal(false)
       await fetchPositions()
     } catch (e: unknown) {
-      setFormError((e as Error).message || 'Saxlamaq alınmadı')
+      const message = (e as Error).message || 'Saxlamaq alınmadı'
+      setFormError(message)
+      toast.error('Vəzifə saxlanılmadı', message)
     } finally {
       setSaving(false)
     }
@@ -112,8 +117,9 @@ export default function PositionsPage() {
       await positionApi.delete(deleteConfirm.id)
       setDeleteConfirm(null)
       await fetchPositions()
-    } catch {
-      // ignore
+      toast.success('Vəzifə silindi')
+    } catch (error) {
+      toast.error('Vəzifə silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
     }
   }
 

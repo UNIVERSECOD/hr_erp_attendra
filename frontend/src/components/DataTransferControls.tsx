@@ -6,6 +6,7 @@ import {
   dataTransferApi,
 } from '../api/dataTransferApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
+import { toast } from '../store/toastStore.ts'
 
 interface DataTransferControlsProps {
   entity: DataTransferEntity
@@ -41,8 +42,11 @@ export default function DataTransferControls({ entity, onImported }: DataTransfe
       link.click()
       link.remove()
       URL.revokeObjectURL(url)
+      toast.success(kind === 'export' ? 'Eksport hazırdır' : 'Şablon hazırdır', `${format.toUpperCase()} faylı endirildi.`)
     } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError, 'Fayl endirilə bilmədi'))
+      const message = getApiErrorMessage(requestError, 'Fayl endirilə bilmədi')
+      setError(message)
+      toast.error('Endirmə alınmadı', message)
     } finally {
       setBusy(false)
     }
@@ -62,8 +66,15 @@ export default function DataTransferControls({ entity, onImported }: DataTransfe
       if (importResult.importedRows > 0) {
         await onImported()
       }
+      if (importResult.successful) {
+        toast.success('İmport tamamlandı', `${importResult.importedRows} sətir import edildi.`)
+      } else {
+        toast.warning('İmport tamamlanmadı', 'Xətalara görə heç bir sətir import edilmədi.')
+      }
     } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError, 'Fayl import edilə bilmədi'))
+      const message = getApiErrorMessage(requestError, 'Fayl import edilə bilmədi')
+      setError(message)
+      toast.error('İmport alınmadı', message)
     } finally {
       setBusy(false)
     }

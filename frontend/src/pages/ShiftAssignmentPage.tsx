@@ -5,6 +5,7 @@ import { shiftAssignmentApi } from '../api/shiftAssignmentApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
 import { Department, Employee, EmployeeShiftAssignment, Timetable } from '../types'
 import { todayInAppTimeZone } from '../utils/dateTime.ts'
+import { toast } from '../store/toastStore.ts'
 
 interface AssignmentPayload {
   employeeIds?: number[]
@@ -63,7 +64,9 @@ function ShiftAssignmentModal({ employees, departments, timetableId, onClose, on
       })
       onClose()
     } catch (e: unknown) {
-      setError((e as Error).message || 'Təyin etmə alınmadı')
+      const message = (e as Error).message || 'Təyin etmə alınmadı'
+      setError(message)
+      toast.error('Növbə təyin edilmədi', message)
     } finally {
       setSaving(false)
     }
@@ -220,16 +223,23 @@ export default function ShiftAssignmentPage() {
     link.download = 'shift-assignments.csv'
     link.click()
     URL.revokeObjectURL(url)
+    toast.success('CSV faylı hazırdır')
   }
 
   const removeAssignment = async (id: number) => {
-    await shiftAssignmentApi.remove(id)
-    await fetchData()
+    try {
+      await shiftAssignmentApi.remove(id)
+      await fetchData()
+      toast.success('Növbə təyinatı silindi')
+    } catch (error: unknown) {
+      toast.error('Növbə təyinatı silinmədi', (error as Error).message || 'Silinmə əməliyyatı alınmadı.')
+    }
   }
 
   const saveAssignment = async (payload: AssignmentPayload) => {
     await shiftAssignmentApi.bulkAssign(payload)
     await fetchData()
+    toast.success('Növbə təyin edildi')
   }
 
   const assignableEmployees = employees.filter(employee => employee.employmentStatus === 'ACTIVE')

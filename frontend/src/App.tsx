@@ -3,6 +3,8 @@ import { lazy, Suspense, useEffect } from 'react'
 import { useAuthStore } from './store/authStore.ts'
 import { t } from './i18n/index.ts'
 import AttendraBrand from './components/AttendraBrand.tsx'
+import ToastViewport from './components/ToastViewport.tsx'
+import { toast } from './store/toastStore.ts'
 import { getSessionTimerDelay, hasUsableAccessToken } from './utils/jwt.ts'
 
 const LoginPage = lazy(() => import('./pages/LoginPage.tsx'))
@@ -55,9 +57,13 @@ function SessionExpiryGuard() {
     if (!isAuthenticated || !token) return
 
     let timeoutId: number | undefined
+    let sessionEnded = false
 
     const endExpiredSession = () => {
       if (hasUsableAccessToken(token)) return false
+      if (sessionEnded) return true
+      sessionEnded = true
+      toast.info('Sessiya başa çatdı', 'Davam etmək üçün yenidən daxil olun.')
       logout()
       navigate('/login', { replace: true })
       return true
@@ -105,6 +111,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <SessionExpiryGuard />
+      <ToastViewport />
       <Suspense
         fallback={
           <div className="flex flex-col items-center justify-center gap-4 h-screen bg-white">

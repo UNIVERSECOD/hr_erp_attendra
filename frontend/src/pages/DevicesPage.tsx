@@ -9,6 +9,7 @@ import { t } from '../i18n/index.ts'
 import { doorRoleLabel, statusLabel } from '../i18n/labels.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { isDeviceOnline, relativeTime, ONLINE_THRESHOLD_MINUTES } from '../utils/deviceOnline.ts'
+import { toast } from '../store/toastStore.ts'
 
 interface DeviceFormData {
   deviceName: string
@@ -103,8 +104,9 @@ export default function DevicesPage() {
       }
       // Also refresh device list since devices may have been unassigned
       await fetchDevices()
-    } catch (e: any) {
-      alert(e?.response?.data?.message || 'Qapını silmək alınmadı')
+      toast.success('Qapı silindi')
+    } catch (error: unknown) {
+      toast.error('Qapı silinmədi', getApiErrorMessage(error, 'Qapını silmək alınmadı'))
     }
   }
 
@@ -185,8 +187,11 @@ export default function DevicesPage() {
 
       await fetchDevices()
       setShowModal(false)
+      toast.success(editingDevice ? 'Cihaz yeniləndi' : 'Cihaz əlavə edildi')
     } catch (e: unknown) {
-      setFormError((e as Error).message || 'Cihazı yadda saxlamaq alınmadı')
+      const message = getApiErrorMessage(e, 'Cihazı yadda saxlamaq alınmadı')
+      setFormError(message)
+      toast.error('Cihaz saxlanılmadı', message)
     } finally {
       setSaving(false)
     }
@@ -197,8 +202,9 @@ export default function DevicesPage() {
     try {
       await deleteDevice(deleteConfirm.id)
       setDeleteConfirm(null)
-    } catch {
-      // handled by store
+      toast.success('Cihaz silindi')
+    } catch (error: unknown) {
+      toast.error('Cihaz silinmədi', getApiErrorMessage(error, 'Cihazı silmək alınmadı.'))
     }
   }
 
@@ -207,13 +213,16 @@ export default function DevicesPage() {
     setSyncFeedback(null)
     try {
       await syncDevice(id)
-      setSyncFeedback({ type: 'success', message: 'Cihaz və davamiyyət məlumatları sinxronlaşdırıldı.' })
+      const message = 'Cihaz və davamiyyət məlumatları sinxronlaşdırıldı.'
+      setSyncFeedback({ type: 'success', message })
+      toast.success('Sinxronizasiya tamamlandı', message)
     } catch (error: unknown) {
       const status = (error as { response?: { status?: number } })?.response?.status
       const message = status === 502 || status === 503
         ? 'Cihazla əlaqə yaratmaq mümkün olmadı. IP ünvanını, şəbəkəni və cihaz şifrəsini yoxlayın.'
         : getApiErrorMessage(error, 'Cihazı sinxronlaşdırmaq alınmadı.')
       setSyncFeedback({ type: 'error', message })
+      toast.error('Sinxronizasiya alınmadı', message)
     } finally {
       setSyncingId(null)
     }
@@ -234,7 +243,9 @@ export default function DevicesPage() {
       setManualEmployeeIds(view?.employees.filter((employee) => employee.manuallyAssigned)
         .map((employee) => employee.employeeId) ?? [])
     } catch (error: unknown) {
-      setAssignmentError(getApiErrorMessage(error, 'Əməkdaş təyinatları yüklənmədi.'))
+      const message = getApiErrorMessage(error, 'Əməkdaş təyinatları yüklənmədi.')
+      setAssignmentError(message)
+      toast.error('Təyinatlar yüklənmədi', message)
     } finally {
       setAssignmentLoading(false)
     }
@@ -266,8 +277,11 @@ export default function DevicesPage() {
         .map((employee) => employee.employeeId) ?? [])
       setSyncFeedback({ type: 'success', message: 'Cihazın əməkdaş təyinatları yadda saxlanıldı.' })
       setAssignmentDevice(null)
+      toast.success('Əməkdaş təyinatları saxlanıldı')
     } catch (error: unknown) {
-      setAssignmentError(getApiErrorMessage(error, 'Əməkdaş təyinatlarını saxlamaq alınmadı.'))
+      const message = getApiErrorMessage(error, 'Əməkdaş təyinatlarını saxlamaq alınmadı.')
+      setAssignmentError(message)
+      toast.error('Təyinatlar saxlanılmadı', message)
     } finally {
       setAssignmentSaving(false)
     }
@@ -287,11 +301,18 @@ export default function DevicesPage() {
         type: result.failed || result.facesFailed ? 'error' : 'success',
         message: result.errors?.length ? `${message} ${result.errors.join(' | ')}` : message,
       })
+      if (result.failed || result.facesFailed) {
+        toast.warning('Sinxronizasiya qismən tamamlandı', message)
+      } else {
+        toast.success('Əməkdaşlar sinxronlaşdırıldı', message)
+      }
     } catch (error: unknown) {
+      const message = getApiErrorMessage(error, 'Əməkdaşları cihaza sinxronlaşdırmaq alınmadı.')
       setSyncFeedback({
         type: 'error',
-        message: getApiErrorMessage(error, 'Əməkdaşları cihaza sinxronlaşdırmaq alınmadı.'),
+        message,
       })
+      toast.error('Sinxronizasiya alınmadı', message)
     } finally {
       setEmployeeSyncingId(null)
     }

@@ -6,6 +6,7 @@ import { employeePermissionApi } from '../api/employeePermissionApi.ts'
 import { Employee, EmployeePermission, PermissionType } from '../types'
 import { statusLabel } from '../i18n/labels.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
+import { toast } from '../store/toastStore.ts'
 
 type PermissionFormValue = {
   employeeIds: number[]
@@ -298,6 +299,7 @@ export default function PermissionAssignmentPage() {
       await employeePermissionApi.bulkGrant(payload)
     }
     await fetchData()
+    toast.success(editingPermission ? 'İcazə yeniləndi' : 'İcazə əlavə edildi')
   }
 
   const deactivatePermission = async (permission: EmployeePermission) => {
@@ -307,8 +309,11 @@ export default function PermissionAssignmentPage() {
     try {
       await employeePermissionApi.remove(permission.id)
       await fetchData()
+      toast.success('İcazə deaktiv edildi')
     } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError, 'İcazəni deaktiv etmək mümkün olmadı'))
+      const message = getApiErrorMessage(requestError, 'İcazəni deaktiv etmək mümkün olmadı')
+      setError(message)
+      toast.error('İcazə deaktiv edilmədi', message)
     }
   }
 
