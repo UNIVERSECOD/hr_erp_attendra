@@ -448,46 +448,8 @@ export default function EmployeesPage() {
   const uploadFaceForEmployee = async (employee: Employee, file: File | null): Promise<string[]> => {
     if (!file) return []
 
-    // Profile photo first — must not depend on Hikvision success.
-    await employeeApi.uploadFaceImage(employee.id, file)
-
-    const isapiDeviceIds = await resolveIsapiDeviceIds(employee)
-    console.info('[uploadFace] isapiDeviceIds:', isapiDeviceIds)
-
-    if (isapiDeviceIds.length === 0) {
-      return []
-    }
-
-    const errors: string[] = []
-
-    for (const isapiDeviceId of isapiDeviceIds) {
-      try {
-        console.info('[uploadFace] checking device', isapiDeviceId)
-        const usersRes = await deviceUserApi.getAll(isapiDeviceId)
-        console.info('[uploadFace] usersRes for', isapiDeviceId, ':', usersRes.data)
-        const users = Array.isArray(usersRes.data) ? usersRes.data : (usersRes.data as any)?.data ?? []
-        const deviceUser = users.find((u: any) =>
-          matchesDevicePerson(employee.deviceEmployeeNo, employee.employeeId, u.employeeNo)
-        )
-        console.info('[uploadFace] deviceUser for', isapiDeviceId, ':', deviceUser)
-        if (deviceUser) {
-          console.info('[uploadFace] uploading face to device', isapiDeviceId, 'user', deviceUser.id)
-          // employeeId omitted: profile image already saved above
-          await deviceUserApi.uploadFace(isapiDeviceId, deviceUser.id, file)
-          console.info('[uploadFace] uploaded face to device', isapiDeviceId)
-        } else {
-          errors.push(`Cihaz ${isapiDeviceId}: istifadəçi tapılmadı`)
-        }
-      } catch (e) {
-        console.error('[uploadFace] error for device', isapiDeviceId, ':', e)
-        errors.push(`Cihaz ${isapiDeviceId}: ${(e as Error).message}`)
-      }
-    }
-
-    if (errors.length > 0) {
-      console.info('[uploadFace] Hikvision sync warnings (profile photo saved):', errors)
-    }
-    return errors
+    const response = await employeeApi.uploadFaceImage(employee.id, file)
+    return response.data?.data?.errors ?? []
   }
 
   const deleteFaceForEmployee = async (employee: Employee): Promise<string[]> => {
@@ -597,8 +559,11 @@ export default function EmployeesPage() {
         try {
           const faceErrors = await uploadFaceForEmployee(savedEmployee, wizardImageFile)
           if (faceErrors.length > 0) {
-            // Profile photo is already saved; device sync issues are non-blocking.
-            console.info('[handleSave] Hikvision face sync warnings:', faceErrors)
+            if (!editingEmployee) {
+              setEditingEmployee(savedEmployee)
+            }
+            setFormError(`Şəkil profilə saxlanıldı, amma cihaz sinxronu tamamlanmadı: ${faceErrors.join(' | ')}`)
+            return
           }
         } catch (e) {
           setFormError((e as Error).message || 'Profil şəkli yadda saxlanılmadı')
@@ -666,7 +631,10 @@ export default function EmployeesPage() {
     setUploadFaceError(null)
     setUploadingFaceEmployeeId(employee.id)
     try {
-      await uploadFaceForEmployee(employee, file)
+      const faceErrors = await uploadFaceForEmployee(employee, file)
+      if (faceErrors.length > 0) {
+        setUploadFaceError(`Şəkil profilə saxlanıldı, amma cihaz sinxronu tamamlanmadı: ${faceErrors.join(' | ')}`)
+      }
       await fetchEmployees(currentPage, 20)
     } catch (e: unknown) {
       setUploadFaceError((e as Error).message || 'Şəkil yüklənmədi')

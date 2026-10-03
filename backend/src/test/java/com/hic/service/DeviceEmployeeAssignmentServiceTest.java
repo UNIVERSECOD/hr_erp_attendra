@@ -1,6 +1,7 @@
 package com.hic.service;
 
 import com.hic.dto.DeviceEmployeeAssignmentDTO.AssignmentView;
+import com.hic.dto.DeviceEmployeeAssignmentDTO.EmployeeSyncResult;
 import com.hic.dto.DeviceEmployeeAssignmentDTO.SyncResult;
 import com.hic.dto.DeviceEmployeeAssignmentDTO.UpdateRequest;
 import com.hic.model.Branch;
@@ -114,6 +115,67 @@ class DeviceEmployeeAssignmentServiceTest {
     }
 
     @Test
+    void syncEmployee_sendsUserAndFaceToEveryAssignedAreaDevice() {
+        Employee employee = employee(1L, "EMP-1", "Leyla");
+        DeviceConfig firstDevice = device();
+        DeviceConfig secondDevice = device(6L, "102", "Exit");
+        EmployeeDeviceAccess explicitAccess = new EmployeeDeviceAccess();
+        explicitAccess.setEmployeeId(1L);
+        explicitAccess.setDeviceConfigId(5L);
+
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of(explicitAccess));
+        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(10L));
+        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(10L), 1L))
+                .thenReturn(List.of(5L, 6L));
+        when(deviceConfigRepository.findAllById(any()))
+                .thenReturn(List.of(firstDevice, secondDevice));
+        when(employeeFaceDeviceSyncService.syncIfAvailable(employee, 101L))
+                .thenReturn(EmployeeFaceDeviceSyncService.SyncOutcome.SYNCED);
+        when(employeeFaceDeviceSyncService.syncIfAvailable(employee, 102L))
+                .thenReturn(EmployeeFaceDeviceSyncService.SyncOutcome.ALREADY_PRESENT);
+
+        EmployeeSyncResult result = service.syncEmployee(1L);
+
+        assertThat(result.getTotalDevices()).isEqualTo(2);
+        assertThat(result.getUsersSynced()).isEqualTo(2);
+        assertThat(result.getFacesSynced()).isEqualTo(2);
+        assertThat(result.getFailedDevices()).isZero();
+        assertThat(result.getErrors()).isEmpty();
+        verify(isapiEmployeeUserSyncService).syncEmployee(employee, List.of(101L));
+        verify(isapiEmployeeUserSyncService).syncEmployee(employee, List.of(102L));
+    }
+
+    @Test
+    void syncEmployee_reportsDeviceFailureWithoutStoppingOtherDevices() {
+        Employee employee = employee(1L, "EMP-1", "Leyla");
+        DeviceConfig firstDevice = device();
+        DeviceConfig secondDevice = device(6L, "102", "Exit");
+
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
+        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(10L));
+        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(10L), 1L))
+                .thenReturn(List.of(5L, 6L));
+        when(deviceConfigRepository.findAllById(any()))
+                .thenReturn(List.of(firstDevice, secondDevice));
+        doThrow(new IllegalStateException("device offline"))
+                .when(isapiEmployeeUserSyncService).syncEmployee(employee, List.of(101L));
+        when(employeeFaceDeviceSyncService.syncIfAvailable(employee, 102L))
+                .thenReturn(EmployeeFaceDeviceSyncService.SyncOutcome.SYNCED);
+
+        EmployeeSyncResult result = service.syncEmployee(1L);
+
+        assertThat(result.getUsersSynced()).isEqualTo(1);
+        assertThat(result.getFacesSynced()).isEqualTo(1);
+        assertThat(result.getFailedDevices()).isEqualTo(1);
+        assertThat(result.getErrors()).singleElement().asString()
+                .contains("Entry")
+                .contains("device offline");
+        verify(isapiEmployeeUserSyncService).syncEmployee(employee, List.of(102L));
+    }
+
+    @Test
     void updateManualAssignments_keepsExplicitAccessWhenEmployeeAlsoBelongsToDeviceArea() {
         DeviceConfig device = device();
         Employee employee = employee(1L, "EMP-1", "Leyla");
@@ -157,10 +219,14 @@ class DeviceEmployeeAssignmentServiceTest {
     }
 
     private static DeviceConfig device() {
+        return device(5L, "101", "Entry");
+    }
+
+    private static DeviceConfig device(Long id, String bridgeId, String name) {
         DeviceConfig device = new DeviceConfig();
-        device.setId(5L);
-        device.setDeviceId("101");
-        device.setDeviceName("Entry");
+        device.setId(id);
+        device.setDeviceId(bridgeId);
+        device.setDeviceName(name);
         device.setBranchId(10L);
         device.setTenantId(1L);
         return device;

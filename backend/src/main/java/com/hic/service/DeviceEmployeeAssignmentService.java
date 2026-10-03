@@ -2,6 +2,7 @@ package com.hic.service;
 
 import com.hic.dto.DeviceEmployeeAssignmentDTO.AssignmentView;
 import com.hic.dto.DeviceEmployeeAssignmentDTO.EmployeeOption;
+import com.hic.dto.DeviceEmployeeAssignmentDTO.EmployeeSyncResult;
 import com.hic.dto.DeviceEmployeeAssignmentDTO.SyncResult;
 import com.hic.dto.DeviceEmployeeAssignmentDTO.UpdateRequest;
 import com.hic.exception.BadRequestException;
@@ -196,6 +197,65 @@ public class DeviceEmployeeAssignmentService {
         return result;
     }
 
+    public EmployeeSyncResult syncEmployee(Long employeeId) {
+        Employee employee = employeeRepository.findById(employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee", employeeId));
+        Long tenantId = TenantContext.getTenantId();
+        if (!sameTenant(tenantId, employee.getTenantId())) {
+            throw new ResourceNotFoundException("Employee", employeeId);
+        }
+
+        Set<Long> targetDeviceConfigIds = employeeDeviceAccessRepository.findByEmployeeId(employeeId).stream()
+                .map(EmployeeDeviceAccess::getDeviceConfigId)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        List<Long> areaIds = employeeAreaAssignmentService.getAreaIds(employeeId);
+        targetDeviceConfigIds.addAll(employeeAreaAssignmentService.resolveDeviceIdsForAreas(
+                areaIds,
+                employee.getTenantId()));
+
+        List<DeviceConfig> devices = deviceConfigRepository.findAllById(targetDeviceConfigIds).stream()
+                .filter(device -> sameTenant(employee.getTenantId(), device.getTenantId()))
+                .sorted(Comparator.comparing(DeviceConfig::getId))
+                .toList();
+        EmployeeSyncResult result = new EmployeeSyncResult(
+                employeeId,
+                devices.size(),
+                0,
+                0,
+                0,
+                0,
+                new ArrayList<>());
+
+        for (DeviceConfig device : devices) {
+            Long isapiDeviceId;
+            try {
+                isapiDeviceId = parseIsapiDeviceId(device);
+                isapiEmployeeUserSyncService.syncEmployee(employee, List.of(isapiDeviceId));
+                result.setUsersSynced(result.getUsersSynced() + 1);
+            } catch (RuntimeException ex) {
+                addEmployeeSyncFailure(result, device, ex);
+                continue;
+            }
+
+            try {
+                EmployeeFaceDeviceSyncService.SyncOutcome faceOutcome =
+                        employeeFaceDeviceSyncService.syncIfAvailable(employee, isapiDeviceId);
+                if (EmployeeFaceDeviceSyncService.SyncOutcome.SYNCED.equals(faceOutcome)
+                        || EmployeeFaceDeviceSyncService.SyncOutcome.ALREADY_PRESENT.equals(faceOutcome)) {
+                    result.setFacesSynced(result.getFacesSynced() + 1);
+                } else if (EmployeeFaceDeviceSyncService.SyncOutcome.NO_FACE.equals(faceOutcome)) {
+                    result.setFacesSkipped(result.getFacesSkipped() + 1);
+                } else {
+                    result.setFailedDevices(result.getFailedDevices() + 1);
+                    result.getErrors().add(deviceLabel(device) + ": ISAPI üz sinxronizasiyası konfiqurasiya edilməyib");
+                }
+            } catch (RuntimeException ex) {
+                addEmployeeSyncFailure(result, device, ex);
+            }
+        }
+        return result;
+    }
+
     private EmployeeOption toOption(
             Employee employee,
             DeviceConfig device,
@@ -254,6 +314,18 @@ public class DeviceEmployeeAssignmentService {
         return employee.getEmployeeId() + " — "
                 + ((employee.getFirstName() == null ? "" : employee.getFirstName()) + " "
                 + (employee.getLastName() == null ? "" : employee.getLastName())).trim();
+    }
+
+    private void addEmployeeSyncFailure(EmployeeSyncResult result, DeviceConfig device, RuntimeException ex) {
+        result.setFailedDevices(result.getFailedDevices() + 1);
+        result.getErrors().add(deviceLabel(device) + ": " + safeMessage(ex));
+    }
+
+    private String deviceLabel(DeviceConfig device) {
+        if (device.getDeviceName() != null && !device.getDeviceName().isBlank()) {
+            return device.getDeviceName();
+        }
+        return "Cihaz " + device.getId();
     }
 
     private String safeMessage(RuntimeException ex) {

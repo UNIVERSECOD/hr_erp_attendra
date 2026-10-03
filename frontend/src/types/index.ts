@@ -133,6 +133,16 @@ export interface DeviceEmployeeSyncResult {
   errors: string[]
 }
 
+export interface EmployeeDeviceSyncResult {
+  employeeId: number
+  totalDevices: number
+  usersSynced: number
+  facesSynced: number
+  facesSkipped: number
+  failedDevices: number
+  errors: string[]
+}
+
 export interface AttendanceLog {
   id: number
   employeeId: number

@@ -55,4 +55,17 @@ public class DeviceEmployeeAssignmentDTO {
         private int facesFailed;
         private List<String> errors = new ArrayList<>();
     }
+
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class EmployeeSyncResult {
+        private Long employeeId;
+        private int totalDevices;
+        private int usersSynced;
+        private int facesSynced;
+        private int facesSkipped;
+        private int failedDevices;
+        private List<String> errors = new ArrayList<>();
+    }
 }

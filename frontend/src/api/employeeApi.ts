@@ -1,5 +1,5 @@
 import client from './client.ts'
-import { ApiResponse, Employee, EmployeeSearchResult, PaginatedResponse } from '../types'
+import { ApiResponse, Employee, EmployeeDeviceSyncResult, EmployeeSearchResult, PaginatedResponse } from '../types'
 
 export const employeeApi = {
   getAll: (page = 0, size = 20, branchId?: number) =>
@@ -26,7 +26,7 @@ export const employeeApi = {
   uploadFaceImage: (employeeId: number, file: File) => {
     const formData = new FormData()
     formData.append('file', file)
-    return client.post(`/faces/employee/${employeeId}/image`, formData)
+    return client.post<ApiResponse<EmployeeDeviceSyncResult>>(`/faces/employee/${employeeId}/image`, formData)
   },
   getFaceImage: (employeeId: number) =>
     client.get<Blob>(`/faces/employee/${employeeId}/image`, { responseType: 'blob' }),

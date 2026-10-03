@@ -1,6 +1,9 @@
 package com.hic.controller;
 
+import com.hic.dto.ApiResponse;
+import com.hic.dto.DeviceEmployeeAssignmentDTO.EmployeeSyncResult;
 import com.hic.service.EmployeeFaceImageService;
+import com.hic.service.EmployeeFaceSynchronizationService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.core.io.FileSystemResource;
@@ -24,6 +27,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class EmployeeFaceController {
 
     private final EmployeeFaceImageService employeeFaceImageService;
+    private final EmployeeFaceSynchronizationService employeeFaceSynchronizationService;
 
     @GetMapping("/employee/{employeeId}/image")
     public ResponseEntity<FileSystemResource> getEmployeeFaceImage(@PathVariable Long employeeId) {
@@ -40,10 +44,11 @@ public class EmployeeFaceController {
      * independent of Hikvision device sync success.
      */
     @PostMapping(path = "/employee/{employeeId}/image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<Void> uploadEmployeeFaceImage(@PathVariable Long employeeId,
-                                                        @RequestParam("file") MultipartFile file) {
-        employeeFaceImageService.saveFaceImage(employeeId, file);
-        return ResponseEntity.ok().build();
+    public ResponseEntity<ApiResponse<EmployeeSyncResult>> uploadEmployeeFaceImage(
+            @PathVariable Long employeeId,
+            @RequestParam("file") MultipartFile file) {
+        return ResponseEntity.ok(ApiResponse.success(
+                employeeFaceSynchronizationService.saveAndSync(employeeId, file)));
     }
 
     @DeleteMapping("/employee/{employeeId}/image")
