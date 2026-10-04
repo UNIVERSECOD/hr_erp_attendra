@@ -78,13 +78,66 @@ public class MasterDataTransferService {
         List<String> headers = headers(entity);
         List<List<String>> rows = template ? List.of() : exportRows(entity, tenantId);
         byte[] content = format == FileFormat.XLSX
-                ? tabularFileUtil.writeExcel(entity.sheetName, headers, rows)
+                ? template ? exportExcelTemplate(entity, tenantId, headers)
+                : tabularFileUtil.writeExcel(entity.sheetName, headers, rows)
                 : tabularFileUtil.writeCsv(headers, rows);
         String suffix = template ? "_template" : "";
         return new DataFile(
                 content,
                 entity.path + suffix + "." + format.extension,
                 format.contentType);
+    }
+
+    private byte[] exportExcelTemplate(DataEntity entity, Long tenantId, List<String> headers) {
+        Long branchScope = userScopeService.resolveBranchScope(null);
+        Map<Long, Branch> branches = branchRepository.findByTenantId(tenantId).stream()
+                .filter(branch -> branchScope == null || branchScope.equals(branch.getId()))
+                .collect(Collectors.toMap(Branch::getId, Function.identity()));
+        Map<Long, Department> departments = departmentRepository.findByTenantId(tenantId).stream()
+                .filter(department -> branches.containsKey(department.getBranchId()))
+                .collect(Collectors.toMap(Department::getId, Function.identity()));
+        List<Position> positions = entity == DataEntity.EMPLOYEES
+                ? positionRepository.findByTenantId(tenantId).stream()
+                    .filter(position -> departments.containsKey(position.getDepartmentId())).toList()
+                : List.of();
+        Map<String, List<String>> choices = new LinkedHashMap<>();
+        choices.put(entity == DataEntity.EMPLOYEES ? "Əsas ərazi" : "Ərazi",
+                choiceNames(branches.values().stream().map(Branch::getName).toList()));
+        choices.put(entity == DataEntity.DEPARTMENTS ? "Valideyn departament" : "Departament",
+                choiceNames(departments.values().stream().map(Department::getDepartmentName).toList()));
+        if (entity == DataEntity.EMPLOYEES) {
+            choices.put("Vəzifə", choiceNames(positions.stream().map(Position::getPositionName).toList()));
+            choices.put("Qrafik", choiceNames(timetableRepository.findByTenantId(tenantId).stream()
+                    .map(Timetable::getName).toList()));
+        }
+        List<List<String>> references = new ArrayList<>();
+        references.add(List.of("Ərazi", "Departament", "Vəzifə"));
+        departments.values().stream()
+                .sorted(Comparator.comparing(Department::getDepartmentName, String.CASE_INSENSITIVE_ORDER))
+                .forEach(department -> {
+                    List<Position> departmentPositions = positions.stream()
+                            .filter(position -> department.getId().equals(position.getDepartmentId()))
+                            .sorted(Comparator.comparing(Position::getPositionName, String.CASE_INSENSITIVE_ORDER))
+                            .toList();
+                    String area = branchName(branches, department.getBranchId());
+                    if (departmentPositions.isEmpty()) {
+                        references.add(List.of(area, department.getDepartmentName(), ""));
+                    } else {
+                        departmentPositions.forEach(position -> references.add(
+                                List.of(area, department.getDepartmentName(), position.getPositionName())));
+                    }
+                });
+        Set<String> requiredHeaders = switch (entity) {
+            case DEPARTMENTS -> Set.of("Departament adı", "Ərazi");
+            case POSITIONS -> Set.of("Vəzifə adı", "Ərazi", "Departament");
+            case EMPLOYEES -> Set.of("Ad", "Soyad", "FIN", "Əsas ərazi", "Departament", "Qrafik");
+        };
+        return tabularFileUtil.writeExcelTemplate(entity.sheetName, headers, requiredHeaders, choices, references);
+    }
+
+    private List<String> choiceNames(List<String> names) {
+        return names.stream().filter(java.util.Objects::nonNull).filter(name -> !name.isBlank())
+                .distinct().sorted(String.CASE_INSENSITIVE_ORDER).toList();
     }
 
     @Transactional

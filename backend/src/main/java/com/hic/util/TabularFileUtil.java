@@ -11,6 +11,11 @@ import org.apache.poi.ss.usermodel.CellStyle;
 import org.apache.poi.ss.usermodel.DataFormatter;
 import org.apache.poi.ss.usermodel.FillPatternType;
 import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.Name;
+import org.apache.poi.ss.usermodel.DataValidation;
+import org.apache.poi.ss.usermodel.DataValidationHelper;
+import org.apache.poi.ss.util.CellRangeAddress;
+import org.apache.poi.ss.util.CellRangeAddressList;
 import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
@@ -39,6 +44,7 @@ public class TabularFileUtil {
 
     public static final int MAX_ROWS = 5_000;
     public static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
+    public static final String TEMPLATE_NOTE = "Qırmızı başlıqlı sahələr mütləq doldurulmalıdır. Xanadakı siyahıdan seçin və ya Siyahılar səhifəsindən adı köçürün. Departament seçilmiş əraziyə, vəzifə departamentə uyğun olmalıdır. Əlavə əraziləri ; ilə ayırın. Siyahı boşdursa, əvvəl proqramda yaradın və şablonu yenidən endirin.";
 
     public ParsedTable read(MultipartFile file) {
         validateFile(file);
@@ -60,18 +66,46 @@ public class TabularFileUtil {
     }
 
     public byte[] writeExcel(String sheetName, List<String> headers, List<List<String>> rows) {
+        return writeExcel(sheetName, headers, rows, Set.of(), Map.of(), List.of());
+    }
+
+    public byte[] writeExcelTemplate(String sheetName, List<String> headers, Set<String> requiredHeaders,
+                                     Map<String, List<String>> choices, List<List<String>> references) {
+        return writeExcel(sheetName, headers, List.of(), requiredHeaders, choices, references);
+    }
+
+    private byte[] writeExcel(String sheetName, List<String> headers, List<List<String>> rows,
+                              Set<String> requiredHeaders, Map<String, List<String>> choices,
+                              List<List<String>> references) {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet(safeSheetName(sheetName));
             CellStyle headerStyle = createHeaderStyle(workbook);
-            Row headerRow = sheet.createRow(0);
+            boolean template = !requiredHeaders.isEmpty();
+            int headerIndex = template ? 1 : 0;
+            CellStyle requiredStyle = createHeaderStyle(workbook);
+            Font requiredFont = workbook.createFont();
+            requiredFont.setBold(true);
+            requiredFont.setColor(IndexedColors.RED.getIndex());
+            requiredStyle.setFont(requiredFont);
+            if (template) {
+                Row note = sheet.createRow(0);
+                note.setHeightInPoints(90);
+                CellStyle noteStyle = workbook.createCellStyle();
+                noteStyle.setFont(requiredFont);
+                noteStyle.setWrapText(true);
+                note.createCell(0).setCellValue(TEMPLATE_NOTE);
+                note.getCell(0).setCellStyle(noteStyle);
+                sheet.addMergedRegion(new CellRangeAddress(0, 0, 0, headers.size() - 1));
+            }
+            Row headerRow = sheet.createRow(headerIndex);
             for (int column = 0; column < headers.size(); column++) {
                 Cell cell = headerRow.createCell(column);
                 cell.setCellValue(headers.get(column));
-                cell.setCellStyle(headerStyle);
+                cell.setCellStyle(requiredHeaders.contains(headers.get(column)) ? requiredStyle : headerStyle);
             }
 
             for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
-                Row row = sheet.createRow(rowIndex + 1);
+                Row row = sheet.createRow(rowIndex + headerIndex + 1);
                 List<String> values = rows.get(rowIndex);
                 for (int column = 0; column < headers.size(); column++) {
                     row.createCell(column).setCellValue(column < values.size() ? nullSafe(values.get(column)) : "");
@@ -83,12 +117,65 @@ public class TabularFileUtil {
                 int width = Math.min(Math.max(sheet.getColumnWidth(column) + 512, 3_000), 12_000);
                 sheet.setColumnWidth(column, width);
             }
-            sheet.createFreezePane(0, 1);
+            if (template) {
+                addTemplateChoices(workbook, sheet, headers, choices, references, headerStyle);
+            }
+            sheet.createFreezePane(0, headerIndex + 1);
             workbook.write(output);
             return output.toByteArray();
         } catch (IOException ex) {
             throw new BadRequestException("Excel faylı yaradıla bilmədi: " + ex.getMessage());
         }
+    }
+
+    private void addTemplateChoices(Workbook workbook, Sheet input, List<String> headers,
+                                    Map<String, List<String>> choices, List<List<String>> references,
+                                    CellStyle headerStyle) {
+        Sheet lists = workbook.createSheet("Siyahılar");
+        Row titles = lists.createRow(0);
+        int column = 0;
+        for (Map.Entry<String, List<String>> entry : choices.entrySet()) {
+            Cell title = titles.createCell(column);
+            title.setCellValue(entry.getKey());
+            title.setCellStyle(headerStyle);
+            List<String> values = entry.getValue();
+            for (int index = 0; index < values.size(); index++) {
+                Row row = lists.getRow(index + 1);
+                if (row == null) row = lists.createRow(index + 1);
+                row.createCell(column).setCellValue(values.get(index));
+            }
+            int inputColumn = headers.indexOf(entry.getKey());
+            if (inputColumn >= 0 && !values.isEmpty()) {
+                Name range = workbook.createName();
+                range.setNameName("Choices_" + column);
+                String letter = org.apache.poi.ss.util.CellReference.convertNumToColString(column);
+                range.setRefersToFormula("'Siyahılar'!$" + letter + "$2:$" + letter + "$" + (values.size() + 1));
+                DataValidationHelper helper = input.getDataValidationHelper();
+                DataValidation validation = helper.createValidation(
+                        helper.createFormulaListConstraint(range.getNameName()),
+                        new CellRangeAddressList(2, MAX_ROWS + 1, inputColumn, inputColumn));
+                validation.setSuppressDropDownArrow(true);
+                // A parent department may also be created in another row of this import.
+                validation.setShowErrorBox(!"Valideyn departament".equals(entry.getKey()));
+                validation.setErrorStyle(DataValidation.ErrorStyle.STOP);
+                validation.createErrorBox("Yanlış seçim", "Siyahıdakı adlardan birini seçin.");
+                input.addValidationData(validation);
+            }
+            lists.setColumnWidth(column++, 7000);
+        }
+        // Keep area/department/position relationships visible for copying the correct names.
+        int referenceColumn = column + 1;
+        for (int rowIndex = 0; rowIndex < references.size(); rowIndex++) {
+            Row row = lists.getRow(rowIndex);
+            if (row == null) row = lists.createRow(rowIndex);
+            for (int index = 0; index < references.get(rowIndex).size(); index++) {
+                Cell cell = row.createCell(referenceColumn + index);
+                cell.setCellValue(references.get(rowIndex).get(index));
+                if (rowIndex == 0) cell.setCellStyle(headerStyle);
+                lists.setColumnWidth(referenceColumn + index, 7000);
+            }
+        }
+        lists.createFreezePane(0, 1);
     }
 
     public byte[] writeCsv(List<String> headers, List<List<String>> rows) {
@@ -225,7 +312,8 @@ public class TabularFileUtil {
     private Row firstNonBlankRow(Sheet sheet, DataFormatter formatter) {
         for (int rowIndex = sheet.getFirstRowNum(); rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
-            if (row != null && !isBlank(row, Math.max(row.getLastCellNum(), 0), formatter)) {
+            if (row != null && !TEMPLATE_NOTE.equals(formatter.formatCellValue(row.getCell(0)))
+                    && !isBlank(row, Math.max(row.getLastCellNum(), 0), formatter)) {
                 return row;
             }
         }

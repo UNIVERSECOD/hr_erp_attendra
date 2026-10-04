@@ -98,6 +98,33 @@ class MasterDataTransferServiceTest {
     }
 
     @Test
+    void employeeTemplateIncludesOnlyAllowedAreaAndDepartmentChoices() throws Exception {
+        Branch otherBranch = new Branch();
+        otherBranch.setId(9L);
+        otherBranch.setName("Digər ərazi");
+        Department otherDepartment = new Department();
+        otherDepartment.setId(10L);
+        otherDepartment.setBranchId(9L);
+        otherDepartment.setDepartmentName("Digər departament");
+        when(userScopeService.resolveBranchScope(null)).thenReturn(1L);
+        when(branchRepository.findByTenantId(7L)).thenReturn(List.of(branch, otherBranch));
+        when(departmentRepository.findByTenantId(7L)).thenReturn(List.of(department, otherDepartment));
+        when(positionRepository.findByTenantId(7L)).thenReturn(List.of());
+        when(timetableRepository.findByTenantId(7L)).thenReturn(List.of(timetable));
+
+        var file = service.exportData("employees", "xlsx", true);
+        try (var workbook = org.apache.poi.ss.usermodel.WorkbookFactory.create(
+                new java.io.ByteArrayInputStream(file.content()))) {
+            var lists = workbook.getSheet("Siyahılar");
+            assertThat(lists.getRow(1).getCell(0).getStringCellValue()).isEqualTo("Baş ofis");
+            assertThat(lists.getRow(1).getCell(1).getStringCellValue()).isEqualTo("İnsan Resursları");
+            assertThat(lists.getRow(1).getCell(3).getStringCellValue()).isEqualTo("Standart qrafik");
+            assertThat(lists.getLastRowNum()).isEqualTo(1);
+            assertThat(workbook.getSheetAt(0).getDataValidations()).hasSize(3);
+        }
+    }
+
+    @Test
     void importsEmployeeWithoutCallingDeviceLayer() {
         when(branchRepository.findByTenantId(7L)).thenReturn(List.of(branch));
         when(departmentRepository.findByTenantId(7L)).thenReturn(List.of(department));
