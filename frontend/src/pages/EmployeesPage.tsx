@@ -15,6 +15,7 @@ import { deviceUserApi } from '../api/deviceUserApi.ts'
 import { timetableApi } from '../api/timetableApi.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { todayInAppTimeZone } from '../utils/dateTime.ts'
+import { validateFaceImageSize } from '../utils/faceImage.ts'
 import { toast } from '../store/toastStore.ts'
 
 const UI_SHIFT_TYPES = ['STANDARD', 'FLEXIBLE'] as const
@@ -152,6 +153,7 @@ export default function EmployeesPage() {
   const [profileImageSrc, setProfileImageSrc] = useState<string | null>(null)
   const [wizardImagePreview, setWizardImagePreview] = useState<string | null>(null)
   const [wizardImageFile, setWizardImageFile] = useState<File | null>(null)
+  const [wizardImageError, setWizardImageError] = useState<string | null>(null)
   const [wizardImageRemovalRequested, setWizardImageRemovalRequested] = useState(false)
   const wizardImageObjectUrlRef = useRef<string | null>(null)
   const wizardImageLoadTokenRef = useRef(0)
@@ -219,6 +221,7 @@ export default function EmployeesPage() {
     setForm({ ...defaultForm, hireDate: todayInAppTimeZone() })
     setEmployeeDoors([])
     setWizardImageFile(null)
+    setWizardImageError(null)
     setWizardImageRemovalRequested(false)
     setWizardImagePreview(null)
     setCurrentStep(1)
@@ -262,6 +265,7 @@ export default function EmployeesPage() {
     })
     loadEmployeeDoors(emp.id)
     setWizardImageFile(null)
+    setWizardImageError(null)
     setWizardImageRemovalRequested(false)
     if (wizardImageObjectUrlRef.current) {
       URL.revokeObjectURL(wizardImageObjectUrlRef.current)
@@ -300,6 +304,7 @@ export default function EmployeesPage() {
     }
     setShowWizard(false)
     setWizardImageFile(null)
+    setWizardImageError(null)
     setWizardImageRemovalRequested(false)
     setWizardImagePreview(null)
     setCurrentStep(1)
@@ -645,6 +650,13 @@ export default function EmployeesPage() {
   const handleFaceUpload = async (employee: Employee, file: File | undefined, input?: HTMLInputElement) => {
     if (!file) return
     setUploadFaceError(null)
+    const validationError = validateFaceImageSize(file)
+    if (validationError) {
+      setUploadFaceError(validationError)
+      toast.error('Şəkil yüklənmədi', validationError)
+      if (input) input.value = ''
+      return
+    }
     setUploadingFaceEmployeeId(employee.id)
     try {
       const faceErrors = await uploadFaceForEmployee(employee, file)
@@ -693,6 +705,11 @@ export default function EmployeesPage() {
   }
 
   const onWizardPhotoSelected = (file: File) => {
+    const validationError = validateFaceImageSize(file)
+    if (validationError) {
+      setWizardImageError(validationError)
+      return
+    }
     wizardImageLoadTokenRef.current += 1
     if (wizardImageObjectUrlRef.current) {
       URL.revokeObjectURL(wizardImageObjectUrlRef.current)
@@ -700,6 +717,7 @@ export default function EmployeesPage() {
     const previewUrl = URL.createObjectURL(file)
     wizardImageObjectUrlRef.current = previewUrl
     setWizardImageFile(file)
+    setWizardImageError(null)
     setWizardImageRemovalRequested(false)
     setWizardImagePreview(previewUrl)
   }
@@ -711,6 +729,7 @@ export default function EmployeesPage() {
       wizardImageObjectUrlRef.current = null
     }
     setWizardImageFile(null)
+    setWizardImageError(null)
     setWizardImagePreview(null)
     setWizardImageRemovalRequested(Boolean(editingEmployee?.faceImageUrl))
   }
@@ -1278,6 +1297,7 @@ export default function EmployeesPage() {
             {currentStep === 3 && (
               <EmployeePhotoCapture
                 previewUrl={wizardImagePreview}
+                error={wizardImageError}
                 onPhotoSelected={onWizardPhotoSelected}
                 onPhotoRemoved={onWizardPhotoRemoved}
               />

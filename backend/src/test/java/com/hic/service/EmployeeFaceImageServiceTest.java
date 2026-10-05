@@ -1,5 +1,6 @@
 package com.hic.service;
 
+import com.hic.exception.BadRequestException;
 import com.hic.model.FaceData;
 import com.hic.repository.FaceDataRepository;
 import org.junit.jupiter.api.Test;
@@ -8,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.mock.web.MockMultipartFile;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +17,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -26,6 +30,24 @@ class EmployeeFaceImageServiceTest {
 
     @TempDir
     private Path tempDir;
+
+    @Test
+    void saveFaceImage_rejectsFilesLargerThanTerminalLimitBeforePersistence() {
+        EmployeeFaceImageService service = new EmployeeFaceImageService(faceDataRepository);
+        ReflectionTestUtils.setField(service, "faceImagesDir", tempDir.toString());
+        MockMultipartFile file = new MockMultipartFile(
+                "file",
+                "face.jpg",
+                "image/jpeg",
+                new byte[(int) EmployeeFaceImageService.MAX_FACE_IMAGE_SIZE_BYTES + 1]);
+
+        assertThatThrownBy(() -> service.saveFaceImage(7L, file))
+                .isInstanceOf(BadRequestException.class)
+                .hasMessage(EmployeeFaceImageService.FACE_IMAGE_SIZE_ERROR);
+
+        verifyNoInteractions(faceDataRepository);
+        assertThat(tempDir).isEmptyDirectory();
+    }
 
     @Test
     void getLatestEmployeeFacePublicUrl_returnsUrlOnlyWhenFileExists() throws Exception {

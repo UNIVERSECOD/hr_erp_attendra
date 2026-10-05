@@ -1,5 +1,6 @@
 package com.hic.service;
 
+import com.hic.exception.BadRequestException;
 import com.hic.model.FaceData;
 import com.hic.repository.FaceDataRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,10 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class EmployeeFaceImageService {
 
+    public static final long MAX_FACE_IMAGE_SIZE_BYTES = 200L * 1024L;
+    public static final String FACE_IMAGE_SIZE_ERROR =
+            "Üz şəkli 200 KB-dan böyük ola bilməz. Şəkli kiçildib yenidən seçin.";
+
     private final FaceDataRepository faceDataRepository;
 
     @Value("${app.face-images.dir:uploads/faces}")
@@ -30,6 +35,7 @@ public class EmployeeFaceImageService {
         if (employeeId == null || file == null || file.isEmpty()) {
             return;
         }
+        validateFaceImage(file);
 
         String extension = resolveExtension(file);
         String fileName = "emp-" + employeeId + "-" + UUID.randomUUID() + "." + extension;
@@ -53,6 +59,12 @@ public class EmployeeFaceImageService {
         faceData.setFaceImageUrl(fileName);
         faceData.setStatus("ACTIVE");
         faceDataRepository.save(faceData);
+    }
+
+    public void validateFaceImage(MultipartFile file) {
+        if (file != null && file.getSize() > MAX_FACE_IMAGE_SIZE_BYTES) {
+            throw new BadRequestException(FACE_IMAGE_SIZE_ERROR);
+        }
     }
 
     public void saveFaceImageBytes(Long employeeId, byte[] bytes, String extensionHint) {

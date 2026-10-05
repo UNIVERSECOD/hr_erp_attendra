@@ -73,6 +73,7 @@ public class DeviceUserController {
                                              @RequestParam(required = false) Long employeeId,
                                              MultipartHttpServletRequest request) {
         MultipartFile file = request.getFile("file");
+        employeeFaceImageService.validateFaceImage(file);
         ResponseEntity<String> response = deviceUserIsapiProxyService.uploadFace(deviceId, userId, request);
         if (response.getStatusCode().is2xxSuccessful() && employeeId != null) {
             employeeFaceImageService.saveFaceImage(employeeId, file);

@@ -69,6 +69,7 @@ class DeviceUserControllerTest {
                 .andExpect(content().json("{\"id\":11}"));
 
         verify(deviceUserIsapiProxyService).uploadFace(eq(7L), eq(11L), any());
+        verify(employeeFaceImageService).validateFaceImage(any());
     }
 
     @Test

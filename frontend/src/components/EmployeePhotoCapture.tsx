@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 
 interface EmployeePhotoCaptureProps {
   previewUrl: string | null
+  error?: string | null
   onPhotoSelected: (file: File) => void
   onPhotoRemoved: () => void
 }
@@ -31,6 +32,7 @@ const cameraErrorMessage = (error: unknown) => {
 
 export default function EmployeePhotoCapture({
   previewUrl,
+  error,
   onPhotoSelected,
   onPhotoRemoved,
 }: EmployeePhotoCaptureProps) {
@@ -127,7 +129,8 @@ export default function EmployeePhotoCapture({
     const sourceSize = Math.min(video.videoWidth, video.videoHeight)
     const sourceX = (video.videoWidth - sourceSize) / 2
     const sourceY = (video.videoHeight - sourceSize) / 2
-    const outputSize = Math.min(sourceSize, 1024)
+    // Keep camera captures comfortably below the terminal's 200 KB face limit.
+    const outputSize = Math.min(sourceSize, 600)
     const canvas = document.createElement('canvas')
     canvas.width = outputSize
     canvas.height = outputSize
@@ -155,7 +158,7 @@ export default function EmployeePhotoCapture({
     )
 
     const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.92)
+      canvas.toBlob(resolve, 'image/jpeg', 0.82)
     })
 
     if (!mountedRef.current || requestId !== cameraRequestRef.current) return
@@ -230,8 +233,8 @@ export default function EmployeePhotoCapture({
         )}
       </div>
 
-      {cameraError && (
-        <p className="text-sm text-red-600" role="alert">{cameraError}</p>
+      {(cameraError || error) && (
+        <p className="text-sm text-red-600" role="alert">{cameraError || error}</p>
       )}
 
       <div className="flex flex-wrap justify-center gap-3">
