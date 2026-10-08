@@ -18,13 +18,15 @@ Backup-a aşağıdakılar daxildir:
    docker compose up -d --build
    ```
 
-2. Proqramda **Parametrlər → Backup** bölməsinə keçin, Windows qovluğunun tam yolunu yazın və yadda saxlayın.
+2. Proqramda **Parametrlər → Backup** bölməsinə keçin. **Qovluq seç** düyməsi ilə Windows qovluğunu seçin (və ya tam yolu əl ilə yazın) və parametrləri yadda saxlayın.
 
 3. PowerShell-i **Administrator kimi** açıb layihə qovluğunda işlədin:
 
    ```powershell
    .\scripts\install-backup-task.ps1
    ```
+
+   Skript gündəlik backup tapşırığı ilə yanaşı, yalnız `127.0.0.1:18765` ünvanında işləyən lokal qovluq seçicisini də quraşdırır və başladır. Qovluq seçicisi yalnız `http://localhost:3000` və `http://127.0.0.1:3000` səhifələrindən gələn sorğuları qəbul edir.
 
 Tapşırıq Windows istifadəçisi daxil olduqdan üç dəqiqə sonra və hər gün saat 04:00-da işə düşür. Docker gec açılarsa skript konteynerlərin hazır olmasını 10 dəqiqəyədək gözləyir. Həmin gün uğurlu backup artıq varsa ikinci surət yaradılmır.
 

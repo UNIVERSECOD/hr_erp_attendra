@@ -22,6 +22,8 @@ const formatBackupTime = (value: string | null) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString('az-AZ')
 }
 
+const BACKUP_FOLDER_PICKER_URL = 'http://127.0.0.1:18765/select-folder'
+
 export default function SettingsPage() {
   const { user } = useAuthStore()
   const [activeTab, setActiveTab] = useState<'profile' | 'system' | 'backup' | 'security'>('profile')
@@ -36,6 +38,7 @@ export default function SettingsPage() {
   const [backupEnabled, setBackupEnabled] = useState(true)
   const [backupLoading, setBackupLoading] = useState(false)
   const [backupSaving, setBackupSaving] = useState(false)
+  const [backupFolderSelecting, setBackupFolderSelecting] = useState(false)
   const [backupError, setBackupError] = useState('')
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
@@ -139,6 +142,34 @@ export default function SettingsPage() {
       toast.error(t('settings.backupSaveFailed'), message)
     } finally {
       setBackupSaving(false)
+    }
+  }
+
+  const handleBackupFolderSelect = async () => {
+    setBackupFolderSelecting(true)
+    setBackupError('')
+    try {
+      const response = await fetch(BACKUP_FOLDER_PICKER_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ currentPath: backupFolderPath }),
+      })
+      if (!response.ok) {
+        throw new Error(`Folder picker returned ${response.status}`)
+      }
+
+      const result = await response.json() as { cancelled?: boolean; path?: string }
+      if (result.cancelled) return
+      if (!result.path) throw new Error('Folder picker returned an empty path')
+
+      setBackupFolderPath(result.path)
+      toast.success(t('settings.backupFolderSelected'), t('settings.backupFolderSelectedDesc'))
+    } catch {
+      const message = t('settings.backupFolderPickerUnavailableDesc')
+      setBackupError(message)
+      toast.error(t('settings.backupFolderPickerUnavailable'), message)
+    } finally {
+      setBackupFolderSelecting(false)
     }
   }
 
@@ -454,14 +485,27 @@ export default function SettingsPage() {
 
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1.5">{t('settings.backupFolder')}</label>
-                        <input
-                          type="text"
-                          value={backupFolderPath}
-                          onChange={(event) => setBackupFolderPath(event.target.value)}
-                          disabled={backupSaving}
-                          placeholder="D:\\AttendraBackups\\daily"
-                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
-                        />
+                        <div className="flex flex-col sm:flex-row gap-2">
+                          <input
+                            type="text"
+                            value={backupFolderPath}
+                            onChange={(event) => setBackupFolderPath(event.target.value)}
+                            disabled={backupSaving || backupFolderSelecting}
+                            placeholder="D:\\AttendraBackups\\daily"
+                            className="min-w-0 flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:bg-gray-100"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleBackupFolderSelect}
+                            disabled={backupSaving || backupFolderSelecting}
+                            className="inline-flex items-center justify-center gap-2 rounded-lg border border-purple-200 px-4 py-2 text-sm font-medium text-purple-700 transition-colors hover:bg-purple-50 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" />
+                            </svg>
+                            {backupFolderSelecting ? t('settings.backupFolderSelecting') : t('settings.selectBackupFolder')}
+                          </button>
+                        </div>
                         <p className="text-xs text-gray-400 mt-1.5">{t('settings.backupFolderHelp')}</p>
                       </div>
 
