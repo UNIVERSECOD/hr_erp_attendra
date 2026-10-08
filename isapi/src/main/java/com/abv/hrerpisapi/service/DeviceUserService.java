@@ -33,6 +33,7 @@ public class DeviceUserService {
     private final DeviceRepository deviceRepository;
     private final DeviceUserRepository deviceUserRepository;
     private final IsapiClient isapiClient;
+    private final FaceImageNormalizer faceImageNormalizer;
 
     public DeviceUserResponse createDeviceUser(Long deviceId, DeviceUserCreateRequest request) {
         log.info("ActionLog.deviceUser.create.started deviceId={} employeeNo={}", deviceId, request.employeeNo());
@@ -380,7 +381,12 @@ public class DeviceUserService {
 
         try {
             byte[] imageBytes = file.getBytes();
-            UserOperationResult result = isapiClient.uploadFaceToFDLib(device, entity.getEmployeeNo(), imageBytes);
+            FaceImageNormalizer.NormalizedFaceImage normalized = faceImageNormalizer.normalize(imageBytes);
+            log.info("ActionLog.deviceUser.face.normalized deviceId={} userId={} employeeNo={} sourceBytes={} targetBytes={} width={} height={}",
+                    deviceId, entity.getId(), entity.getEmployeeNo(), imageBytes.length, normalized.bytes().length,
+                    normalized.width(), normalized.height());
+            UserOperationResult result = isapiClient.uploadFaceToFDLib(
+                    device, entity.getEmployeeNo(), normalized.bytes());
             if (result.success()) {
                 log.info("ActionLog.deviceUser.face.upload.ended deviceId={} userId={} employeeNo={} synced=true",
                         deviceId, entity.getId(), entity.getEmployeeNo());

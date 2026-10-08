@@ -22,9 +22,9 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class EmployeeFaceImageService {
 
-    public static final long MAX_FACE_IMAGE_SIZE_BYTES = 200L * 1024L;
+    public static final long MAX_FACE_IMAGE_SIZE_BYTES = 5L * 1024L * 1024L;
     public static final String FACE_IMAGE_SIZE_ERROR =
-            "Üz şəkli 200 KB-dan böyük ola bilməz. Şəkli kiçildib yenidən seçin.";
+            "Profil şəkli 5 MB-dan böyük ola bilməz. Daha kiçik şəkil seçin.";
 
     private final FaceDataRepository faceDataRepository;
 

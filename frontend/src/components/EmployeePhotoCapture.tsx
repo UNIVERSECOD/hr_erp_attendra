@@ -129,8 +129,9 @@ export default function EmployeePhotoCapture({
     const sourceSize = Math.min(video.videoWidth, video.videoHeight)
     const sourceX = (video.videoWidth - sourceSize) / 2
     const sourceY = (video.videoHeight - sourceSize) / 2
-    // Keep camera captures comfortably below the terminal's 200 KB face limit.
-    const outputSize = Math.min(sourceSize, 600)
+    // Preserve a useful profile resolution; the ISAPI bridge prepares a
+    // separate terminal-compatible JPEG before physical-device upload.
+    const outputSize = Math.min(sourceSize, 1024)
     const canvas = document.createElement('canvas')
     canvas.width = outputSize
     canvas.height = outputSize
@@ -158,7 +159,7 @@ export default function EmployeePhotoCapture({
     )
 
     const blob = await new Promise<Blob | null>((resolve) => {
-      canvas.toBlob(resolve, 'image/jpeg', 0.82)
+      canvas.toBlob(resolve, 'image/jpeg', 0.92)
     })
 
     if (!mountedRef.current || requestId !== cameraRequestRef.current) return
@@ -236,6 +237,10 @@ export default function EmployeePhotoCapture({
       {(cameraError || error) && (
         <p className="text-sm text-red-600" role="alert">{cameraError || error}</p>
       )}
+
+      <p className="text-center text-xs text-gray-500">
+        JPG və ya PNG, maksimum 5 MB. Şəkil cihazlar üçün avtomatik uyğunlaşdırılır.
+      </p>
 
       <div className="flex flex-wrap justify-center gap-3">
         {cameraIsOpen ? (

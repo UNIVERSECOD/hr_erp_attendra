@@ -32,7 +32,7 @@ class EmployeeFaceImageServiceTest {
     private Path tempDir;
 
     @Test
-    void saveFaceImage_rejectsFilesLargerThanTerminalLimitBeforePersistence() {
+    void saveFaceImage_rejectsFilesLargerThanProfileLimitBeforePersistence() {
         EmployeeFaceImageService service = new EmployeeFaceImageService(faceDataRepository);
         ReflectionTestUtils.setField(service, "faceImagesDir", tempDir.toString());
         MockMultipartFile file = new MockMultipartFile(

@@ -5,10 +5,13 @@ import com.hic.model.Employee;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.file.Files;
@@ -16,6 +19,7 @@ import java.nio.file.Path;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
@@ -90,6 +94,37 @@ class EmployeeFaceDeviceSyncServiceTest {
                 any(HttpMethod.class),
                 any(),
                 eq(String.class));
+    }
+
+    @Test
+    void syncIfAvailable_surfacesAzerbaijaniBridgeValidationMessage() throws Exception {
+        Employee employee = employee();
+        Path facePath = tempDir.resolve("face.png");
+        Files.write(facePath, new byte[]{1, 2, 3});
+        when(employeeFaceImageService.getLatestFaceImage(7L))
+                .thenReturn(Optional.of(new EmployeeFaceImageService.FaceImageData(facePath, "image/png")));
+        when(restTemplate.exchange(
+                eq("http://isapi:8081/api/devices/101/users"),
+                eq(HttpMethod.GET),
+                isNull(),
+                eq(String.class)))
+                .thenReturn(ResponseEntity.ok("[{\"id\":77,\"employeeNo\":\"1234\"}]"));
+        HttpClientErrorException bridgeError = HttpClientErrorException.create(
+                HttpStatus.BAD_REQUEST,
+                "Bad Request",
+                HttpHeaders.EMPTY,
+                "{\"message\":\"Şəkil formatı dəstəklənmir. JPG və ya PNG faylı seçin.\"}".getBytes(),
+                java.nio.charset.StandardCharsets.UTF_8);
+        when(restTemplate.exchange(
+                eq("http://isapi:8081/api/devices/101/users/77/face"),
+                eq(HttpMethod.POST),
+                any(HttpEntity.class),
+                eq(String.class)))
+                .thenThrow(bridgeError);
+
+        assertThatThrownBy(() -> service.syncIfAvailable(employee, 101L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessage("Şəkil formatı dəstəklənmir. JPG və ya PNG faylı seçin.");
     }
 
     private Employee employee() {

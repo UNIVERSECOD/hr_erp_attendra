@@ -68,7 +68,7 @@ public class EmployeeFaceDeviceSyncService {
             if (isAlreadyPresent(ex)) {
                 return SyncOutcome.ALREADY_PRESENT;
             }
-            throw ex;
+            throw new IllegalStateException(extractUpstreamMessage(ex), ex);
         } catch (RuntimeException ex) {
             throw ex;
         } catch (Exception ex) {
@@ -163,6 +163,22 @@ public class EmployeeFaceDeviceSyncService {
         return ex.getStatusCode().value() == 409
                 || normalized.contains("already exist")
                 || normalized.contains("duplicate");
+    }
+
+    private String extractUpstreamMessage(HttpStatusCodeException ex) {
+        String responseBody = ex.getResponseBodyAsString();
+        if (StringUtils.hasText(responseBody)) {
+            try {
+                JsonNode root = objectMapper.readTree(responseBody);
+                String message = root.path("message").asText("");
+                if (StringUtils.hasText(message)) {
+                    return message;
+                }
+            } catch (Exception ignored) {
+                // Fall back to a stable Azerbaijani message below.
+            }
+        }
+        return "Üz şəkli cihazla sinxronlaşdırılmadı.";
     }
 
     private String resolveDevicePersonNo(Employee employee) {

@@ -597,7 +597,12 @@ export default function EmployeesPage() {
         return
       }
       closeWizard()
-      toast.success(editingEmployee ? 'Əməkdaş yeniləndi' : 'Əməkdaş əlavə edildi')
+      toast.success(
+        editingEmployee ? 'Əməkdaş yeniləndi' : 'Əməkdaş əlavə edildi',
+        wizardImageFile
+          ? 'Profil şəkli saxlanıldı. Cihaza göndərilərkən avtomatik uyğunlaşdırılır.'
+          : undefined,
+      )
       if (showProfileModal && selectedEmployee?.id === savedEmployee?.id) {
         openProfile(savedEmployee)
       }
@@ -665,7 +670,10 @@ export default function EmployeesPage() {
         setUploadFaceError(message)
         toast.warning('Şəkil saxlanıldı', message)
       } else {
-        toast.success('Şəkil yeniləndi')
+        toast.success(
+          'Şəkil yeniləndi',
+          'Profil şəkli saxlanıldı. Cihaza göndərilərkən avtomatik uyğunlaşdırılır.',
+        )
       }
       await fetchEmployees(currentPage, 20)
     } catch (e: unknown) {
@@ -904,7 +912,7 @@ export default function EmployeesPage() {
                           <label className="p-1.5 rounded hover:bg-blue-50 transition-colors cursor-pointer" title="Şəkil yüklə">
                             <input
                               type="file"
-                              accept="image/*"
+                              accept="image/jpeg,image/png"
                               className="hidden"
                               aria-label={`${emp.firstName} ${emp.lastName} üçün şəkil yüklə`}
                               onChange={(e) => {

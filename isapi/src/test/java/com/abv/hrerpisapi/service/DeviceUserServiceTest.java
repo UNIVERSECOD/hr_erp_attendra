@@ -12,6 +12,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.Optional;
@@ -30,9 +31,31 @@ class DeviceUserServiceTest {
     private DeviceUserRepository deviceUserRepository;
     @Mock
     private IsapiClient isapiClient;
+    @Mock
+    private FaceImageNormalizer faceImageNormalizer;
 
     @InjectMocks
     private DeviceUserService service;
+
+    @Test
+    void uploadFace_normalizesImageBeforeSendingToDevice() throws Exception {
+        DeviceEntity device = device(1L);
+        DeviceUserEntity cachedUser = user(7L, "1234");
+        byte[] source = new byte[]{1, 2, 3};
+        byte[] normalized = new byte[]{4, 5, 6};
+        MockMultipartFile file = new MockMultipartFile("file", "face.png", "image/png", source);
+        when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
+        when(deviceUserRepository.findById(7L)).thenReturn(Optional.of(cachedUser));
+        when(faceImageNormalizer.normalize(source))
+                .thenReturn(new FaceImageNormalizer.NormalizedFaceImage(normalized, 720, 960));
+        when(isapiClient.uploadFaceToFDLib(device, "1234", normalized))
+                .thenReturn(new UserOperationResult(true, 200, "ok"));
+
+        service.uploadFaceData(1L, 7L, file);
+
+        verify(faceImageNormalizer).normalize(source);
+        verify(isapiClient).uploadFaceToFDLib(device, "1234", normalized);
+    }
 
     @Test
     void deleteByEmployeeNo_deletesUserAndLocalCache() throws Exception {
