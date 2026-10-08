@@ -31,3 +31,7 @@ Thumbs.db
 # Logs
 *.log
 logs/
+
+# Runtime backup configuration and status (host-specific, may contain local paths)
+runtime/backup-settings.json
+runtime/backup-status.json

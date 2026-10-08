@@ -61,11 +61,13 @@ services:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       ISAPI_BASE_URL: http://isapi:8081
       COMPUTER_IP: ${COMPUTER_IP:-192.168.1.102}
+      APP_RUNTIME_DIR: /app/runtime
       TZ: Asia/Baku
     ports:
       - "8080:8080"
     volumes:
       - face_images:/app/uploads/faces
+      - ./runtime:/app/runtime
     depends_on:
       postgres:
         condition: service_healthy

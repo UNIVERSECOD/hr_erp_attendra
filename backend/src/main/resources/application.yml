@@ -70,3 +70,8 @@ isapi:
     door-right: ${ISAPI_USER_INFO_DOOR_RIGHT:1}
     door-no: ${ISAPI_USER_INFO_DOOR_NO:1}
     plan-template-no: ${ISAPI_USER_INFO_PLAN_TEMPLATE_NO:1}
+
+app:
+  runtime-dir: ${APP_RUNTIME_DIR:runtime}
+  face-images:
+    dir: ${FACE_IMAGES_DIR:uploads/faces}
