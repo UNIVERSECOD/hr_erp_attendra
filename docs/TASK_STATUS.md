@@ -6,6 +6,8 @@ Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and cur
 
 ## 1. Completed in source
 
+- 2026-10-09 employee audit item 3 fixed: oversized multipart uploads return HTTP 413 with an Azerbaijani JSON message instead of generic 500. File limit remains 5 MB; backend/Nginx request limits are 6 MB to allow multipart overhead, and Tomcat drains up to 8 MB of rejected request data to avoid resets near the limit. Nginx also returns localized JSON when it rejects the request itself. `EmployeeUploadLimitIntegrationTest` exercises real embedded Tomcat with mocked photo/device services (exactly 5 MB, one byte over, aggregate limit). Verification: 282 backend tests and package passed; frontend lint/build passed; 17 isolated Docker checks passed through both backend and Nginx, including unchanged stored photos after rejection. Employee branch-scope and cross-tenant photo-access audit findings remain separate, unresolved items.
+
 | Task | Delivered behavior | Commit / source anchors |
 | --- | --- | --- |
 | Face upload protection | Frontend/backend 5 MB upload limit; device-bound JPEG normalization below 190,000 bytes and max dimension 1024. Local employee/photo save survives device failure; warnings remain visible. A 502 alone does not prove image size was the cause. | `312df80`, `3bac84e`; `EmployeeFaceImageService`, ISAPI `FaceImageNormalizer` |

@@ -1,11 +1,15 @@
 server:
   port: 8080
+  tomcat:
+    # Drain rejected uploads near the limit so clients receive 413, not a reset.
+    max-swallow-size: 8MB
 
 spring:
   servlet:
     multipart:
       max-file-size: 5MB
-      max-request-size: 5MB
+      # Leave room for multipart boundaries/headers around a valid 5 MB file.
+      max-request-size: 6MB
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/hic_backend}
     username: ${SPRING_DATASOURCE_USERNAME:hic_user}
