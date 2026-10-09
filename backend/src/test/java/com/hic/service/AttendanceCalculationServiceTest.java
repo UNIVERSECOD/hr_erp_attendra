@@ -27,6 +27,10 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
+import static org.mockito.Mockito.times;
 
 @ExtendWith(MockitoExtension.class)
 class AttendanceCalculationServiceTest {
@@ -49,6 +53,9 @@ class AttendanceCalculationServiceTest {
     @Mock
     private LeaveService leaveService;
 
+    @Mock
+    private AttendanceService attendanceService;
+
     @Spy
     private AttendanceInferenceService attendanceInferenceService = new AttendanceInferenceService();
 
@@ -63,6 +70,37 @@ class AttendanceCalculationServiceTest {
 
     @InjectMocks
     private AttendanceCalculationService attendanceCalculationService;
+
+    @Test
+    void recalculateRefreshesRecordsAndTabelSummariesForEntireRequestedRange() {
+        LocalDate start = LocalDate.of(2026, 10, 5);
+        LocalDate end = start.plusDays(1);
+        Employee employee = new Employee();
+        employee.setId(1L);
+        employee.setTenantId(7L);
+        employee.setShiftType("STANDARD");
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+
+        attendanceCalculationService.recalculate(start, end, 1L);
+
+        verify(attendanceRecordRepository, times(2)).save(any(AttendanceRecord.class));
+        verify(attendanceService).generateDailySummary(1L, start);
+        verify(attendanceService).generateDailySummary(1L, end);
+        verifyNoMoreInteractions(attendanceService);
+    }
+
+    @Test
+    void recalculateDoesNotWriteAnotherTenantsRecordsOrSummaries() {
+        Employee employee = new Employee();
+        employee.setId(1L);
+        employee.setTenantId(8L);
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+
+        LocalDate date = LocalDate.of(2026, 10, 5);
+        attendanceCalculationService.recalculate(date, date, 1L);
+
+        verifyNoInteractions(attendanceRecordRepository, attendanceService);
+    }
 
     @BeforeEach
     void setTenant() {

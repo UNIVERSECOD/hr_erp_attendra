@@ -1,6 +1,7 @@
 package com.hic.service;
 
 import com.hic.dto.TabelMonthlyDTO;
+import com.hic.exception.BadRequestException;
 import com.hic.model.DailyAttendanceSummary;
 import com.hic.model.Employee;
 import com.hic.model.EmployeePermission;
@@ -62,6 +63,12 @@ public class TabelService {
                                            Long departmentId,
                                            Long positionId,
                                            String search) {
+        if (month < 1 || month > 12) {
+            throw new BadRequestException("Ay 1 ilə 12 arasında olmalıdır.");
+        }
+        if (year < 1 || year > 9999) {
+            throw new BadRequestException("İl 1 ilə 9999 arasında olmalıdır.");
+        }
         Long tenantId = requireTenantId();
 
         YearMonth yearMonth = YearMonth.of(year, month);

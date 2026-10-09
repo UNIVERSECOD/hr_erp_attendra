@@ -3,6 +3,7 @@ package com.hic.service;
 import com.hic.model.AttendanceLog;
 import com.hic.model.AttendanceRecord;
 import com.hic.model.Employee;
+import com.hic.exception.BadRequestException;
 import com.hic.repository.AttendanceLogRepository;
 import com.hic.repository.AttendanceRecordRepository;
 import com.hic.repository.EmployeeRepository;
@@ -29,6 +30,7 @@ public class AttendanceCalculationService {
     private final AttendanceScheduleResolver attendanceScheduleResolver;
     private final AttendanceTimeCalculator attendanceTimeCalculator;
     private final AttendancePermissionCalculator attendancePermissionCalculator;
+    private final AttendanceService attendanceService;
 
     @Transactional
     public AttendanceRecord calculateForDay(Long employeeId, LocalDate workDate) {
@@ -99,23 +101,30 @@ public class AttendanceCalculationService {
 
     @Transactional
     public void recalculate(LocalDate start, LocalDate end, Long employeeId) {
+        if (start == null || end == null || start.isAfter(end)) {
+            throw new BadRequestException("Başlanğıc tarixi bitmə tarixindən sonra ola bilməz.");
+        }
         List<Employee> employees;
         Long tenantId = TenantContext.getTenantId();
+        if (tenantId == null) {
+            throw new IllegalStateException("Tenant context is required to recalculate attendance");
+        }
         if (employeeId != null) {
-            employees = employeeRepository.findById(employeeId).map(List::of).orElse(List.of());
-        } else if (tenantId != null) {
+            employees = employeeRepository.findById(employeeId)
+                    .filter(employee -> tenantId.equals(employee.getTenantId()))
+                    .map(List::of).orElse(List.of());
+        } else {
             employees = employeeRepository.findByTenantId(tenantId, org.springframework.data.domain.Pageable.unpaged())
                     .getContent().stream()
                     .filter(employee -> !Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus()))
                     .toList();
-        } else {
-            throw new IllegalStateException("Tenant context is required to recalculate attendance for all employees");
         }
 
         for (Employee employee : employees) {
             LocalDate date = start;
             while (!date.isAfter(end)) {
                 calculateForDay(employee.getId(), date);
+                attendanceService.generateDailySummary(employee.getId(), date);
                 date = date.plusDays(1);
             }
         }

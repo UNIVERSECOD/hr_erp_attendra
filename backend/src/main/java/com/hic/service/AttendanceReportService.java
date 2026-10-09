@@ -2,6 +2,7 @@ package com.hic.service;
 
 import com.hic.dto.AttendanceReportRowDTO;
 import com.hic.dto.PaginatedResponse;
+import com.hic.exception.BadRequestException;
 import com.hic.model.AttendanceLog;
 import com.hic.model.Branch;
 import com.hic.model.Department;
@@ -76,12 +77,18 @@ public class AttendanceReportService {
             int page,
             int size
     ) {
+        if (page < 0) {
+            throw new BadRequestException("Səhifə nömrəsi 0 və ya daha böyük olmalıdır.");
+        }
+        if (size < 1) {
+            throw new BadRequestException("Səhifə ölçüsü ən azı 1 olmalıdır.");
+        }
         List<AttendanceReportRowDTO> allRows = queryRows(
                 start, end, shiftType, employeeCode, name, fin, position, department, area
         );
-        int fromIndex = Math.min(page * size, allRows.size());
-        int toIndex = Math.min(fromIndex + size, allRows.size());
-        int totalPages = size > 0 ? (int) Math.ceil((double) allRows.size() / size) : 0;
+        int fromIndex = (int) Math.min((long) page * size, allRows.size());
+        int toIndex = (int) Math.min((long) fromIndex + size, allRows.size());
+        int totalPages = (int) Math.ceil((double) allRows.size() / size);
         return PaginatedResponse.of(allRows.subList(fromIndex, toIndex), allRows.size(), totalPages, page, size);
     }
 
@@ -144,6 +151,9 @@ public class AttendanceReportService {
             String department,
             String area
     ) {
+        if (start == null || end == null || start.isAfter(end)) {
+            throw new BadRequestException("Başlanğıc tarixi bitmə tarixindən sonra ola bilməz.");
+        }
         Long tenantId = TenantContext.getTenantId();
 
         LocalDateTime startDt = start.atStartOfDay();

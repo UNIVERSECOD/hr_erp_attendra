@@ -53,6 +53,28 @@ class AttendanceReportServiceTest {
     @InjectMocks
     private AttendanceReportService attendanceReportService;
 
+    @Test
+    void largePageNumberReturnsEmptyPageWithoutIntegerOverflow() {
+        Employee employee = new Employee();
+        employee.setId(1L);
+        employee.setShiftType("FLEXIBLE");
+        AttendanceLog log = new AttendanceLog();
+        log.setId(1L);
+        log.setEmployeeId(1L);
+        log.setCheckInTime(LocalDateTime.of(2026, 10, 5, 9, 0));
+        log.setCheckOutTime(LocalDateTime.of(2026, 10, 5, 18, 0));
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(log));
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee));
+
+        LocalDate date = LocalDate.of(2026, 10, 5);
+        PaginatedResponse<AttendanceReportRowDTO> result = attendanceReportService.getReport(
+                date, date, null, null, null, null, null, null, null, Integer.MAX_VALUE, 20);
+
+        assertThat(result.getContent()).isEmpty();
+        assertThat(result.getTotalElements()).isEqualTo(1);
+    }
+
     @BeforeEach
     void setTenant() {
         TenantContext.setTenantId(1L);
