@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
     [switch]$Force
@@ -32,7 +32,7 @@ function Read-PreviousStatus {
         return $null
     }
     try {
-        return Get-Content -LiteralPath $statusFile -Raw | ConvertFrom-Json
+        return Get-Content -LiteralPath $statusFile -Raw -Encoding UTF8 | ConvertFrom-Json
     } catch {
         return $null
     }
@@ -42,11 +42,16 @@ function Write-BackupStatus {
     param(
         [Parameter(Mandatory = $true)][string]$Status,
         [Parameter(Mandatory = $true)][string]$Message,
-        [AllowNull()][string]$LastBackupAt,
+        [AllowNull()][object]$LastBackupAt,
         [long]$LastBackupBytes = 0,
         [long]$TotalBackupBytes = 0
     )
 
+    # ConvertFrom-Json in PowerShell 7 can return DateTime. Keep the offset and
+    # round-trip format before a string parameter could apply culture formatting.
+    if ($LastBackupAt -is [DateTime] -or $LastBackupAt -is [DateTimeOffset]) {
+        $LastBackupAt = $LastBackupAt.ToString('o')
+    }
     $payload = [ordered]@{
         status = $Status
         lastBackupAt = $LastBackupAt
@@ -103,7 +108,7 @@ function Get-CompletedBackup {
                 Select-Object -First 1) { return $null }
         if (-not (Test-Path -LiteralPath (Join-Path $candidate 'faces') -PathType Container)) { return $null }
 
-        $manifest = Get-Content -LiteralPath (Join-Path $candidate 'manifest.json') -Raw | ConvertFrom-Json
+        $manifest = Get-Content -LiteralPath (Join-Path $candidate 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
         $createdAt = [DateTimeOffset]::MinValue
         if ($manifest.status -ne 'SUCCESS' -or $manifest.retentionDays -ne 183) { return $null }
         if ($manifest.createdAt -is [DateTime]) {
@@ -148,6 +153,19 @@ function Get-DockerContainerState {
     }
 }
 
+function Remove-TemporaryDatabaseDumps {
+    param([string]$BackendDump, [string]$IsapiDump)
+
+    # Cleanup must not replace a dump/copy error or invalidate a completed backup.
+    $ErrorActionPreference = 'Continue'
+    try {
+        & docker exec hic_postgres rm -f $BackendDump $IsapiDump 2>$null | Out-Null
+        return ($LASTEXITCODE -eq 0)
+    } catch {
+        return $false
+    }
+}
+
 function Wait-AttendraContainers {
     $deadline = (Get-Date).AddMinutes(10)
     do {
@@ -167,7 +185,7 @@ try {
         throw 'Backup parametrləri tapılmadı. Əvvəl proqramın Backup bölməsində qovluğu yadda saxlayın.'
     }
 
-    $configuration = Get-Content -LiteralPath $settingsFile -Raw | ConvertFrom-Json
+    $configuration = Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
     if (-not $configuration.enabled) {
         exit 0
     }
@@ -257,7 +275,7 @@ try {
         # Directory.Move fails if the destination exists instead of nesting/overwriting it.
         [System.IO.Directory]::Move($incompleteDirectory, $completedDirectory)
     } finally {
-        & docker exec hic_postgres rm -f $backendTempDump $isapiTempDump 2>$null
+        $cleanupSucceeded = Remove-TemporaryDatabaseDumps -BackendDump $backendTempDump -IsapiDump $isapiTempDump
     }
 
     if (-not (Get-CompletedBackup -Path $completedDirectory -BackupRoot $backupRoot)) {
@@ -283,7 +301,11 @@ try {
             }
         }
 
-    Write-BackupStatus -Status 'SUCCESS' -Message 'Backup uğurla tamamlandı.' `
+    $successMessage = 'Backup uğurla tamamlandı.'
+    if (-not $cleanupSucceeded) {
+        $successMessage += ' Xəbərdarlıq: konteynerdəki müvəqqəti dump faylları silinmədi.'
+    }
+    Write-BackupStatus -Status 'SUCCESS' -Message $successMessage `
         -LastBackupAt ([DateTimeOffset]::Now.ToString('o')) `
         -LastBackupBytes (Get-DirectoryBytes -Path $completedDirectory) `
         -TotalBackupBytes (Get-DirectoryBytes -Path $backupRoot)

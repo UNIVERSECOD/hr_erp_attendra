@@ -54,8 +54,16 @@ function docker {
             [System.IO.File]::WriteAllText($target, $dump)
         }
     } elseif ($args[0] -eq 'exec' -and $args[2] -eq 'pg_dump') {
-        if ($global:attendraBackupTest.mode -eq 'dump-failure') { $global:LASTEXITCODE = 1 }
+        if ($global:attendraBackupTest.mode -in @('dump-failure', 'dump-and-cleanup-failure')) { $global:LASTEXITCODE = 1 }
     } elseif ($args[0] -eq 'exec' -and $args[2] -eq 'rm') {
+        if ($global:attendraBackupTest.mode -in @('cleanup-failure', 'dump-and-cleanup-failure')) {
+            & "$env:SystemRoot\System32\cmd.exe" /d /c 'echo simulated cleanup unavailable 1>&2 & exit /b 1'
+            $global:LASTEXITCODE = 1
+        } elseif ($global:attendraBackupTest.mode -eq 'cleanup-exit-failure') {
+            $global:LASTEXITCODE = 1
+        } elseif ($global:attendraBackupTest.mode -eq 'cleanup-throw') {
+            throw 'Simulated cleanup invocation error'
+        }
         return
     } else { throw "Unexpected mock Docker command: $($args[0])" }
 }
@@ -93,7 +101,7 @@ function New-Backup {
 
 function Read-Status {
     param([string]$Project)
-    return Get-Content -LiteralPath (Join-Path $Project 'runtime/backup-status.json') -Raw | ConvertFrom-Json
+    return Get-Content -LiteralPath (Join-Path $Project 'runtime/backup-status.json') -Raw -Encoding UTF8 | ConvertFrom-Json
 }
 
 try {
@@ -178,6 +186,49 @@ try {
         Assert-True ((Read-Status $project).status -eq 'ERROR') 'failed backup reports error'
         Assert-True (Test-Path -LiteralPath $oldValid) 'failure never prunes old backup'
     }
+
+    $global:attendraBackupTest.mode = 'ready'
+    $project = New-Fixture 'unicode-path'
+    $expectedRoot = Join-Path $project ('backups-' + [char]0x018F + 'razi')
+    $json = @{ enabled = $true; folderPath = $expectedRoot } | ConvertTo-Json
+    [IO.File]::WriteAllText((Join-Path $project 'runtime/backup-settings.json'), $json, (New-Object Text.UTF8Encoding($false)))
+    [IO.File]::WriteAllText((Join-Path $project '.env'), 'TEST_FIXTURE_ONLY=true')
+    & $backupScript -ProjectRoot $project
+    Assert-True ((Read-Status $project).status -eq 'SUCCESS') 'UTF8 settings without BOM work'
+    Assert-True (Test-Path -LiteralPath (Join-Path $expectedRoot '20261009-120000/manifest.json')) 'Azerbaijani backup path is preserved'
+    Assert-True ([IO.File]::ReadAllText((Join-Path $expectedRoot '20261009-120000/.env.backup')) -eq 'TEST_FIXTURE_ONLY=true') 'fixture env copy is intact'
+    $expectedMessage = 'Backup u' + [char]0x011F + 'urla tamamland' + [char]0x0131 + '.'
+    Assert-True ((Read-Status $project).message -eq $expectedMessage) 'Azerbaijani source literals survive PowerShell 5.1'
+    & $backupScript -ProjectRoot $project
+    Assert-True ((Read-Status $project).status -eq 'SKIPPED') 'Unicode path is recognized next run'
+
+    foreach ($mode in @('cleanup-failure', 'cleanup-exit-failure', 'cleanup-throw', 'dump-and-cleanup-failure')) {
+        $project = New-Fixture $mode
+        $global:attendraBackupTest.mode = $mode
+        $caught = $null
+        try { & $backupScript -ProjectRoot $project } catch { $caught = $_ }
+        if ($mode -eq 'dump-and-cleanup-failure') {
+            $expectedError = ([char]0x018F).ToString() + 'sas bazan' + [char]0x0131 + 'n backup-u al' + [char]0x0131 + 'nmad' + [char]0x0131 + '.'
+            Assert-True ($null -ne $caught -and $caught.Exception.Message -eq $expectedError) 'cleanup never masks the original dump failure'
+            Assert-True ((Read-Status $project).status -eq 'ERROR') 'dump failure still reports ERROR'
+        } else {
+            Assert-True ($null -eq $caught) "$mode does not throw after a completed backup"
+            Assert-True ((Read-Status $project).status -eq 'SUCCESS') "$mode preserves SUCCESS"
+            Assert-True ((Read-Status $project).message -like '*dump*') 'cleanup warning is visible in status'
+        }
+    }
+
+    $project = New-Fixture 'date-on-error'
+    $statusPath = Join-Path $project 'runtime/backup-status.json'
+    $previousInstant = '2026-10-08T16:40:00+04:00'
+    @{ status = 'SUCCESS'; lastBackupAt = $previousInstant; lastBackupBytes = 12; totalBackupBytes = 24 } |
+        ConvertTo-Json | Set-Content -LiteralPath $statusPath -Encoding UTF8
+    $global:attendraBackupTest.mode = 'dump-failure'
+    try { & $backupScript -ProjectRoot $project } catch { }
+    $rawStatus = [IO.File]::ReadAllText($statusPath)
+    Assert-True ($rawStatus -match '"lastBackupAt"\s*:\s*"\d{4}-\d{2}-\d{2}T[^" ]+(Z|[+-]\d{2}:\d{2})"') 'error status keeps ISO timestamp with timezone'
+    Assert-True ([DateTimeOffset](Read-Status $project).lastBackupAt -eq [DateTimeOffset]$previousInstant) 'error status preserves previous instant'
+    Assert-True ((Read-Status $project).lastBackupBytes -eq 12) 'error status preserves previous backup size'
 
     # Load only function declarations to test readiness without executing the script body.
     $tokens = $null; $parseErrors = $null

@@ -34,6 +34,8 @@ Tamamlanmış backup yalnız tarixli qovluq adına görə müəyyən edilmir: `S
 
 Bu struktur yoxlaması bazanın uğurla bərpa ediləcəyinə zəmanət vermir; bərpa ayrıca sınaq bazasında yoxlanmalıdır. Windows PowerShell 5.1-də Docker-in müvəqqəti xəta cavabı gözləməni dayandırmır: hər 30 saniyədən bir yenidən yoxlanır, 10 dəqiqə sonra hələ hazır deyilsə xəta statusu yazılır.
 
+Skript Windows PowerShell 5.1 üçün **UTF-8 BOM** ilə saxlanılır; JSON faylları ayrıca UTF-8 kimi oxunur. Beləliklə Azərbaycan hərfli qovluq yolları və status mətnləri qorunur. Backup tarixləri ISO formatında saat qurşağı ilə yazılır. Tamamlanmış backup-dan sonra konteynerdəki müvəqqəti dump fayllarını silmək mümkün olmadıqda status `SUCCESS` qalır, mesajda xəbərdarlıq göstərilir; backup əməliyyatının öz xətası varsa təmizləmə həmin xətanı əvəz etmir.
+
 ## Əl ilə yoxlama
 
 Planlı tapşırığı gözləmədən sınaq backup-u yaratmaq üçün:
@@ -52,3 +54,12 @@ pwsh.exe -NoProfile -File scripts/tests/backup-attendra.Tests.ps1
 ```
 
 Pester tələb olunmur. Sınaqlar yalnız `build/` altında müvəqqəti məlumatlardan və saxta Docker əmrlərindən istifadə edir; real bazaya və cihazlara qoşulmur. Junction sınaqları üçün həmin müvəqqəti qovluqda junction yaratmağa icazə olmalıdır.
+
+Docker açıq olduqda real backup/bərpa mexanizmini ayrıca yoxlamaq üçün:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/tests/backup-attendra.Docker.Tests.ps1
+pwsh.exe -NoProfile -File scripts/tests/backup-attendra.Docker.Tests.ps1
+```
+
+Bu sınaq `postgres:15-alpine` əsasında şəbəkəsiz, müvəqqəti konteyner yaradır. İki test bazasının backup-ını alır, ayrıca test bazalarına bərpa edir və məlumatları müqayisə edir; şəkil və `.env` əvəzinə saxta fayllardan istifadə olunur. Sonda yalnız sınağın yaratdığı konteyner və fayllar silinir. Mövcud Attendra konteynerlərinə, volume-lara, müştəri məlumatlarına və fiziki cihazlara müraciət edilmir.
