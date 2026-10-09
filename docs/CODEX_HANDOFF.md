@@ -1,10 +1,12 @@
 # Codex Project Handoff
 
-Last reviewed: 2026-10-03
+Last reviewed: 2026-10-09
 
 Repository: `https://github.com/UNIVERSECOD/hr_erp_attendra.git`
 
-Baseline at review: `af5a351 Add user-facing toast notifications`
+Baseline at review: `b8a389d Persist employee device removal jobs with automatic retry`
+
+Read [TASK_STATUS.md](TASK_STATUS.md) for the latest completed tasks, remaining user requests, acceptance criteria, and verification limits. That task ledger supersedes older progress notes below. Also read [BACKUP_SETUP.md](BACKUP_SETUP.md) and [EMPLOYEE_TERMINATION_JOBS.md](EMPLOYEE_TERMINATION_JOBS.md) when working on those features.
 
 This document transfers project context to a new computer or Codex session. Read `AGENTS.md` first, then verify this document against the current source and `git log` before changing code.
 
@@ -49,6 +51,11 @@ Resolve both device IDs and all employee identities before changing sync code.
 
 The following behavior is implemented in the current `main` history:
 
+- Employee face uploads have a 5 MB input limit; the ISAPI bridge normalizes device-bound images to JPEG under 190,000 bytes with a maximum dimension of 1024 pixels. Physical firmware compatibility still needs controlled verification.
+- Backup settings, storage usage reporting, Windows scheduled backup scripts, and a local native folder-picker helper are implemented. Each Windows installation needs the host helper/task installed; see `BACKUP_SETUP.md`.
+- Employee termination preserves history and photos, hides terminated employees from the active list, and marks historical Tabel names red without adding status/date columns to Excel.
+- Employee left-side actions include termination instead of photo removal; employee deletion is disabled in the UI while the backend endpoint remains.
+- Device-removal jobs are persisted atomically with termination and retried automatically. Partial completion produces a warning, not an all-devices-success message. See `EMPLOYEE_TERMINATION_JOBS.md`.
 - Initial setup requires creation of the first admin password on an empty database.
 - JWT session protection, password change, expired-session login redirect, and authentication hardening.
 - Configurable attendance synchronization interval.
@@ -74,6 +81,14 @@ The following behavior is implemented in the current `main` history:
 Useful commit trail:
 
 ```text
+b8a389d Persist employee device removal jobs with automatic retry
+7bdfd1b Adjust employee action buttons and disable deletion
+7ec2661 Add employee termination workflow
+d737276 Add Windows backup folder picker
+0008dbd Add automated backup management
+3bac84e Normalize employee face images for devices
+312df80 Limit employee face image uploads
+c0f3819 Improve Excel import templates with required fields and choices
 af5a351 Add user-facing toast notifications
 2d851b1 Synchronize employee faces across assigned devices
 2804816 Protect employee field persistence
@@ -103,7 +118,7 @@ Do not rewrite `V033` after it has run. Any future correction requires a new mig
 
 ## 5. Database And Migration State
 
-Backend Flyway migrations currently run from `V001` through `V037`.
+Backend Flyway migrations currently run from `V001` through `V038`. Recheck the current tree before allocating the next number. The backend history table is `flyway_schema_history_backend`.
 
 Important recent migrations:
 
@@ -114,6 +129,7 @@ Important recent migrations:
 - `V035`: attendance session integrity.
 - `V036`: hourly employee permissions.
 - `V037`: employee areas and device assignment sources.
+- `V038`: durable employee device-removal jobs; additive, no automatic backfill for previously terminated employees.
 
 Rules for future migrations:
 
@@ -237,8 +253,11 @@ docker compose logs --tail 100 backend isapi frontend
 
 At commit `af5a351`, frontend lint and production build passed. Docker CLI and Maven were unavailable in that Codex execution environment, so Docker and backend tests were not rerun for the frontend-only toast change. Do not convert that limitation into a claim that those checks passed.
 
+Latest verification at `b8a389d` (2026-10-09): all 279 backend tests passed; frontend lint and production build passed; backend/frontend Docker builds and Compose configuration validation passed. Both services were updated locally without deleting volumes. Migration V038 applied successfully, backend `/api/health` and frontend returned HTTP 200. Device tests used mocks; physical terminal deletion and ISAPI tests were not rerun for this backend/frontend job change. See the task ledger for remaining acceptance checks.
+
 ## 11. Remaining Or Deferred Work
 
+- Follow the prioritized user backlog in `TASK_STATUS.md`: finish Tabel position filtering, implement a usable audit journal, and leave Attendra MCG until last. Obtain user confirmation before starting each next feature.
 - Multi-project daily tracking is deferred: an employee working across multiple projects, project transitions, and hours per project are not implemented.
 - Physical Hikvision behavior still requires controlled end-to-end verification against each firmware/device model when device-related code changes.
 - Continue security hardening without breaking local-network use; validate allowed device addresses and never expose credentials to the browser.
