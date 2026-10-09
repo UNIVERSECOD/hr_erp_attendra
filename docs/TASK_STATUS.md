@@ -17,6 +17,7 @@ Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and cur
 
 ### Backup interpretation and installation
 
+- 2026-10-09 review fixes (items 2–4): retention and daily skip now require a structurally complete backup (legacy manifest compatible), unrelated/incomplete/linked folders are preserved, timestamp collisions do not overwrite existing folders, and Windows PowerShell 5.1 retries Docker native-stderr failures for the full readiness window. A new backup must also pass structural validation before retention runs. Regression suite: `scripts/tests/backup-attendra.Tests.ps1`, 49 assertions passed on both Windows PowerShell 5.1 and PowerShell 7. Docker Compose configuration validated; the local Docker daemon was unavailable, so real backup/restore and container execution remain unverified. This change does not address the separate employee branch-scope review finding or the Windows default-encoding test finding.
 - Current retention is **183 days of backup copies**, not deletion of application data older than six months and not a six-month-only DB export. Backups contain the full databases. Confirm separately if the user wants different semantics.
 - Windows task runs at user logon with a three-minute delay and daily at 04:00; this is not a guarantee of execution immediately at machine power-on before login.
 - Script waits up to ten minutes for Docker, normally creates one successful backup per day, and removes expired completed backup folders only after a new successful backup.

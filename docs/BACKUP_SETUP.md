@@ -30,6 +30,10 @@ Backup-a aşağıdakılar daxildir:
 
 Tapşırıq Windows istifadəçisi daxil olduqdan üç dəqiqə sonra və hər gün saat 04:00-da işə düşür. Docker gec açılarsa skript konteynerlərin hazır olmasını 10 dəqiqəyədək gözləyir. Həmin gün uğurlu backup artıq varsa ikinci surət yaradılmır.
 
+Tamamlanmış backup yalnız tarixli qovluq adına görə müəyyən edilmir: `SUCCESS` manifesti, iki PostgreSQL arxivinin `PGDMP` başlığı, `faces` qovluğu və manifestdəki ümumi fayl ölçüsü yoxlanılır. Əvvəlki manifest formatı dəstəklənir. Boş, yarımçıq, strukturu pozulmuş və ya əlavə naməlum faylları olan qovluqlar gündəlik backup-ı dayandırmır və avtomatik silinmir. Junction/simvolik keçid olan qovluqlar da silinmir. Eyni saniyəyə uyğun qovluq artıq varsa yeni boş ad seçilir; mövcud qovluq qorunur.
+
+Bu struktur yoxlaması bazanın uğurla bərpa ediləcəyinə zəmanət vermir; bərpa ayrıca sınaq bazasında yoxlanmalıdır. Windows PowerShell 5.1-də Docker-in müvəqqəti xəta cavabı gözləməni dayandırmır: hər 30 saniyədən bir yenidən yoxlanır, 10 dəqiqə sonra hələ hazır deyilsə xəta statusu yazılır.
+
 ## Əl ilə yoxlama
 
 Planlı tapşırığı gözləmədən sınaq backup-u yaratmaq üçün:
@@ -39,3 +43,12 @@ Planlı tapşırığı gözləmədən sınaq backup-u yaratmaq üçün:
 ```
 
 Backup qovluğunda `.env` ola biləcəyi üçün həmin qovluğa yalnız səlahiyyətli istifadəçilərin girişinə icazə verin. `docker compose down -v` işlətməyin.
+
+## Avtomatlaşdırılmış skript sınaqları
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/tests/backup-attendra.Tests.ps1
+pwsh.exe -NoProfile -File scripts/tests/backup-attendra.Tests.ps1
+```
+
+Pester tələb olunmur. Sınaqlar yalnız `build/` altında müvəqqəti məlumatlardan və saxta Docker əmrlərindən istifadə edir; real bazaya və cihazlara qoşulmur. Junction sınaqları üçün həmin müvəqqəti qovluqda junction yaratmağa icazə olmalıdır.

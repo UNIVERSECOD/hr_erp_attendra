@@ -74,15 +74,86 @@ function Get-SafeBackupRoot {
     return $fullPath
 }
 
+function Get-CompletedBackup {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$BackupRoot
+    )
+
+    # Fail closed: a timestamp alone does not identify an Attendra backup.
+    try {
+        $candidate = [System.IO.Path]::GetFullPath($Path)
+        $parent = [System.IO.Path]::GetDirectoryName($candidate)
+        if (-not $parent.Equals($BackupRoot, [System.StringComparison]::OrdinalIgnoreCase)) { return $null }
+        $directory = Get-Item -LiteralPath $candidate -Force
+        $backupDate = [DateTime]::MinValue
+        if (-not $directory.PSIsContainer -or
+            ($directory.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -or
+            -not [DateTime]::TryParseExact($directory.Name, 'yyyyMMdd-HHmmss',
+                [System.Globalization.CultureInfo]::InvariantCulture,
+                [System.Globalization.DateTimeStyles]::None, [ref]$backupDate)) { return $null }
+
+        $allowedNames = @('manifest.json', 'hic_backend.dump', 'hic_isapi.dump', 'faces', '.env.backup')
+        foreach ($entry in Get-ChildItem -LiteralPath $candidate -Force) {
+            if ($entry.Name -notin $allowedNames) { return $null }
+        }
+        # Reject linked files/directories, including links inside faces, before deletion.
+        if (Get-ChildItem -LiteralPath $candidate -Force -Recurse |
+                Where-Object { $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint } |
+                Select-Object -First 1) { return $null }
+        if (-not (Test-Path -LiteralPath (Join-Path $candidate 'faces') -PathType Container)) { return $null }
+
+        $manifest = Get-Content -LiteralPath (Join-Path $candidate 'manifest.json') -Raw | ConvertFrom-Json
+        $createdAt = [DateTimeOffset]::MinValue
+        if ($manifest.status -ne 'SUCCESS' -or $manifest.retentionDays -ne 183) { return $null }
+        if ($manifest.createdAt -is [DateTime]) {
+            # PowerShell 7 may deserialize ISO timestamps as DateTime rather than strings.
+            $createdAt = [DateTimeOffset]$manifest.createdAt
+        } elseif (-not [DateTimeOffset]::TryParse([string]$manifest.createdAt, [ref]$createdAt)) { return $null }
+        $manifest.createdAt = $createdAt.ToString('o')
+        foreach ($included in @('hic_backend', 'hic_isapi', 'faces', '.env-if-present')) {
+            if ($included -notin $manifest.includes) { return $null }
+        }
+        foreach ($dumpName in @('hic_backend.dump', 'hic_isapi.dump')) {
+            $dumpPath = Join-Path $candidate $dumpName
+            if (-not (Test-Path -LiteralPath $dumpPath -PathType Leaf)) { return $null }
+            $stream = [System.IO.File]::OpenRead($dumpPath)
+            try {
+                $header = New-Object byte[] 5
+                if ($stream.Read($header, 0, 5) -ne 5 -or
+                    [System.Text.Encoding]::ASCII.GetString($header) -ne 'PGDMP') { return $null }
+            } finally { $stream.Dispose() }
+        }
+        $manifestBytes = (Get-Item -LiteralPath (Join-Path $candidate 'manifest.json')).Length
+        if ($manifest.sizeBytes -le 0 -or
+            (Get-DirectoryBytes -Path $candidate) - $manifestBytes -ne [long]$manifest.sizeBytes) { return $null }
+        return $manifest
+    } catch {
+        return $null
+    }
+}
+
+function Get-DockerContainerState {
+    param([string]$Container, [string]$Format)
+
+    # Windows PowerShell 5.1 treats native stderr as an error even with 2>$null.
+    # Scope Continue to this read-only probe; backup operations must still fail on errors.
+    $ErrorActionPreference = 'Continue'
+    try {
+        $output = & docker inspect --format $Format $Container 2>$null
+        if ($LASTEXITCODE -ne 0) { return '' }
+        return ([string]($output -join '')).Trim()
+    } catch {
+        return ''
+    }
+}
+
 function Wait-AttendraContainers {
     $deadline = (Get-Date).AddMinutes(10)
     do {
-        $postgresHealth = (& docker inspect --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' hic_postgres 2>$null)
-        $postgresExitCode = $LASTEXITCODE
-        $backendState = (& docker inspect --format '{{.State.Status}}' hic_backend 2>$null)
-        $backendExitCode = $LASTEXITCODE
-        if ($postgresExitCode -eq 0 -and $backendExitCode -eq 0 -and
-            $postgresHealth.Trim() -eq 'healthy' -and $backendState.Trim() -eq 'running') {
+        $postgresHealth = Get-DockerContainerState -Container hic_postgres -Format '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}'
+        $backendState = Get-DockerContainerState -Container hic_backend -Format '{{.State.Status}}'
+        if ($postgresHealth -eq 'healthy' -and $backendState -eq 'running') {
             return
         }
         Start-Sleep -Seconds 30
@@ -107,13 +178,15 @@ try {
     $previousStatus = Read-PreviousStatus
     $todayPrefix = (Get-Date).ToString('yyyyMMdd-')
     $todayBackup = Get-ChildItem -LiteralPath $backupRoot -Directory -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -match ('^' + [regex]::Escape($todayPrefix) + '\d{6}$') } |
+        Where-Object { $_.Name -match ('^' + [regex]::Escape($todayPrefix) + '\d{6}$') -and
+            (Get-CompletedBackup -Path $_.FullName -BackupRoot $backupRoot) } |
         Select-Object -First 1
     if ($todayBackup -and -not $Force) {
+        $todayManifest = Get-CompletedBackup -Path $todayBackup.FullName -BackupRoot $backupRoot
         Write-BackupStatus -Status 'SKIPPED' `
             -Message 'Bu gün üçün uğurlu backup artıq mövcuddur.' `
-            -LastBackupAt $previousStatus.lastBackupAt `
-            -LastBackupBytes ([long]$previousStatus.lastBackupBytes) `
+            -LastBackupAt $todayManifest.createdAt `
+            -LastBackupBytes (Get-DirectoryBytes -Path $todayBackup.FullName) `
             -TotalBackupBytes (Get-DirectoryBytes -Path $backupRoot)
         exit 0
     }
@@ -129,10 +202,14 @@ try {
 
     Wait-AttendraContainers
 
-    $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-    $incompleteDirectory = Join-Path $backupRoot "$timestamp.incomplete"
-    $completedDirectory = Join-Path $backupRoot $timestamp
-    New-Item -ItemType Directory -Force -Path $incompleteDirectory | Out-Null
+    $backupTime = Get-Date
+    do {
+        $timestamp = $backupTime.ToString('yyyyMMdd-HHmmss')
+        $incompleteDirectory = Join-Path $backupRoot "$timestamp.incomplete"
+        $completedDirectory = Join-Path $backupRoot $timestamp
+        $backupTime = $backupTime.AddSeconds(1)
+    } while ((Test-Path -LiteralPath $incompleteDirectory) -or (Test-Path -LiteralPath $completedDirectory))
+    New-Item -ItemType Directory -Path $incompleteDirectory | Out-Null
 
     $backendTempDump = "/tmp/hic_backend-$timestamp.dump"
     $isapiTempDump = "/tmp/hic_isapi-$timestamp.dump"
@@ -172,9 +249,19 @@ try {
         } | ConvertTo-Json
         [System.IO.File]::WriteAllText(
             (Join-Path $incompleteDirectory 'manifest.json'), $manifest, $utf8WithoutBom)
-        Move-Item -LiteralPath $incompleteDirectory -Destination $completedDirectory
+        foreach ($movePath in @($incompleteDirectory, $completedDirectory)) {
+            if ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetFullPath($movePath)) -ne $backupRoot) {
+                throw 'Backup qovluğu seçilmiş kök qovluqdan kənara çıxa bilməz.'
+            }
+        }
+        # Directory.Move fails if the destination exists instead of nesting/overwriting it.
+        [System.IO.Directory]::Move($incompleteDirectory, $completedDirectory)
     } finally {
         & docker exec hic_postgres rm -f $backendTempDump $isapiTempDump 2>$null
+    }
+
+    if (-not (Get-CompletedBackup -Path $completedDirectory -BackupRoot $backupRoot)) {
+        throw 'Yeni backup struktur yoxlamasından keçmədi. Əvvəlki backup-lar qorunur.'
     }
 
     $cutoff = (Get-Date).Date.AddDays(-183)
@@ -189,7 +276,8 @@ try {
                     [System.Globalization.DateTimeStyles]::None,
                     [ref]$parsedDate) -and $parsedDate -lt $cutoff) {
                 $candidate = [System.IO.Path]::GetFullPath($_.FullName)
-                if ($candidate.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                if ($candidate.StartsWith($rootPrefix, [System.StringComparison]::OrdinalIgnoreCase) -and
+                    (Get-CompletedBackup -Path $candidate -BackupRoot $backupRoot)) {
                     Remove-Item -LiteralPath $candidate -Recurse -Force
                 }
             }
