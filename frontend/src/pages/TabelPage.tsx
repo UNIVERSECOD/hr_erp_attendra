@@ -2,13 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import Layout from '../components/Layout.tsx'
 import { branchApi } from '../api/branchApi.ts'
 import { departmentApi } from '../api/departmentApi.ts'
+import { positionApi } from '../api/positionApi.ts'
 import { tabelApi } from '../api/tabelApi.ts'
-import { Branch, Department, TabelMonthlyData } from '../types'
+import { Branch, Department, Position, TabelMonthlyData } from '../types'
 import { useDebounce } from '../hooks/useSearch.ts'
 import { t } from '../i18n/index.ts'
+import { toast } from '../store/toastStore.ts'
 
 /** Sidebar Tailwind width classes */
-const SIDEBAR_OPEN = 'w-64'
+const SIDEBAR_OPEN = 'w-full lg:w-64'
 const SIDEBAR_CLOSED = 'w-10'
 
 const monthOptions = [
@@ -32,13 +34,28 @@ export default function TabelPage() {
   const [month, setMonth] = useState(now.getMonth() + 1)
   const [branchId, setBranchId] = useState<number | ''>('')
   const [departmentId, setDepartmentId] = useState<number | ''>('')
+  const [positionId, setPositionId] = useState<number | ''>('')
   const [search, setSearch] = useState('')
   const [branches, setBranches] = useState<Branch[]>([])
   const [departments, setDepartments] = useState<Department[]>([])
+  const [positions, setPositions] = useState<Position[]>([])
   const [data, setData] = useState<TabelMonthlyData | null>(null)
   const [loading, setLoading] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const debouncedSearch = useDebounce(search, 300)
+  const filters = useMemo(() => ({
+    year,
+    month,
+    branchId: branchId === '' ? undefined : branchId,
+    departmentId: departmentId === '' ? undefined : departmentId,
+    positionId: positionId === '' ? undefined : positionId,
+    search: debouncedSearch || undefined,
+  }), [year, month, branchId, departmentId, positionId, debouncedSearch])
+  const visibleDepartments = departments.filter((department) => branchId === '' || department.branchId === branchId)
+  const visiblePositions = positions.filter((position) => departmentId !== ''
+    ? position.departmentId === departmentId
+    : branchId === '' || visibleDepartments.some((department) => department.id === position.departmentId))
 
   const years = useMemo(() => {
     const currentYear = new Date().getFullYear()
@@ -46,68 +63,68 @@ export default function TabelPage() {
   }, [])
 
   useEffect(() => {
-    const loadBranches = async () => {
-      const res = await branchApi.getAll()
-      setBranches(res.data.data ?? [])
+    let active = true
+    const loadOptions = async () => {
+      try {
+        const [branchResponse, departmentResponse, positionResponse] = await Promise.all([
+          branchApi.getAll(), departmentApi.getAll(), positionApi.getAll(),
+        ])
+        if (!active) return
+        setBranches(branchResponse.data.data ?? [])
+        setDepartments(departmentResponse.data.data ?? [])
+        setPositions(positionResponse.data.data ?? [])
+      } catch {
+        if (active) toast.error('Filtr seçimləri yüklənmədi', 'Səhifəni yeniləyib təkrar yoxlayın.')
+      }
     }
-
-    void loadBranches()
+    void loadOptions()
+    return () => { active = false }
   }, [])
 
   useEffect(() => {
-    const loadDepartments = async () => {
-      const res = await departmentApi.getAll(branchId === '' ? undefined : branchId)
-      setDepartments(res.data.data ?? [])
-    }
-
-    if (branchId === '') {
-      setDepartmentId('')
-    }
-    void loadDepartments()
-  }, [branchId])
-
-  useEffect(() => {
+    let active = true
     const loadTabel = async () => {
       setLoading(true)
       try {
-        const res = await tabelApi.getMonthly({
-          year,
-          month,
-          branchId: branchId === '' ? undefined : branchId,
-          departmentId: departmentId === '' ? undefined : departmentId,
-          search: debouncedSearch || undefined,
-        })
-        setData(res.data.data)
+        const res = await tabelApi.getMonthly(filters)
+        if (active) setData(res.data.data)
+      } catch {
+        if (active) {
+          setData(null)
+          toast.error('Tabel yüklənmədi', 'Bir qədər sonra təkrar yoxlayın.')
+        }
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
     void loadTabel()
-  }, [year, month, branchId, departmentId, debouncedSearch])
+    return () => { active = false }
+  }, [filters])
 
   const handleExport = async () => {
-    const res = await tabelApi.exportExcel({
-      year,
-      month,
-      branchId: branchId === '' ? undefined : branchId,
-      departmentId: departmentId === '' ? undefined : departmentId,
-      search: debouncedSearch || undefined,
-    })
-
-    const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-    const href = URL.createObjectURL(blob)
-    const anchor = document.createElement('a')
-    anchor.href = href
-    anchor.download = `tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
-    anchor.click()
-    URL.revokeObjectURL(href)
+    setExporting(true)
+    try {
+      const res = await tabelApi.exportExcel(filters)
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const href = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = `tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
+      anchor.click()
+      URL.revokeObjectURL(href)
+      toast.success('Tabel Excel faylı hazırlandı')
+    } catch {
+      toast.error('Excel faylı hazırlanmadı', 'Bir qədər sonra təkrar yoxlayın.')
+    } finally {
+      setExporting(false)
+    }
   }
 
   return (
     <Layout>
       <div className="p-6 lg:p-8">
-        <div className="flex gap-4">
+        <div className="flex flex-col gap-4 lg:flex-row">
           {/* Collapsible sidebar */}
           <div className={`flex-shrink-0 transition-all duration-200 ${sidebarOpen ? SIDEBAR_OPEN : SIDEBAR_CLOSED}`}>
             {sidebarOpen ? (
@@ -174,28 +191,41 @@ export default function TabelPage() {
                 <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
                 <p className="mt-1 text-sm text-slate-500">FIN kodu, günlük iş saatları və aylıq tabel arxivi</p>
               </div>
-              <button onClick={handleExport} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700">
+              <button onClick={handleExport} disabled={exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                 {t('reports.excelExport')}
               </button>
             </div>
 
-            <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm md:grid-cols-3">
+            <div className="grid gap-3 rounded-2xl bg-white p-4 shadow-sm md:grid-cols-2 xl:grid-cols-4">
               <input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Ad və ya FIN axtar"
                 className="rounded-lg border px-3 py-2"
               />
-              <select value={branchId} onChange={(e) => setBranchId(e.target.value ? Number(e.target.value) : '')} className="rounded-lg border px-3 py-2">
+              <select aria-label="Ərazi" value={branchId} onChange={(e) => {
+                setBranchId(e.target.value ? Number(e.target.value) : '')
+                setDepartmentId('')
+                setPositionId('')
+              }} className="rounded-lg border px-3 py-2">
                 <option value="">Bütün ərazilər</option>
                 {branches.map((branch) => (
                   <option key={branch.id} value={branch.id}>{branch.name}</option>
                 ))}
               </select>
-              <select value={departmentId} onChange={(e) => setDepartmentId(e.target.value ? Number(e.target.value) : '')} className="rounded-lg border px-3 py-2">
+              <select aria-label="Departament" value={departmentId} onChange={(e) => {
+                setDepartmentId(e.target.value ? Number(e.target.value) : '')
+                setPositionId('')
+              }} className="rounded-lg border px-3 py-2">
                 <option value="">Bütün departamentlər</option>
-                {departments.map((department) => (
+                {visibleDepartments.map((department) => (
                   <option key={department.id} value={department.id}>{department.departmentName}</option>
+                ))}
+              </select>
+              <select aria-label="Vəzifə" value={positionId} onChange={(e) => setPositionId(e.target.value ? Number(e.target.value) : '')} className="rounded-lg border px-3 py-2">
+                <option value="">Bütün vəzifələr</option>
+                {visiblePositions.map((position) => (
+                  <option key={position.id} value={position.id}>{position.positionName}</option>
                 ))}
               </select>
             </div>

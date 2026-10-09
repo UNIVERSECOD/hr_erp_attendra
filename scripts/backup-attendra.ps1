@@ -1,10 +1,13 @@
 ﻿[CmdletBinding()]
 param(
-    [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot),
+    [string]$ProjectRoot,
     [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
+    $ProjectRoot = Split-Path -Parent $PSScriptRoot
+}
 $resolvedProjectRoot = [System.IO.Path]::GetFullPath($ProjectRoot)
 $runtimeDirectory = Join-Path $resolvedProjectRoot 'runtime'
 $settingsFile = Join-Path $runtimeDirectory 'backup-settings.json'

@@ -105,6 +105,17 @@ function Read-Status {
 }
 
 try {
+    # Run the copied script without -ProjectRoot, as documented for manual use.
+    # PowerShell 5.1 can evaluate parameter defaults before PSScriptRoot is set.
+    $defaultProject = New-Fixture 'default-project-root'
+    $defaultScripts = Join-Path $defaultProject 'scripts'
+    New-Item -ItemType Directory -Path $defaultScripts | Out-Null
+    $defaultScript = Join-Path $defaultScripts 'backup-attendra.ps1'
+    Copy-Item -LiteralPath $backupScript -Destination $defaultScript
+    & $defaultScript
+    Assert-True ((Read-Status $defaultProject).status -eq 'SUCCESS') 'default project root resolves beside the script'
+    Assert-True ((Get-ChildItem -LiteralPath (Join-Path $defaultProject 'backups') -Directory).Count -eq 1) 'default-root backup stays inside its fixture'
+
     $project = New-Fixture 'retention'
     $oldValid = New-Backup $project '20200101-120000'
     $recent = New-Backup $project '20261008-120000'

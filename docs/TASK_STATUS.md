@@ -6,6 +6,8 @@ Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and cur
 
 ## 1. Completed in source
 
+- 2026-10-09 follow-up tasks 1, 3 and 4 completed on this Windows installation (physical-device checks and MCG excluded by the user). Tabel now exposes the existing position filter; changing area clears department/position, changing department clears position, and table/export share one filter object. Stale requests cannot overwrite newer results. Table/export failures and export success show Azerbaijani toasts. The archive stacks above Tabel on narrow screens so filters stay accessible. Frontend lint/build passed; browser checks against disposable Docker fixtures covered combined filters, dependent resets, empty results, matching downloaded Excel (AUD0002, 16 hours), terminated-name styling, disabled deletion, successful termination, simulated offline-device warning and automatic removal of the pending badge after a simulated completion. Error toasts were verified with a fixture-only 503 response; 390px filter bounds were checked. These were not physical-device tests.
+- 2026-10-09 local backup acceptance completed: fixed parameterless script startup on Windows PowerShell 5.1 by resolving ProjectRoot after parameter binding; installer uses current-user Limited tasks unless already elevated and hides the backup console. 70 mock assertions passed on both PowerShell 5.1 and 7. On this host, configured the default C:\\AttendraBackups\\daily destination, created a real backup, restored both databases into a network-isolated disposable PostgreSQL container, and matched aggregate row counts for all 33 backend and 7 ISAPI tables. Configuration-copy hash and reported backup size matched. Both Windows tasks were registered; manual scheduler execution returned 0 and skipped the already completed daily copy; the folder picker task is running and returned the selected path successfully. Triggers were verified for logon + 3 minutes and daily 04:00; a future logon/04:00 execution was not observed. Backup directory access is limited to the current user, SYSTEM and Administrators. No restore was performed over customer databases.
 - 2026-10-09 attendance/Tabel audit items 1 and 3 fixed: `/api/attendance/recalculate` now refreshes both attendance records and the daily summaries consumed by Tabel in the same transaction, for each requested day. Single-employee recalculation also preserves the tenant boundary. Existing bulk behavior still skips terminated employees. This is an explicit recalculation fix; editing a timetable alone does not automatically rebuild past summaries. Tabel validates month/year; reports validate pagination and date order, handle large page offsets without integer overflow, and apply date validation to Excel exports too. Missing/malformed query parameters now receive localized HTTP 400 responses. Verification: 304 backend tests and package passed; isolated Docker API/Excel audit passed 41 of 43 checks (the remaining two confirm the separate, unresolved restricted-HR area-scope issue). The fixture confirmed 9 hours consistently in daily attendance, Tabel and Excel after removing a 60-minute break, plus repeatable bulk recalculation without changing raw punches. No schema migration or customer-data recalculation was performed.
 - 2026-10-09 employee audit item 3 fixed: oversized multipart uploads return HTTP 413 with an Azerbaijani JSON message instead of generic 500. File limit remains 5 MB; backend/Nginx request limits are 6 MB to allow multipart overhead, and Tomcat drains up to 8 MB of rejected request data to avoid resets near the limit. Nginx also returns localized JSON when it rejects the request itself. `EmployeeUploadLimitIntegrationTest` exercises real embedded Tomcat with mocked photo/device services (exactly 5 MB, one byte over, aggregate limit). Verification: 282 backend tests and package passed; frontend lint/build passed; 17 isolated Docker checks passed through both backend and Nginx, including unchanged stored photos after rejection. Employee branch-scope and cross-tenant photo-access audit findings remain separate, unresolved items.
 
@@ -40,18 +42,13 @@ Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and cur
 
 ## 2. Remaining user tasks, proposed order
 
-### A. Finish Tabel department/position filtering — partial, next candidate
+### A. Tabel department/position filtering — completed
 
-Current evidence: `frontend/src/pages/TabelPage.tsx` already provides department selection. `TabelController` accepts both `departmentId` and `positionId` for monthly data and export; the page does not yet provide a position selector.
-
-Remaining work after confirmation:
-
-1. Trace `TabelPage`, API wrapper, `TabelService`, repositories and tests; reuse existing backend filtering rather than duplicating it.
-2. Add Azerbaijani position selection; preserve department, area, month/year and search behavior. Define/reset dependent selections consistently.
-3. Send identical filter values for table and Excel export; verify combined filters, empty results and tenant/user scope.
-4. Preserve red terminated names and existing totals; no visible status/date columns on the Excel totals sheet.
+`TabelPage.tsx` now provides area, department and position choices with dependent resets, a shared table/export filter object and narrow-screen layout. Existing backend filters and historical totals/red terminated names are preserved. User/role scope is a separate deferred item, not a completed part of this filter feature.
 
 ### B. User operation log / audit journal — foundation only
+
+Deferred by the user together with user/permission work; do not begin without a new request.
 
 User request: show which user performed which operation in the program.
 
@@ -81,8 +78,8 @@ Before implementation, obtain examples/decisions for non-eight-hour schedules, p
 ## 3. Outstanding acceptance checks (not new feature authorization)
 
 - Controlled physical-device test: offline termination -> pending job -> reconnect -> deletion confirmed on the intended terminal; mixed online/offline devices; already-absent user; restart with pending work. Mocks are not firmware verification. Obtain explicit authorization and verify bridge ID/IP/name before a real device write.
-- On the target Windows installation, verify folder chooser, logon/daily backup scheduling, destination permissions, reported usage and an isolated restore drill. Do not restore over the live database to test backups.
-- Browser acceptance: left actions, disabled deletion, warning/success toasts, terminated list auto-refresh and historical Tabel/Excel styling.
+- Windows backup checks above were completed on this host; repeat installation/acceptance on each customer computer. Never restore over the live database to test backups. Future automatic trigger execution remains distinct from the successful manual scheduler run.
+- Browser acceptance above passed on this host using disposable test data and simulated job state; no customer employee was terminated during testing.
 - Face normalization still needs controlled acceptance against the actual device models; it cannot guarantee every photo is accepted by the recognition engine.
 - Optional future improvement, not yet approved: job-level diagnostic/admin UI and safe resolution of changed device identities. Never silently redirect pending cleanup to a different terminal.
 

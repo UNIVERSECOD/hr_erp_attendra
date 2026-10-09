@@ -20,15 +20,19 @@ Backup-a aşağıdakılar daxildir:
 
 2. Proqramda **Parametrlər → Backup** bölməsinə keçin. **Qovluq seç** düyməsi ilə Windows qovluğunu seçin (və ya tam yolu əl ilə yazın) və parametrləri yadda saxlayın.
 
-3. PowerShell-i **Administrator kimi** açıb layihə qovluğunda işlədin:
+3. PowerShell-i açıb layihə qovluğunda işlədin:
 
    ```powershell
    .\scripts\install-backup-task.ps1
    ```
 
-   Skript gündəlik backup tapşırığı ilə yanaşı, yalnız `127.0.0.1:18765` ünvanında işləyən lokal qovluq seçicisini də quraşdırır və başladır. Qovluq seçicisi yalnız `http://localhost:3000` və `http://127.0.0.1:3000` səhifələrindən gələn sorğuları qəbul edir.
+   Skript gündəlik backup tapşırığı ilə yanaşı, yalnız `127.0.0.1:18765` ünvanında işləyən lokal qovluq seçicisini də quraşdırır və başladır. Qovluq seçicisi yalnız `http://localhost:3000` və `http://127.0.0.1:3000` səhifələrindən gələn sorğuları qəbul edir. Adi sessiyada tapşırıqlar cari istifadəçi hüququ ilə, administrator sessiyasında isə yüksək hüquqla yaradılır. Windows siyasəti tapşırıq yaratmağa icazə verməzsə PowerShell-i Administrator kimi açın. Hər iki halda Docker-ə və seçilən backup qovluğuna giriş olmalıdır. Backup prosesi gizli pəncərədə işləyir.
 
 Tapşırıq Windows istifadəçisi daxil olduqdan üç dəqiqə sonra və hər gün saat 04:00-da işə düşür. Docker gec açılarsa skript konteynerlərin hazır olmasını 10 dəqiqəyədək gözləyir. Həmin gün uğurlu backup artıq varsa ikinci surət yaradılmır.
+
+Tapşırıqlar interaktiv Windows hesabına bağlıdır; istifadəçi hesabına giriş edilməmiş halda işləyən sistem xidməti deyil. Quraşdırmadan sonra Task Scheduler-də `Attendra Daily Backup` və `Attendra Backup Folder Picker` tapşırıqlarını yoxlayın. Birincini əl ilə başladaraq `Last Run Result = 0`, ikincini isə `Running` vəziyyətində təsdiqləmək olar. `backup-attendra.ps1` və quraşdırıcı `-ProjectRoot` verilməyəndə layihə yolunu öz yerləşdikləri `scripts` qovluğundan müəyyən edir; bu yol Windows PowerShell 5.1-də parametr bağlanmasından sonra hesablanır.
+
+Quraşdırıcı əvvəlki qovluq seçici tapşırığının dayanmasını gözləyir və yeni köməkçinin lokal HTTP cavabını yoxlayır. Köməkçi 15 saniyə ərzində cavab verməzsə uğur mesajı əvəzinə aydın xəta göstərilir. Quraşdırıcı və qovluq seçicisi də Azərbaycan hərfləri üçün UTF-8 BOM ilə saxlanılır.
 
 Tamamlanmış backup yalnız tarixli qovluq adına görə müəyyən edilmir: `SUCCESS` manifesti, iki PostgreSQL arxivinin `PGDMP` başlığı, `faces` qovluğu və manifestdəki ümumi fayl ölçüsü yoxlanılır. Əvvəlki manifest formatı dəstəklənir. Boş, yarımçıq, strukturu pozulmuş və ya əlavə naməlum faylları olan qovluqlar gündəlik backup-ı dayandırmır və avtomatik silinmir. Junction/simvolik keçid olan qovluqlar da silinmir. Eyni saniyəyə uyğun qovluq artıq varsa yeni boş ad seçilir; mövcud qovluq qorunur.
 
