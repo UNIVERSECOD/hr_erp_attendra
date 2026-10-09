@@ -149,7 +149,6 @@ export default function EmployeesPage() {
   const [terminatedError, setTerminatedError] = useState<string | null>(null)
   const [retryingTerminationId, setRetryingTerminationId] = useState<number | null>(null)
   const [uploadingFaceEmployeeId, setUploadingFaceEmployeeId] = useState<number | null>(null)
-  const [deletingFaceEmployeeId, setDeletingFaceEmployeeId] = useState<number | null>(null)
   const [uploadFaceError, setUploadFaceError] = useState<string | null>(null)
   const [showProfileModal, setShowProfileModal] = useState(false)
   const [profileLoading, setProfileLoading] = useState(false)
@@ -748,30 +747,6 @@ export default function EmployeesPage() {
     }
   }
 
-  const handleFaceDelete = async (employee: Employee) => {
-    setUploadFaceError(null)
-    setDeletingFaceEmployeeId(employee.id)
-    try {
-      const faceErrors = await deleteFaceForEmployee(employee)
-      if (faceErrors.length > 0) {
-        console.info('[handleFaceDelete] Hikvision face delete warnings:', faceErrors)
-        toast.warning('Şəkil profildən silindi', 'Bəzi cihazlardan silmək mümkün olmadı.')
-      } else {
-        toast.success('Şəkil silindi')
-      }
-      await fetchEmployees(currentPage, 20)
-      if (selectedEmployee?.id === employee.id) {
-        await openProfile(employee)
-      }
-    } catch (e: unknown) {
-      const message = getApiErrorMessage(e, 'Şəkil silinmədi')
-      setUploadFaceError(message)
-      toast.error('Şəkil silinmədi', message)
-    } finally {
-      setDeletingFaceEmployeeId(null)
-    }
-  }
-
   const onWizardPhotoSelected = (file: File) => {
     const validationError = validateFaceImageSize(file)
     if (validationError) {
@@ -1037,21 +1012,20 @@ export default function EmployeesPage() {
                             </svg>
                           </label>
                           <button
-                            onClick={() => handleFaceDelete(emp)}
+                            onClick={() => openDeleteConfirm(emp)}
                             className="p-1.5 rounded hover:bg-amber-50 transition-colors"
-                            title="Şəkili sil"
-                            disabled={deletingFaceEmployeeId === emp.id}
+                            title="İşdən çıxar"
+                            aria-label={`${name} — İşdən çıxar`}
                           >
-                            <svg className={`w-4 h-4 ${deletingFaceEmployeeId === emp.id ? 'animate-pulse' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: '#d97706' }}>
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7h4l2-2h6l2 2h4v12H3V7zm9 3a4 4 0 100 8 4 4 0 000-8z" />
-                              <line x1="17" y1="7" x2="23" y2="1" strokeWidth={2} strokeLinecap="round" />
-                              <line x1="23" y1="7" x2="17" y2="1" strokeWidth={2} strokeLinecap="round" />
+                            <svg className="w-4 h-4 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 17l5-5m0 0l-5-5m5 5H9m4-9H5a2 2 0 00-2 2v14a2 2 0 002 2h8" />
                             </svg>
                           </button>
                           <button
-                            onClick={() => openDeleteConfirm(emp)}
-                            className="p-1.5 rounded hover:bg-red-50 transition-colors"
-                            title="İşdən çıxar"
+                            disabled
+                            className="p-1.5 rounded opacity-40 cursor-not-allowed"
+                            title="Əməkdaşı sil — deaktivdir"
+                            aria-label="Əməkdaşı sil — deaktivdir"
                           >
                             <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -1467,7 +1441,6 @@ export default function EmployeesPage() {
           branchLabel={branchLabelById(selectedEmployee.branchId)}
           onClose={closeProfile}
           onEdit={(emp) => { closeProfile(); openEdit(emp) }}
-          onDelete={(emp) => openDeleteConfirm(emp)}
         />
       )}
 
