@@ -208,6 +208,20 @@ export default function EmployeesPage() {
 
   const stepTitles = ['Ümumi məlumat', 'İş məlumatları', 'Şəkil']
 
+  useEffect(() => {
+    if (employeeView !== 'terminated') return
+    let cancelled = false
+    const interval = window.setInterval(async () => {
+      try {
+        const response = await employeeApi.getByStatus('TERMINATED')
+        if (!cancelled) setTerminatedEmployees(response.data.data ?? [])
+      } catch {
+        // Preserve the last known status; manual refresh reports connection errors.
+      }
+    }, 15000)
+    return () => { cancelled = true; window.clearInterval(interval) }
+  }, [employeeView])
+
   const employeeIdPreview = useMemo(() => {
     if (editingEmployee?.employeeId) return editingEmployee.employeeId
     return `EMP${String((totalElements || employees.length) + 1).padStart(4, '0')}`
@@ -647,8 +661,8 @@ export default function EmployeesPage() {
       }
       if (result.failedDevices > 0) {
         toast.warning(
-          'Əməkdaş işdən çıxarıldı',
-          `Məlumatlar saxlanıldı, ${result.removedDevices}/${result.totalDevices} cihazdan silindi. ${result.errors.join(' | ')}`,
+          'İşdən çıxarılıb — cihazlardan silinmə gözlənilir',
+          `${result.removedDevices}/${result.totalDevices} cihazdan silindi. Online olduqda avtomatik təkrar ediləcək. ${result.errors.join(' | ')}`,
         )
       } else {
         toast.success(
@@ -686,11 +700,12 @@ export default function EmployeesPage() {
       if (result.failedDevices > 0) {
         toast.warning(
           'Cihazlardan silinmə qismən tamamlandı',
-          `${result.removedDevices}/${result.totalDevices} cihazdan silindi. ${result.errors.join(' | ')}`,
+          `${result.removedDevices}/${result.totalDevices} cihazdan silindi. Qalanları avtomatik təkrar ediləcək. ${result.errors.join(' | ')}`,
         )
       } else {
         toast.success('Cihazlardan silinmə tamamlandı', `${result.removedDevices} cihaz yoxlanıldı.`)
       }
+      await loadTerminatedEmployees()
     } catch (requestError: unknown) {
       toast.error(
         'Cihazlardan silinmə təkrarlanmadı',
@@ -1074,6 +1089,11 @@ export default function EmployeesPage() {
                         >
                           {statusLabel(emp.employmentStatus)}
                         </span>
+                        {emp.employmentStatus === 'TERMINATED' && (emp.pendingDeviceRemovals ?? 0) > 0 && (
+                          <div className="mt-1 text-xs text-amber-700" role="status">
+                            {emp.pendingDeviceRemovals} cihazdan silinmə gözlənilir — avtomatik təkrar edilir
+                          </div>
+                        )}
                       </td>
                     </tr>
                   )
@@ -1459,7 +1479,7 @@ export default function EmployeesPage() {
                 alt={`${deleteConfirm.firstName} ${deleteConfirm.lastName}`}
               />
               <p className="text-gray-600 text-sm">
-                <strong>{deleteConfirm.firstName} {deleteConfirm.lastName}</strong> adlı əməkdaşı işdən çıxarmaq istədiyinizdən əminsiniz? Əməkdaş əsas siyahıdan çıxacaq və təyin olunduğu cihazlardan silinəcək. Köhnə Tabel və profil məlumatları saxlanılacaq.
+                <strong>{deleteConfirm.firstName} {deleteConfirm.lastName}</strong> adlı əməkdaşı işdən çıxarmaq istədiyinizdən əminsiniz? Əməkdaş əsas siyahıdan çıxacaq və təyin olunduğu cihazlardan silinəcək. Offline cihazlar üçün silinmə avtomatik təkrar ediləcək. Silinənədək həmin cihazlarda keçid imkanı qala bilər. Köhnə Tabel və profil məlumatları saxlanılacaq.
               </p>
             </div>
             {deleteError && (

@@ -52,6 +52,7 @@ public class EmployeeResponseDTO {
     private List<Long> deviceIds;
     private List<String> doorAccess;
     private EmploymentStatus employmentStatus;
+    private long pendingDeviceRemovals;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 }

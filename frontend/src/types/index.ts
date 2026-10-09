@@ -86,6 +86,7 @@ export interface Employee {
   deviceIds?: number[]
   doorAccess?: string[]
   employmentStatus: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'TERMINATED'
+  pendingDeviceRemovals?: number
   createdAt?: string
   updatedAt?: string
 }

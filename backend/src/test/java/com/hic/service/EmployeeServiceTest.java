@@ -77,7 +77,9 @@ class EmployeeServiceTest {
     private IsapiEmployeeUserSyncService isapiEmployeeUserSyncService;
 
     @Mock
-    private DeviceSyncService deviceSyncService;
+    private EmployeeDeviceRemovalService employeeDeviceRemovalService;
+    @Mock
+    private com.hic.repository.EmployeeDeviceRemovalJobRepository removalJobRepository;
 
     @Mock
     private UserScopeService userScopeService;
@@ -422,85 +424,29 @@ class EmployeeServiceTest {
     }
 
     @Test
-    void terminate_existingEmployee_preservesHistoryAndMarksTerminated() {
+    void terminate_enqueuesExplicitAndAreaDevices() {
+        testEmployee.setBranchId(1L);
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
+        EmployeeDeviceAccess access = new EmployeeDeviceAccess();
+        access.setDeviceConfigId(10L);
+        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of(access));
+        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(1L));
+        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(1L), null))
+                .thenReturn(List.of(10L, 11L));
+        var expected = new EmployeeTerminationResultDTO(1L, 2, 1, 1, List.of("Gözlənilir"));
+        when(employeeDeviceRemovalService.terminate(eq(testEmployee), anySet())).thenReturn(expected);
 
-        EmployeeTerminationResultDTO result = employeeService.terminate(1L);
-
-        assertThat(result.getFailedDevices()).isZero();
-        assertThat(testEmployee.getEmploymentStatus()).isEqualTo(EmploymentStatus.TERMINATED);
-        verify(employeeRepository).saveAndFlush(testEmployee);
-        verify(employeeFaceImageService, never()).deleteFaceImages(anyLong());
+        assertThat(employeeService.terminate(1L)).isSameAs(expected);
+        verify(employeeDeviceRemovalService).terminate(testEmployee, java.util.Set.of(10L, 11L));
         verify(employeeRepository, never()).delete(any(Employee.class));
+        verify(employeeFaceImageService, never()).deleteFaceImages(anyLong());
     }
 
     @Test
     void terminate_nonExistentEmployee_throwsResourceNotFoundException() {
         when(employeeRepository.findById(99L)).thenReturn(Optional.empty());
-
         assertThatThrownBy(() -> employeeService.terminate(99L))
                 .isInstanceOf(ResourceNotFoundException.class);
-    }
-
-    @Test
-    void terminate_removesEmployeeFromEveryVerifiedDeviceAfterLocalStatusSave() {
-        testEmployee.setBranchId(1L);
-        testEmployee.setDeviceEmployeeNo("1234");
-        DeviceConfig firstDevice = device(10L, "101", 1L);
-        DeviceConfig secondDevice = device(11L, "102", 1L);
-        EmployeeDeviceAccess access = new EmployeeDeviceAccess();
-        access.setEmployeeId(1L);
-        access.setDeviceConfigId(10L);
-
-        when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of(access));
-        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(1L));
-        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(1L), null))
-                .thenReturn(List.of(10L, 11L));
-        when(deviceConfigRepository.findAllById(List.of(10L, 11L)))
-                .thenReturn(List.of(firstDevice, secondDevice));
-        when(deviceSyncService.getDeviceById(101L)).thenReturn(bridgeDevice(101L, firstDevice));
-        when(deviceSyncService.getDeviceById(102L)).thenReturn(bridgeDevice(102L, secondDevice));
-        when(deviceSyncService.getStatus(101L))
-                .thenReturn(new DeviceSyncDTO.DeviceStatusDTO(101L, true, 200, "OK"));
-        when(deviceSyncService.getStatus(102L))
-                .thenReturn(new DeviceSyncDTO.DeviceStatusDTO(102L, true, 200, "OK"));
-
-        EmployeeTerminationResultDTO result = employeeService.terminate(1L);
-
-        assertThat(result.getRemovedDevices()).isEqualTo(2);
-        assertThat(result.getFailedDevices()).isZero();
-        verify(employeeRepository).saveAndFlush(testEmployee);
-        verify(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(101L));
-        verify(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(102L));
-        verify(employeeRepository, never()).delete(any(Employee.class));
-    }
-
-    @Test
-    void terminate_deviceFailureKeepsLocalTerminationAndReturnsWarning() {
-        testEmployee.setBranchId(1L);
-        DeviceConfig device = device(10L, "101", 1L);
-
-        when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
-        when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
-        when(employeeAreaAssignmentService.getAreaIds(1L)).thenReturn(List.of(1L));
-        when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(1L), null))
-                .thenReturn(List.of(10L));
-        when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(device));
-        when(deviceSyncService.getDeviceById(101L)).thenReturn(bridgeDevice(101L, device));
-        when(deviceSyncService.getStatus(101L))
-                .thenReturn(new DeviceSyncDTO.DeviceStatusDTO(101L, false, 503, "offline"));
-
-        EmployeeTerminationResultDTO result = employeeService.terminate(1L);
-
-        assertThat(result.getFailedDevices()).isEqualTo(1);
-        assertThat(result.getErrors()).anyMatch(error -> error.contains("offline"));
-        assertThat(testEmployee.getEmploymentStatus()).isEqualTo(EmploymentStatus.TERMINATED);
-        verify(employeeRepository).saveAndFlush(testEmployee);
-        verify(employeeRepository, never()).delete(any(Employee.class));
-        verify(employeeFaceImageService, never()).deleteFaceImages(anyLong());
-        verify(isapiEmployeeUserSyncService, never()).deleteEmployee(any(), anyList());
     }
 
     @Test

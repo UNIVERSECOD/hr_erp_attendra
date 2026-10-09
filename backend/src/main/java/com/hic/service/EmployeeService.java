@@ -57,7 +57,8 @@ public class EmployeeService {
     private final DoorRepository doorRepository;
     private final EmployeeDeviceAccessRepository employeeDeviceAccessRepository;
     private final IsapiEmployeeUserSyncService isapiEmployeeUserSyncService;
-    private final DeviceSyncService deviceSyncService;
+    private final EmployeeDeviceRemovalService employeeDeviceRemovalService;
+    private final com.hic.repository.EmployeeDeviceRemovalJobRepository removalJobRepository;
     private final UserScopeService userScopeService;
     private final TenantRepository tenantRepository;
     private final ShiftAssignmentService shiftAssignmentService;
@@ -347,64 +348,7 @@ public class EmployeeService {
             employeeAreaIds = List.of(employee.getBranchId());
         }
         targetDeviceIds.addAll(employeeAreaAssignmentService.resolveDeviceIdsForAreas(employeeAreaIds, tenantId));
-        employee.setEmploymentStatus(EmploymentStatus.TERMINATED);
-        employeeRepository.saveAndFlush(employee);
-
-        List<String> errors = new java.util.ArrayList<>();
-        int removedDevices = 0;
-        List<DeviceConfig> devices = deviceConfigRepository.findAllById(List.copyOf(targetDeviceIds)).stream()
-                .filter(device -> tenantId == null || device.getTenantId() == null
-                        || tenantId.equals(device.getTenantId()))
-                .sorted(Comparator.comparing(DeviceConfig::getId))
-                .toList();
-
-        Set<Long> foundDeviceIds = devices.stream().map(DeviceConfig::getId).collect(Collectors.toSet());
-        targetDeviceIds.stream()
-                .filter(deviceConfigId -> !foundDeviceIds.contains(deviceConfigId))
-                .forEach(deviceConfigId -> errors.add("Cihaz " + deviceConfigId + " tapılmadı"));
-
-        for (DeviceConfig device : devices) {
-            String label = device.getDeviceName() != null && !device.getDeviceName().isBlank()
-                    ? device.getDeviceName()
-                    : "Cihaz " + device.getId();
-            try {
-                Long bridgeDeviceId = Long.valueOf(device.getDeviceId());
-                var bridgeDevice = deviceSyncService.getDeviceById(bridgeDeviceId);
-                if (bridgeDevice.getId() != null && !bridgeDeviceId.equals(bridgeDevice.getId())) {
-                    throw new IllegalStateException("cihaz identifikatoru uyğun gəlmir");
-                }
-                if (!sameTrimmedValue(device.getDeviceIp(), bridgeDevice.getDeviceIp())) {
-                    throw new IllegalStateException("cihaz IP ünvanı uyğun gəlmir");
-                }
-                if (device.getDeviceName() != null && !device.getDeviceName().isBlank()
-                        && !sameTrimmedValue(device.getDeviceName(), bridgeDevice.getDeviceName())) {
-                    throw new IllegalStateException("cihaz adı uyğun gəlmir");
-                }
-                var status = deviceSyncService.getStatus(bridgeDeviceId);
-                if (status.getId() != null && !bridgeDeviceId.equals(status.getId())) {
-                    throw new IllegalStateException("cihaz identifikatoru uyğun gəlmir");
-                }
-                if (!status.isOnline()) {
-                    throw new IllegalStateException("cihaz offline-dır");
-                }
-                log.info("Terminating employee {} on verified device bridgeId={} backendId={} ip={} name={}",
-                        employee.getEmployeeId(), bridgeDeviceId, device.getId(), device.getDeviceIp(), label);
-                isapiEmployeeUserSyncService.deleteEmployee(employee, List.of(bridgeDeviceId));
-                removedDevices++;
-            } catch (RuntimeException ex) {
-                String message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
-                errors.add(label + ": " + message);
-                log.warn("Employee {} was terminated locally but device removal failed for {}: {}",
-                        employee.getEmployeeId(), label, message);
-            }
-        }
-
-        return new EmployeeTerminationResultDTO(
-                employee.getId(),
-                targetDeviceIds.size(),
-                removedDevices,
-                errors.size(),
-                errors);
+        return employeeDeviceRemovalService.terminate(employee, targetDeviceIds);
     }
 
     /**
@@ -412,13 +356,6 @@ public class EmployeeService {
      */
     public void delete(Long id) {
         terminate(id);
-    }
-
-    private boolean sameTrimmedValue(String expected, String actual) {
-        if (expected == null || actual == null) {
-            return expected == null && actual == null;
-        }
-        return expected.trim().equalsIgnoreCase(actual.trim());
     }
 
     private void mapDtoToEmployee(EmployeeDTO dto, Employee employee) {
@@ -523,6 +460,10 @@ public class EmployeeService {
                 : getEmployeeDeviceIds(employee.getId()));
         dto.setDoorAccess(getEmployeeDoorAccess(employee.getId()));
         dto.setEmploymentStatus(employee.getEmploymentStatus());
+        if (EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus())) {
+            dto.setPendingDeviceRemovals(removalJobRepository
+                    .countByTenantIdAndEmployeeIdAndCompletedFalse(employee.getTenantId(), employee.getId()));
+        }
         dto.setCreatedAt(employee.getCreatedAt());
         dto.setUpdatedAt(employee.getUpdatedAt());
 
