@@ -18,6 +18,9 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     // Tenant-aware methods
     Page<Employee> findByTenantId(Long tenantId, Pageable pageable);
+    Page<Employee> findByTenantIdAndEmploymentStatusNot(
+            Long tenantId, EmploymentStatus excludedStatus, Pageable pageable);
+    Page<Employee> findByEmploymentStatusNot(EmploymentStatus excludedStatus, Pageable pageable);
     Page<Employee> findByTenantIdAndBranchId(Long tenantId, Long branchId, Pageable pageable);
 
     @Query("""
@@ -33,9 +36,28 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
             @Param("branchId") Long branchId,
             Pageable pageable);
 
+    @Query("""
+            SELECT e FROM Employee e
+            WHERE e.tenantId = :tenantId
+              AND e.employmentStatus <> :excludedStatus
+              AND EXISTS (
+                  SELECT ea.id FROM EmployeeArea ea
+                  WHERE ea.employeeId = e.id AND ea.branchId = :branchId
+              )
+            """)
+    Page<Employee> findByTenantIdAndAreaIdAndEmploymentStatusNot(
+            @Param("tenantId") Long tenantId,
+            @Param("branchId") Long branchId,
+            @Param("excludedStatus") EmploymentStatus excludedStatus,
+            Pageable pageable);
+
     List<Employee> findAllByTenantIdOrderByFirstNameAscLastNameAsc(Long tenantId);
+    List<Employee> findAllByTenantIdAndEmploymentStatusNotOrderByFirstNameAscLastNameAsc(
+            Long tenantId, EmploymentStatus excludedStatus);
 
     List<Employee> findByTenantIdAndDepartmentId(Long tenantId, Long departmentId);
+    List<Employee> findByTenantIdAndDepartmentIdAndEmploymentStatusNot(
+            Long tenantId, Long departmentId, EmploymentStatus excludedStatus);
     List<Employee> findByTenantIdAndShiftType(Long tenantId, String shiftType);
 
     List<Employee> findByTenantIdAndEmploymentStatus(Long tenantId, EmploymentStatus status);
@@ -108,6 +130,8 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
 
     // Legacy non-tenant methods (backward compatibility)
     List<Employee> findByDepartmentId(Long departmentId);
+    List<Employee> findByDepartmentIdAndEmploymentStatusNot(
+            Long departmentId, EmploymentStatus excludedStatus);
     List<Employee> findByShiftType(String shiftType);
     List<Employee> findByEmploymentStatus(EmploymentStatus status);
     Optional<Employee> findByFinNumber(String finNumber);
@@ -115,6 +139,34 @@ public interface EmployeeRepository extends JpaRepository<Employee, Long> {
     Optional<Employee> findByEmployeeIdIgnoreCase(String employeeId);
     List<Employee> findByDepartmentIdIn(Collection<Long> departmentIds);
     Page<Employee> findByDepartmentIdIn(Collection<Long> departmentIds, Pageable pageable);
+    Page<Employee> findByDepartmentIdInAndEmploymentStatusNot(
+            Collection<Long> departmentIds, EmploymentStatus excludedStatus, Pageable pageable);
+
+    @Query("SELECT e FROM Employee e WHERE e.tenantId = :tenantId " +
+           "AND e.employmentStatus <> :excludedStatus AND (" +
+           "LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.employeeId) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.finNumber) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.email) LIKE LOWER(CONCAT('%', :query, '%')))" )
+    Page<Employee> searchByTenantAndEmploymentStatusNot(
+            @Param("tenantId") Long tenantId,
+            @Param("query") String query,
+            @Param("excludedStatus") EmploymentStatus excludedStatus,
+            Pageable pageable);
+
+    @Query("SELECT e FROM Employee e WHERE e.employmentStatus <> :excludedStatus AND (" +
+           "LOWER(e.firstName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.lastName) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(CONCAT(e.firstName, ' ', e.lastName)) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.employeeId) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.finNumber) LIKE LOWER(CONCAT('%', :query, '%')) OR " +
+           "LOWER(e.email) LIKE LOWER(CONCAT('%', :query, '%')))" )
+    Page<Employee> searchByEmploymentStatusNot(
+            @Param("query") String query,
+            @Param("excludedStatus") EmploymentStatus excludedStatus,
+            Pageable pageable);
 
     @Query("SELECT e FROM Employee e WHERE " +
            "(:status IS NULL OR e.employmentStatus = :status) AND " +

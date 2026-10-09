@@ -158,6 +158,45 @@ class HikDeviceUserImportServiceTest {
     }
 
     @Test
+    void importUsersFromBranch_doesNotRelinkOrResyncTerminatedEmployee() {
+        Branch branch = branch(10L, "Baku", "BAK");
+        when(branchRepository.findById(10L)).thenReturn(Optional.of(branch));
+        DeviceConfig entry = device(1L, "101", "Entry", "10.0.0.1", 10L);
+        when(deviceConfigRepository.findByBranchId(10L)).thenReturn(List.of(entry));
+
+        when(restTemplate.exchange(eq("http://isapi:8081/api/devices/101/users/from-device"),
+                eq(HttpMethod.GET), eq(null), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("""
+                        [{"employeeNo":"1001","name":"Ali Valiyev"}]
+                        """));
+        when(restTemplate.exchange(eq("http://isapi:8081/api/devices/101/faces/from-device"),
+                eq(HttpMethod.GET), eq(null), eq(String.class)))
+                .thenReturn(ResponseEntity.ok("[]"));
+
+        Employee terminated = new Employee();
+        terminated.setId(50L);
+        terminated.setTenantId(1L);
+        terminated.setEmployeeId("BAK-1001");
+        terminated.setDeviceEmployeeNo("1001");
+        terminated.setFirstName("Ali");
+        terminated.setLastName("Valiyev");
+        terminated.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
+        when(employeeRepository.findByTenantIdAndEmployeeIdIgnoreCase(1L, "BAK-1001"))
+                .thenReturn(Optional.of(terminated));
+
+        DeviceEmployeeImportDTO.ImportResult result = service.importUsersFromBranch(
+                new DeviceEmployeeImportDTO.ImportRequest(10L, null, false));
+
+        assertThat(result.getSkippedExisting()).isEqualTo(1);
+        assertThat(result.getCreated()).isZero();
+        assertThat(result.getAccessLinked()).isZero();
+        verify(employeeRepository, never()).save(any(Employee.class));
+        verify(employeeDeviceAccessRepository, never()).save(any());
+        verify(employeeAreaRepository, never()).save(any());
+        verify(isapiEmployeeUserSyncService, never()).syncEmployee(any(), any());
+    }
+
+    @Test
     void importUsersFromBranch_syncsFaceWhenFpidMatchesDeviceEmployeeNo() {
         Branch branch = branch(10L, "Baku", "BAK");
         when(branchRepository.findById(10L)).thenReturn(Optional.of(branch));

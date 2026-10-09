@@ -2,6 +2,7 @@ package com.hic.controller;
 
 import com.hic.dto.EmployeeDTO;
 import com.hic.dto.EmployeeResponseDTO;
+import com.hic.dto.EmployeeTerminationResultDTO;
 import com.hic.dto.PaginatedResponse;
 import com.hic.dto.ApiResponse;
 import com.hic.model.Employee.EmploymentStatus;
@@ -78,6 +79,11 @@ public class EmployeeController {
     public ResponseEntity<ApiResponse<Void>> delete(@PathVariable Long id) {
         employeeService.delete(id);
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/{id}/terminate")
+    public ResponseEntity<ApiResponse<EmployeeTerminationResultDTO>> terminate(@PathVariable Long id) {
+        return ResponseEntity.ok(ApiResponse.success(employeeService.terminate(id)));
     }
 
     @GetMapping("/{id}/doors")

@@ -85,7 +85,7 @@ export interface Employee {
   timetableId?: number
   deviceIds?: number[]
   doorAccess?: string[]
-  employmentStatus: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE'
+  employmentStatus: 'ACTIVE' | 'INACTIVE' | 'ON_LEAVE' | 'TERMINATED'
   createdAt?: string
   updatedAt?: string
 }
@@ -139,6 +139,14 @@ export interface EmployeeDeviceSyncResult {
   usersSynced: number
   facesSynced: number
   facesSkipped: number
+  failedDevices: number
+  errors: string[]
+}
+
+export interface EmployeeTerminationResult {
+  employeeId: number
+  totalDevices: number
+  removedDevices: number
   failedDevices: number
   errors: string[]
 }
@@ -429,6 +437,7 @@ export interface TabelRow {
   fin?: string
   fullName: string
   position: string
+  employmentStatus: Employee['employmentStatus']
   daily: Record<string, number | string | null>
   workingDays: number
   totalHours: number

@@ -22,11 +22,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.apache.poi.ss.usermodel.IndexedColors;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.io.ByteArrayInputStream;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -163,7 +166,7 @@ class TabelServiceTest {
     }
 
     @Test
-    void getMonthlyTabel_includesEmployeeAssignedToSelectedAdditionalArea() {
+    void getMonthlyTabel_includesEmployeeAssignedToSelectedAdditionalArea() throws Exception {
         TenantContext.setTenantId(7L);
 
         Employee employee = new Employee();
@@ -172,6 +175,7 @@ class TabelServiceTest {
         employee.setBranchId(1L);
         employee.setFirstName("Ayla");
         employee.setLastName("Aliyeva");
+        employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
 
         EmployeeArea membership = new EmployeeArea();
         membership.setTenantId(7L);
@@ -194,5 +198,17 @@ class TabelServiceTest {
 
         assertEquals(1, result.getEmployees());
         assertEquals(11L, result.getRows().get(0).getEmployeePk());
+        assertEquals(Employee.EmploymentStatus.TERMINATED,
+                result.getRows().get(0).getEmploymentStatus());
+
+        byte[] excel = tabelService.exportMonthlyTabel(2026, 4, 3L, null, null, null);
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
+            var sheet = workbook.getSheet("Tabel");
+            assertEquals(36, sheet.getRow(1).getLastCellNum(),
+                    "Excel-də status və terminationDate üçün əlavə sütun olmamalıdır");
+            var nameCell = sheet.getRow(2).getCell(2);
+            var font = workbook.getFontAt(nameCell.getCellStyle().getFontIndex());
+            assertEquals(IndexedColors.RED.getIndex(), font.getColor());
+        }
     }
 }

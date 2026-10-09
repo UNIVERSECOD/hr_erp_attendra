@@ -1,5 +1,5 @@
 import client from './client.ts'
-import { ApiResponse, Employee, EmployeeDeviceSyncResult, EmployeeSearchResult, PaginatedResponse } from '../types'
+import { ApiResponse, Employee, EmployeeDeviceSyncResult, EmployeeSearchResult, EmployeeTerminationResult, PaginatedResponse } from '../types'
 
 export const employeeApi = {
   getAll: (page = 0, size = 20, branchId?: number) =>
@@ -10,6 +10,10 @@ export const employeeApi = {
   create: (data: Partial<Employee>) => client.post<{ data: Employee }>('/employees', data),
   update: (id: number, data: Partial<Employee>) => client.put<{ data: Employee }>(`/employees/${id}`, data),
   delete: (id: number) => client.delete(`/employees/${id}`),
+  terminate: (id: number) =>
+    client.post<ApiResponse<EmployeeTerminationResult>>(`/employees/${id}/terminate`),
+  getByStatus: (status: Employee['employmentStatus']) =>
+    client.get<ApiResponse<Employee[]>>(`/employees/status/${status}`),
   search: (q: string, page = 0, size = 20) =>
     client.get<PaginatedResponse<Employee>>(`/employees/search?q=${q}&page=${page}&size=${size}`),
   searchEmployees: (q: string) =>

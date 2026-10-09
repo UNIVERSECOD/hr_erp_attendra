@@ -46,6 +46,8 @@ $taskPrincipal = New-ScheduledTaskPrincipal `
     -RunLevel Highest
 $taskSettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Hours 1)
 
@@ -68,6 +70,8 @@ $pickerAction = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument $pic
 $pickerTrigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
 $pickerSettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
     -MultipleInstances IgnoreNew `
     -RestartCount 3 `
     -RestartInterval (New-TimeSpan -Minutes 1) `

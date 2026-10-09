@@ -90,6 +90,7 @@ public class DeviceEmployeeAssignmentService {
         Long tenantId = effectiveTenantId(device);
         Map<Long, Employee> requestedEmployees = employeeRepository.findAllById(requestedManualIds).stream()
                 .filter(employee -> sameTenant(tenantId, employee.getTenantId()))
+                .filter(employee -> !Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus()))
                 .collect(Collectors.toMap(Employee::getId, Function.identity()));
         List<Long> invalidIds = requestedManualIds.stream()
                 .filter(id -> !requestedEmployees.containsKey(id))
@@ -204,6 +205,9 @@ public class DeviceEmployeeAssignmentService {
         if (!sameTenant(tenantId, employee.getTenantId())) {
             throw new ResourceNotFoundException("Employee", employeeId);
         }
+        if (Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus())) {
+            throw new BadRequestException("İşdən çıxarılmış əməkdaş cihazlara yenidən göndərilə bilməz");
+        }
 
         Set<Long> targetDeviceConfigIds = employeeDeviceAccessRepository.findByEmployeeId(employeeId).stream()
                 .map(EmployeeDeviceAccess::getDeviceConfigId)
@@ -290,9 +294,12 @@ public class DeviceEmployeeAssignmentService {
 
     private List<Employee> loadEmployees(Long tenantId) {
         if (tenantId != null) {
-            return employeeRepository.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId);
+            return employeeRepository.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenantId).stream()
+                    .filter(employee -> !Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus()))
+                    .toList();
         }
         return employeeRepository.findAll().stream()
+                .filter(employee -> !Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus()))
                 .sorted(Comparator.comparing(Employee::getFirstName, Comparator.nullsLast(String::compareToIgnoreCase))
                         .thenComparing(Employee::getLastName, Comparator.nullsLast(String::compareToIgnoreCase)))
                 .toList();

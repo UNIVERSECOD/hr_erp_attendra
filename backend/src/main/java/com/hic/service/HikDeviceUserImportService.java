@@ -427,6 +427,11 @@ public class HikDeviceUserImportService {
         if (sameBranchExisting.isPresent()) {
             result.setSkippedExisting(result.getSkippedExisting() + 1);
             Employee existing = sameBranchExisting.get();
+            if (Employee.EmploymentStatus.TERMINATED.equals(existing.getEmploymentStatus())) {
+                log.info("Skipping terminated employee during device import: employeeId={} deviceEmployeeNo={}",
+                        existing.getEmployeeId(), person.employeeNo);
+                return;
+            }
             ensureDeviceEmployeeNo(existing, person.employeeNo);
             ensureAreaMembership(existing, branchId);
             int linked = linkMissingAccess(existing, person.deviceConfigIds, branchId);
@@ -439,6 +444,12 @@ public class HikDeviceUserImportService {
         Optional<Employee> crossBranchSamePerson = findCrossBranchSamePerson(tenantId, person.employeeNo, person.name);
         if (crossBranchSamePerson.isPresent()) {
             Employee existing = crossBranchSamePerson.get();
+            if (Employee.EmploymentStatus.TERMINATED.equals(existing.getEmploymentStatus())) {
+                result.setSkippedExisting(result.getSkippedExisting() + 1);
+                log.info("Skipping terminated cross-branch employee during device import: employeeId={} deviceEmployeeNo={}",
+                        existing.getEmployeeId(), person.employeeNo);
+                return;
+            }
             ensureDeviceEmployeeNo(existing, person.employeeNo);
             ensureAreaMembership(existing, branchId);
             int linked = linkMissingAccess(existing, person.deviceConfigIds, branchId);
@@ -557,7 +568,8 @@ public class HikDeviceUserImportService {
                 continue;
             }
             Employee employee = employeeRepository.findById(person.employeePk).orElse(null);
-            if (employee == null) {
+            if (employee == null
+                    || Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus())) {
                 continue;
             }
 

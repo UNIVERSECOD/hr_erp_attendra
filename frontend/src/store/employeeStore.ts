@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { Employee, PaginatedResponse } from '../types'
+import { Employee, EmployeeTerminationResult, PaginatedResponse } from '../types'
 import { employeeApi } from '../api/employeeApi.ts'
 
 interface EmployeeState {
@@ -12,7 +12,7 @@ interface EmployeeState {
   fetchEmployees: (page?: number, size?: number) => Promise<boolean>
   createEmployee: (data: Partial<Employee>) => Promise<void>
   updateEmployee: (id: number, data: Partial<Employee>) => Promise<void>
-  deleteEmployee: (id: number) => Promise<void>
+  terminateEmployee: (id: number) => Promise<EmployeeTerminationResult>
 }
 
 export const useEmployeeStore = create<EmployeeState>((set, get) => ({
@@ -48,8 +48,9 @@ export const useEmployeeStore = create<EmployeeState>((set, get) => ({
     await employeeApi.update(id, data)
     await get().fetchEmployees(get().currentPage)
   },
-  deleteEmployee: async (id) => {
-    await employeeApi.delete(id)
+  terminateEmployee: async (id) => {
+    const response = await employeeApi.terminate(id)
     await get().fetchEmployees(get().currentPage)
+    return response.data.data
   },
 }))

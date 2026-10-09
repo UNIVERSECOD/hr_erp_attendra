@@ -76,6 +76,10 @@ public class IsapiEmployeeUserSyncService {
     }
 
     public void syncEmployee(Employee employee, List<Long> deviceConfigIds) {
+        if (employee != null
+                && Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus())) {
+            throw new DeviceSyncException("İşdən çıxarılmış əməkdaş cihaza sinxronlaşdırıla bilməz");
+        }
         List<Long> assignedDeviceIds = deviceConfigIds == null
                 ? List.of()
                 : deviceConfigIds.stream().filter(id -> id != null && id > 0).distinct().toList();

@@ -92,6 +92,19 @@ class IsapiEmployeeUserSyncServiceTest {
     }
 
     @Test
+    void syncEmployee_rejectsTerminatedEmployeeWithoutCallingDevice() {
+        Employee employee = employee("1234");
+        employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
+
+        DeviceSyncException exception = Assertions.assertThrows(
+                DeviceSyncException.class,
+                () -> service.syncEmployee(employee, List.of(1L)));
+
+        Assertions.assertTrue(exception.getMessage().contains("İşdən çıxarılmış"));
+        server.verify();
+    }
+
+    @Test
     void syncEmployee_withoutConfiguredUserInfoOrIsapiBaseUrl_defaultsToDeviceHost() {
         ReflectionTestUtils.setField(service, "userInfoRecordBaseUrl", "");
         ReflectionTestUtils.setField(service, "isapiBaseUrl", "");

@@ -224,7 +224,12 @@ export default function TabelPage() {
                     <tr key={row.employeePk} className="border-b border-slate-100 text-slate-700">
                       <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
                       <td className="sticky left-[50px] z-20 bg-white px-3 py-2 min-w-[110px] max-w-[110px] truncate" title={row.fin ?? '-'}>{row.fin ?? '-'}</td>
-                      <td className="sticky left-[160px] z-20 bg-white px-3 py-2 min-w-[200px] max-w-[200px] truncate" title={row.fullName}>{row.fullName}</td>
+                      <td
+                        className={`sticky left-[160px] z-20 bg-white px-3 py-2 min-w-[200px] max-w-[200px] truncate ${row.employmentStatus === 'TERMINATED' ? 'font-semibold text-red-600' : ''}`}
+                        title={row.fullName}
+                      >
+                        {row.fullName}
+                      </td>
                       <td className="sticky left-[360px] z-20 bg-white px-3 py-2 min-w-[140px] max-w-[140px] truncate" title={row.position}>{row.position}</td>
                       {Array.from({ length: data.daysInMonth }, (_, day) => {
                         const value = row.daily[String(day + 1)]

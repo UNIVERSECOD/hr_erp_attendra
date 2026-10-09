@@ -1,6 +1,7 @@
 package com.hic.service;
 
 import com.hic.dto.EmployeeDTO;
+import com.hic.dto.EmployeeTerminationResultDTO;
 import com.hic.dto.EmployeeSearchResultDTO;
 import com.hic.dto.EmployeeResponseDTO;
 import com.hic.dto.PaginatedResponse;
@@ -56,6 +57,7 @@ public class EmployeeService {
     private final DoorRepository doorRepository;
     private final EmployeeDeviceAccessRepository employeeDeviceAccessRepository;
     private final IsapiEmployeeUserSyncService isapiEmployeeUserSyncService;
+    private final DeviceSyncService deviceSyncService;
     private final UserScopeService userScopeService;
     private final TenantRepository tenantRepository;
     private final ShiftAssignmentService shiftAssignmentService;
@@ -71,18 +73,25 @@ public class EmployeeService {
         Long effectiveBranchId = userScopeService.resolveBranchScope(requestedBranchId);
         Page<Employee> employeePage;
         if (tenantId != null && effectiveBranchId != null) {
-            employeePage = employeeRepository.findByTenantIdAndAreaId(tenantId, effectiveBranchId, pageable);
+            employeePage = employeeRepository.findByTenantIdAndAreaIdAndEmploymentStatusNot(
+                    tenantId, effectiveBranchId, EmploymentStatus.TERMINATED, pageable);
         } else if (tenantId != null) {
-            employeePage = employeeRepository.findByTenantId(tenantId, pageable);
+            employeePage = employeeRepository.findByTenantIdAndEmploymentStatusNot(
+                    tenantId, EmploymentStatus.TERMINATED, pageable);
         } else {
-            employeePage = employeeRepository.findAll(pageable);
+            employeePage = employeeRepository.findByEmploymentStatusNot(
+                    EmploymentStatus.TERMINATED, pageable);
         }
         return buildPaginatedResponse(employeePage);
     }
 
     public EmployeeResponseDTO getById(Long id) {
-        Employee employee = employeeRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
+        Long tenantId = TenantContext.getTenantId();
+        Employee employee = tenantId != null
+                ? employeeRepository.findByTenantIdAndId(tenantId, id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee", id))
+                : employeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
         return toResponseDTO(employee);
     }
 
@@ -90,11 +99,13 @@ public class EmployeeService {
         Pageable pageable = PageRequest.of(page, size);
         Long tenantId = TenantContext.getTenantId();
         Page<Employee> employeePage = tenantId != null
-                ? employeeRepository.findByTenantIdAndAreaId(tenantId, branchId, pageable)
-                : employeeRepository.findByDepartmentIdIn(
+                ? employeeRepository.findByTenantIdAndAreaIdAndEmploymentStatusNot(
+                        tenantId, branchId, EmploymentStatus.TERMINATED, pageable)
+                : employeeRepository.findByDepartmentIdInAndEmploymentStatusNot(
                         departmentRepository.findByBranchId(branchId).stream()
                                 .map(Department::getId)
                                 .toList(),
+                        EmploymentStatus.TERMINATED,
                         pageable
                 );
         return buildPaginatedResponse(employeePage);
@@ -103,8 +114,10 @@ public class EmployeeService {
     public List<EmployeeResponseDTO> getByDepartment(Long departmentId) {
         Long tenantId = TenantContext.getTenantId();
         List<Employee> employees = tenantId != null
-                ? employeeRepository.findByTenantIdAndDepartmentId(tenantId, departmentId)
-                : employeeRepository.findByDepartmentId(departmentId);
+                ? employeeRepository.findByTenantIdAndDepartmentIdAndEmploymentStatusNot(
+                        tenantId, departmentId, EmploymentStatus.TERMINATED)
+                : employeeRepository.findByDepartmentIdAndEmploymentStatusNot(
+                        departmentId, EmploymentStatus.TERMINATED);
         return mapEmployeeListToDTOs(employees);
     }
 
@@ -120,8 +133,10 @@ public class EmployeeService {
         Pageable pageable = PageRequest.of(page, size);
         Long tenantId = TenantContext.getTenantId();
         Page<Employee> employeePage = tenantId != null
-                ? employeeRepository.searchByTenant(tenantId, query, pageable)
-                : employeeRepository.search(query, pageable);
+                ? employeeRepository.searchByTenantAndEmploymentStatusNot(
+                        tenantId, query, EmploymentStatus.TERMINATED, pageable)
+                : employeeRepository.searchByEmploymentStatusNot(
+                        query, EmploymentStatus.TERMINATED, pageable);
         return buildPaginatedResponse(employeePage);
     }
 
@@ -134,9 +149,12 @@ public class EmployeeService {
         Pageable pageable = PageRequest.of(0, 20, Sort.by("firstName").ascending().and(Sort.by("lastName").ascending()));
         Long tenantId = TenantContext.getTenantId();
         Long branchId = userScopeService.resolveBranchScope(null);
-        List<Employee> employees = tenantId != null
+        List<Employee> matchedEmployees = tenantId != null
                 ? employeeRepository.searchMinimalByTenant(tenantId, branchId, normalizedQuery, pageable)
                 : employeeRepository.searchMinimal(branchId, normalizedQuery, pageable);
+        List<Employee> employees = matchedEmployees.stream()
+                .filter(employee -> !EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus()))
+                .toList();
 
         Map<Long, String> departmentNames = departmentRepository.findAllById(
                         employees.stream()
@@ -181,6 +199,9 @@ public class EmployeeService {
     }
 
     private Employee createEmployee(EmployeeDTO dto, String requestedEmployeeId, boolean syncDevices) {
+        if (EmploymentStatus.TERMINATED.equals(dto.getEmploymentStatus())) {
+            throw new BadRequestException("Yeni əməkdaş işdən çıxarılmış statusunda yaradıla bilməz");
+        }
         Long tenantId = TenantContext.getTenantId();
         enforceEmployeeQuota(tenantId);
         List<Long> areaIds = employeeAreaAssignmentService.normalizeAndValidateAreaIds(
@@ -234,10 +255,20 @@ public class EmployeeService {
 
     @Transactional
     public EmployeeResponseDTO update(Long id, EmployeeDTO dto) {
-        Employee employee = employeeRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
+        Long contextTenantId = TenantContext.getTenantId();
+        Employee employee = contextTenantId != null
+                ? employeeRepository.findByTenantIdAndId(contextTenantId, id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee", id))
+                : employeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
+        if (EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus())) {
+            throw new BadRequestException("İşdən çıxarılmış əməkdaş redaktə edilə bilməz");
+        }
+        if (EmploymentStatus.TERMINATED.equals(dto.getEmploymentStatus())) {
+            throw new BadRequestException("İşdən çıxarma əməliyyatı ayrıca funksiya ilə aparılmalıdır");
+        }
 
-        Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : TenantContext.getTenantId();
+        Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : contextTenantId;
         List<Long> areaIds = employeeAreaAssignmentService.normalizeAndValidateAreaIds(
                 dto.getAreaIds(), dto.getBranchId(), tenantId);
         Long primaryAreaId = resolvePrimaryAreaId(areaIds, dto.getBranchId());
@@ -301,11 +332,14 @@ public class EmployeeService {
                 .toList();
     }
 
-    @Transactional
-    public void delete(Long id) {
-        Employee employee = employeeRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
-        Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : TenantContext.getTenantId();
+    public EmployeeTerminationResultDTO terminate(Long id) {
+        Long contextTenantId = TenantContext.getTenantId();
+        Employee employee = contextTenantId != null
+                ? employeeRepository.findByTenantIdAndId(contextTenantId, id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee", id))
+                : employeeRepository.findById(id)
+                        .orElseThrow(() -> new ResourceNotFoundException("Employee", id));
+        Long tenantId = employee.getTenantId() != null ? employee.getTenantId() : contextTenantId;
 
         Set<Long> targetDeviceIds = new LinkedHashSet<>(getEmployeeDeviceIds(id));
         List<Long> employeeAreaIds = employeeAreaAssignmentService.getAreaIds(id);
@@ -313,10 +347,78 @@ public class EmployeeService {
             employeeAreaIds = List.of(employee.getBranchId());
         }
         targetDeviceIds.addAll(employeeAreaAssignmentService.resolveDeviceIdsForAreas(employeeAreaIds, tenantId));
-        deleteEmployeeFromDevices(employee, List.copyOf(targetDeviceIds));
+        employee.setEmploymentStatus(EmploymentStatus.TERMINATED);
+        employeeRepository.saveAndFlush(employee);
 
-        employeeFaceImageService.deleteFaceImages(id);
-        employeeRepository.delete(employee);
+        List<String> errors = new java.util.ArrayList<>();
+        int removedDevices = 0;
+        List<DeviceConfig> devices = deviceConfigRepository.findAllById(List.copyOf(targetDeviceIds)).stream()
+                .filter(device -> tenantId == null || device.getTenantId() == null
+                        || tenantId.equals(device.getTenantId()))
+                .sorted(Comparator.comparing(DeviceConfig::getId))
+                .toList();
+
+        Set<Long> foundDeviceIds = devices.stream().map(DeviceConfig::getId).collect(Collectors.toSet());
+        targetDeviceIds.stream()
+                .filter(deviceConfigId -> !foundDeviceIds.contains(deviceConfigId))
+                .forEach(deviceConfigId -> errors.add("Cihaz " + deviceConfigId + " tapılmadı"));
+
+        for (DeviceConfig device : devices) {
+            String label = device.getDeviceName() != null && !device.getDeviceName().isBlank()
+                    ? device.getDeviceName()
+                    : "Cihaz " + device.getId();
+            try {
+                Long bridgeDeviceId = Long.valueOf(device.getDeviceId());
+                var bridgeDevice = deviceSyncService.getDeviceById(bridgeDeviceId);
+                if (bridgeDevice.getId() != null && !bridgeDeviceId.equals(bridgeDevice.getId())) {
+                    throw new IllegalStateException("cihaz identifikatoru uyğun gəlmir");
+                }
+                if (!sameTrimmedValue(device.getDeviceIp(), bridgeDevice.getDeviceIp())) {
+                    throw new IllegalStateException("cihaz IP ünvanı uyğun gəlmir");
+                }
+                if (device.getDeviceName() != null && !device.getDeviceName().isBlank()
+                        && !sameTrimmedValue(device.getDeviceName(), bridgeDevice.getDeviceName())) {
+                    throw new IllegalStateException("cihaz adı uyğun gəlmir");
+                }
+                var status = deviceSyncService.getStatus(bridgeDeviceId);
+                if (status.getId() != null && !bridgeDeviceId.equals(status.getId())) {
+                    throw new IllegalStateException("cihaz identifikatoru uyğun gəlmir");
+                }
+                if (!status.isOnline()) {
+                    throw new IllegalStateException("cihaz offline-dır");
+                }
+                log.info("Terminating employee {} on verified device bridgeId={} backendId={} ip={} name={}",
+                        employee.getEmployeeId(), bridgeDeviceId, device.getId(), device.getDeviceIp(), label);
+                isapiEmployeeUserSyncService.deleteEmployee(employee, List.of(bridgeDeviceId));
+                removedDevices++;
+            } catch (RuntimeException ex) {
+                String message = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+                errors.add(label + ": " + message);
+                log.warn("Employee {} was terminated locally but device removal failed for {}: {}",
+                        employee.getEmployeeId(), label, message);
+            }
+        }
+
+        return new EmployeeTerminationResultDTO(
+                employee.getId(),
+                targetDeviceIds.size(),
+                removedDevices,
+                errors.size(),
+                errors);
+    }
+
+    /**
+     * Backward-compatible endpoint behavior. Employee history is preserved.
+     */
+    public void delete(Long id) {
+        terminate(id);
+    }
+
+    private boolean sameTrimmedValue(String expected, String actual) {
+        if (expected == null || actual == null) {
+            return expected == null && actual == null;
+        }
+        return expected.trim().equalsIgnoreCase(actual.trim());
     }
 
     private void mapDtoToEmployee(EmployeeDTO dto, Employee employee) {

@@ -122,7 +122,7 @@ function matchesDevicePerson(deviceEmployeeNo: string | undefined, employeeId: s
 
 export default function EmployeesPage() {
   const defaultDeviceId = Number(import.meta.env.VITE_DEFAULT_DEVICE_ID || 1)
-  const { employees, loading, error, fetchEmployees, deleteEmployee, totalPages, currentPage, totalElements } = useEmployeeStore()
+  const { employees, loading, error, fetchEmployees, terminateEmployee, totalPages, currentPage, totalElements } = useEmployeeStore()
   const { branches, fetchBranches } = useBranchStore()
   const [search, setSearch] = useState('')
   const [departments, setDepartments] = useState<Department[]>([])
@@ -143,6 +143,11 @@ export default function EmployeesPage() {
   const [deleteConfirm, setDeleteConfirm] = useState<Employee | null>(null)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [deletingEmployee, setDeletingEmployee] = useState(false)
+  const [employeeView, setEmployeeView] = useState<'active' | 'terminated'>('active')
+  const [terminatedEmployees, setTerminatedEmployees] = useState<Employee[]>([])
+  const [terminatedLoading, setTerminatedLoading] = useState(false)
+  const [terminatedError, setTerminatedError] = useState<string | null>(null)
+  const [retryingTerminationId, setRetryingTerminationId] = useState<number | null>(null)
   const [uploadingFaceEmployeeId, setUploadingFaceEmployeeId] = useState<number | null>(null)
   const [deletingFaceEmployeeId, setDeletingFaceEmployeeId] = useState<number | null>(null)
   const [uploadFaceError, setUploadFaceError] = useState<string | null>(null)
@@ -183,7 +188,23 @@ export default function EmployeesPage() {
   const statusLabel = (status: Employee['employmentStatus']) => {
     if (status === 'ACTIVE') return 'Aktiv'
     if (status === 'ON_LEAVE') return 'Məzuniyyətdə'
+    if (status === 'TERMINATED') return 'İşdən çıxarılıb'
     return 'Deaktiv'
+  }
+
+  const loadTerminatedEmployees = async () => {
+    setTerminatedLoading(true)
+    setTerminatedError(null)
+    try {
+      const response = await employeeApi.getByStatus('TERMINATED')
+      setTerminatedEmployees(response.data.data ?? [])
+    } catch (requestError: unknown) {
+      const message = getApiErrorMessage(requestError, 'İşdən çıxarılan əməkdaşları yükləmək alınmadı')
+      setTerminatedError(message)
+      toast.error('Siyahı yüklənmədi', message)
+    } finally {
+      setTerminatedLoading(false)
+    }
   }
 
   const stepTitles = ['Ümumi məlumat', 'İş məlumatları', 'Şəkil']
@@ -620,16 +641,28 @@ export default function EmployeesPage() {
     setDeletingEmployee(true)
     setDeleteError(null)
     try {
-      await deleteEmployee(deleteConfirm.id)
+      const result = await terminateEmployee(deleteConfirm.id)
       setDeleteConfirm(null)
       if (selectedEmployee?.id === deleteConfirm.id) {
         closeProfile()
       }
-      toast.success('Əməkdaş silindi')
+      if (result.failedDevices > 0) {
+        toast.warning(
+          'Əməkdaş işdən çıxarıldı',
+          `Məlumatlar saxlanıldı, ${result.removedDevices}/${result.totalDevices} cihazdan silindi. ${result.errors.join(' | ')}`,
+        )
+      } else {
+        toast.success(
+          'Əməkdaş işdən çıxarıldı',
+          result.totalDevices > 0
+            ? `${result.removedDevices} cihazdan uğurla silindi.`
+            : 'Əməkdaşın tarixi məlumatları saxlanıldı.',
+        )
+      }
     } catch (e: unknown) {
-      const message = getApiErrorMessage(e, 'Əməkdaşı silmək alınmadı')
+      const message = getApiErrorMessage(e, 'Əməkdaşı işdən çıxarmaq alınmadı')
       setDeleteError(message)
-      toast.error('Əməkdaş silinmədi', message)
+      toast.error('Əməkdaş işdən çıxarılmadı', message)
     } finally {
       setDeletingEmployee(false)
     }
@@ -646,9 +679,36 @@ export default function EmployeesPage() {
     setDeleteConfirm(null)
   }
 
+  const handleRetryDeviceRemoval = async (employee: Employee) => {
+    setRetryingTerminationId(employee.id)
+    try {
+      const response = await employeeApi.terminate(employee.id)
+      const result = response.data.data
+      if (result.failedDevices > 0) {
+        toast.warning(
+          'Cihazlardan silinmə qismən tamamlandı',
+          `${result.removedDevices}/${result.totalDevices} cihazdan silindi. ${result.errors.join(' | ')}`,
+        )
+      } else {
+        toast.success('Cihazlardan silinmə tamamlandı', `${result.removedDevices} cihaz yoxlanıldı.`)
+      }
+    } catch (requestError: unknown) {
+      toast.error(
+        'Cihazlardan silinmə təkrarlanmadı',
+        getApiErrorMessage(requestError, 'Əməliyyatı təkrarlamaq alınmadı'),
+      )
+    } finally {
+      setRetryingTerminationId(null)
+    }
+  }
+
   const handleSearch = () => {
     if (!search.trim()) {
-      fetchEmployees(0, 20)
+      if (employeeView === 'terminated') {
+        void loadTerminatedEmployees()
+      } else {
+        void fetchEmployees(0, 20)
+      }
     }
   }
 
@@ -742,7 +802,11 @@ export default function EmployeesPage() {
     setWizardImageRemovalRequested(Boolean(editingEmployee?.faceImageUrl))
   }
 
-  const filtered = employees.filter((e: Employee) => {
+  const visibleEmployees = employeeView === 'terminated' ? terminatedEmployees : employees
+  const viewLoading = employeeView === 'terminated' ? terminatedLoading : loading
+  const viewError = employeeView === 'terminated' ? terminatedError : error
+
+  const filtered = visibleEmployees.filter((e: Employee) => {
     const matchSearch = !search || `${e.firstName} ${e.lastName}`.toLowerCase().includes(search.toLowerCase()) || e.employeeId.toLowerCase().includes(search.toLowerCase())
     const matchDept = !filterDept || String(e.departmentId) === filterDept
     const matchStatus = !filterStatus || e.employmentStatus === filterStatus
@@ -766,22 +830,34 @@ export default function EmployeesPage() {
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-3 mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900">Bütün əməkdaşlar</h1>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {employeeView === 'terminated' ? 'İşdən çıxarılanlar' : 'Bütün əməkdaşlar'}
+            </h1>
             <p className="text-sm text-gray-500 mt-1">
-              <span className="font-medium text-gray-700">{totalElements ?? employees.length}</span> ümumi ·&nbsp;
-              <span className="text-green-600 font-medium">{activeCount} aktiv</span> ·&nbsp;
-              <span className="text-yellow-600 font-medium">{onLeaveCount} məzuniyyətdə</span>
+              {employeeView === 'terminated' ? (
+                <><span className="font-medium text-red-600">{terminatedEmployees.length}</span> işdən çıxarılıb</>
+              ) : (
+                <>
+                  <span className="font-medium text-gray-700">{totalElements ?? employees.length}</span> ümumi ·&nbsp;
+                  <span className="text-green-600 font-medium">{activeCount} aktiv</span> ·&nbsp;
+                  <span className="text-yellow-600 font-medium">{onLeaveCount} məzuniyyətdə</span>
+                </>
+              )}
             </p>
           </div>
           <div className="flex flex-wrap items-center justify-end gap-2">
-            <DataTransferControls
-              entity="employees"
-              onImported={async () => {
-                await fetchEmployees(0, 20)
-              }}
-            />
+            {employeeView === 'active' && (
+              <DataTransferControls
+                entity="employees"
+                onImported={async () => {
+                  await fetchEmployees(0, 20)
+                }}
+              />
+            )}
             <button
-              onClick={() => fetchEmployees(currentPage, 20)}
+              onClick={() => employeeView === 'terminated'
+                ? loadTerminatedEmployees()
+                : fetchEmployees(currentPage, 20)}
               className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-gray-600 bg-white border border-gray-200 rounded-lg hover:bg-gray-50"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -789,17 +865,43 @@ export default function EmployeesPage() {
               </svg>
               Yenilə
             </button>
-            <button
-              onClick={openCreate}
-              className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg"
-              style={{ background: '#a855f7' }}
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-              </svg>
-              + Əməkdaş əlavə et
-            </button>
+            {employeeView === 'active' && (
+              <button
+                onClick={openCreate}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white rounded-lg"
+                style={{ background: '#a855f7' }}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                + Əməkdaş əlavə et
+              </button>
+            )}
           </div>
+        </div>
+
+        <div className="mb-4 inline-flex rounded-xl border border-gray-200 bg-white p-1 shadow-sm">
+          <button
+            type="button"
+            onClick={() => {
+              setEmployeeView('active')
+              setFilterStatus('')
+            }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${employeeView === 'active' ? 'bg-purple-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            Əsas siyahı
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setEmployeeView('terminated')
+              setFilterStatus('')
+              void loadTerminatedEmployees()
+            }}
+            className={`rounded-lg px-4 py-2 text-sm font-medium ${employeeView === 'terminated' ? 'bg-red-600 text-white' : 'text-gray-600 hover:bg-gray-50'}`}
+          >
+            İşdən çıxarılanlar
+          </button>
         </div>
 
         {/* Search + Filters */}
@@ -817,7 +919,10 @@ export default function EmployeesPage() {
               className="flex-1 outline-none text-sm text-gray-700 placeholder-gray-400"
             />
             {search && (
-              <button onClick={() => { setSearch(''); fetchEmployees(0, 20) }} className="text-gray-400 hover:text-gray-600">
+              <button onClick={() => {
+                setSearch('')
+                if (employeeView === 'active') void fetchEmployees(0, 20)
+              }} className="text-gray-400 hover:text-gray-600">
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
@@ -830,12 +935,14 @@ export default function EmployeesPage() {
             {departments.map(d => <option key={d.id} value={String(d.id)}>{d.departmentName}</option>)}
           </select>
 
-          <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-400">
-            <option value="">Bütün statuslar</option>
-            <option value="ACTIVE">Aktiv</option>
-            <option value="INACTIVE">Deaktiv</option>
-            <option value="ON_LEAVE">Məzuniyyətdə</option>
-          </select>
+          {employeeView === 'active' && (
+            <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-400">
+              <option value="">Bütün statuslar</option>
+              <option value="ACTIVE">Aktiv</option>
+              <option value="INACTIVE">Deaktiv</option>
+              <option value="ON_LEAVE">Məzuniyyətdə</option>
+            </select>
+          )}
 
           <select value={filterShift} onChange={e => setFilterShift(e.target.value)} className="border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-600 focus:outline-none focus:ring-1 focus:ring-purple-400">
             <option value="">Bütün növbələr</option>
@@ -854,16 +961,20 @@ export default function EmployeesPage() {
         {uploadFaceError && (
           <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-lg mb-4 text-sm">{uploadFaceError}</div>
         )}
-        {loading ? (
+        {viewLoading ? (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
             <div className="w-8 h-8 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin mx-auto mb-3"></div>
             Yüklənir...
           </div>
-        ) : error ? (
-          <div className="bg-white rounded-xl shadow-sm p-8 text-center text-red-500">{error}</div>
+        ) : viewError ? (
+          <div className="bg-white rounded-xl shadow-sm p-8 text-center text-red-500">{viewError}</div>
         ) : filtered.length === 0 ? (
           <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
-            {search ? 'Axtarışa uyğun əməkdaş tapılmadı.' : 'Hələ heç bir əməkdaş yoxdur.'}
+            {search
+              ? 'Axtarışa uyğun əməkdaş tapılmadı.'
+              : employeeView === 'terminated'
+              ? 'İşdən çıxarılan əməkdaş yoxdur.'
+              : 'Hələ heç bir əməkdaş yoxdur.'}
           </div>
         ) : (
           <div className="bg-white rounded-xl shadow-sm overflow-x-auto">
@@ -900,6 +1011,8 @@ export default function EmployeesPage() {
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5s8.268 2.943 9.542 7c-1.274 4.057-5.065 7-9.542 7S3.732 16.057 2.458 12z" />
                             </svg>
                           </button>
+                          {employeeView === 'active' && (
+                            <>
                           <button
                             onClick={() => openEdit(emp)}
                             className="p-1.5 rounded hover:bg-purple-50 transition-colors"
@@ -938,12 +1051,27 @@ export default function EmployeesPage() {
                           <button
                             onClick={() => openDeleteConfirm(emp)}
                             className="p-1.5 rounded hover:bg-red-50 transition-colors"
-                            title="Sil"
+                            title="İşdən çıxar"
                           >
                             <svg className="w-4 h-4 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                             </svg>
                           </button>
+                            </>
+                          )}
+                          {employeeView === 'terminated' && (
+                            <button
+                              type="button"
+                              onClick={() => handleRetryDeviceRemoval(emp)}
+                              disabled={retryingTerminationId === emp.id}
+                              className="p-1.5 rounded hover:bg-red-50 transition-colors disabled:opacity-50"
+                              title="Cihazlardan silinməni təkrarla"
+                            >
+                              <svg className={`w-4 h-4 text-red-500 ${retryingTerminationId === emp.id ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9M20 20v-5h-.581m0 0a8.003 8.003 0 01-15.357-2" />
+                              </svg>
+                            </button>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -954,8 +1082,8 @@ export default function EmployeesPage() {
                           alt={name}
                         />
                       </td>
-                      <td className="px-4 py-3 font-mono text-xs text-gray-600">{emp.employeeId}</td>
-                      <td className="px-4 py-3 font-semibold text-gray-800">{name}</td>
+                      <td className={`px-4 py-3 font-mono text-xs ${emp.employmentStatus === 'TERMINATED' ? 'text-red-600' : 'text-gray-600'}`}>{emp.employeeId}</td>
+                      <td className={`px-4 py-3 font-semibold ${emp.employmentStatus === 'TERMINATED' ? 'text-red-600' : 'text-gray-800'}`}>{name}</td>
                       <td className="px-4 py-3 text-gray-600">{emp.fatherName || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{emp.departmentName || '—'}</td>
                       <td className="px-4 py-3 text-gray-600">{emp.positionName || '—'}</td>
@@ -970,7 +1098,7 @@ export default function EmployeesPage() {
                             ? { background: '#fef3c7', color: '#92400e' }
                             : { background: '#fee2e2', color: '#991b1b' }}
                         >
-                          {emp.employmentStatus === 'ACTIVE' ? 'Aktiv' : emp.employmentStatus === 'ON_LEAVE' ? 'Məzuniyyətdə' : 'Deaktiv'}
+                          {statusLabel(emp.employmentStatus)}
                         </span>
                       </td>
                     </tr>
@@ -982,7 +1110,7 @@ export default function EmployeesPage() {
         )}
 
         {/* Pagination */}
-        {totalPages > 1 && (
+        {employeeView === 'active' && totalPages > 1 && (
           <div className="mt-4 flex items-center justify-between">
             <button onClick={() => fetchEmployees(currentPage - 1)} disabled={currentPage === 0} className="px-4 py-2 text-sm border border-gray-300 bg-white rounded-lg disabled:opacity-50 hover:bg-gray-50">
               Əvvəlki
@@ -1347,7 +1475,7 @@ export default function EmployeesPage() {
       {deleteConfirm && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
-            <h2 className="text-lg font-bold text-gray-900 mb-2">Əməkdaşı sil</h2>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Əməkdaşı işdən çıxar</h2>
             <div className="flex items-center gap-3 mb-4">
               <EmployeeAvatar
                 faceImageUrl={deleteConfirm.faceImageUrl}
@@ -1358,7 +1486,7 @@ export default function EmployeesPage() {
                 alt={`${deleteConfirm.firstName} ${deleteConfirm.lastName}`}
               />
               <p className="text-gray-600 text-sm">
-                <strong>{deleteConfirm.firstName} {deleteConfirm.lastName}</strong> adlı əməkdaşı silmək istədiyinizdən əminsiniz? Bu əməliyyat geri alına bilməz.
+                <strong>{deleteConfirm.firstName} {deleteConfirm.lastName}</strong> adlı əməkdaşı işdən çıxarmaq istədiyinizdən əminsiniz? Əməkdaş əsas siyahıdan çıxacaq və təyin olunduğu cihazlardan silinəcək. Köhnə Tabel və profil məlumatları saxlanılacaq.
               </p>
             </div>
             {deleteError && (
@@ -1377,7 +1505,7 @@ export default function EmployeesPage() {
                 disabled={deletingEmployee}
                 className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
               >
-                {deletingEmployee ? 'Silinir...' : 'Sil'}
+                {deletingEmployee ? 'İşdən çıxarılır...' : 'İşdən çıxar'}
               </button>
             </div>
           </div>

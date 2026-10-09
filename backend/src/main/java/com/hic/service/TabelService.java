@@ -19,6 +19,9 @@ import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.CellStyle;
+import org.apache.poi.ss.usermodel.Font;
+import org.apache.poi.ss.usermodel.IndexedColors;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -136,6 +139,7 @@ public class TabelService {
             row.setFin(employee.getFinNumber());
             row.setFullName(buildFullName(employee));
             row.setPosition(positionNames.getOrDefault(employee.getPositionId(), "-"));
+            row.setEmploymentStatus(employee.getEmploymentStatus());
             row.setDaily(daily);
             row.setWorkingDays(workingDays);
             row.setTotalHours(round2(totalHours));
@@ -162,6 +166,11 @@ public class TabelService {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Tabel");
             YearMonth yearMonth = YearMonth.of(year, month);
+            Font terminatedFont = workbook.createFont();
+            terminatedFont.setColor(IndexedColors.RED.getIndex());
+            terminatedFont.setBold(true);
+            CellStyle terminatedNameStyle = workbook.createCellStyle();
+            terminatedNameStyle.setFont(terminatedFont);
 
             Row titleRow = sheet.createRow(0);
             titleRow.createCell(0).setCellValue("Tabel arxivi: "
@@ -187,7 +196,11 @@ public class TabelService {
                 int dataCol = 0;
                 sheetRow.createCell(dataCol++).setCellValue(order++);
                 sheetRow.createCell(dataCol++).setCellValue(row.getFin() == null ? "-" : row.getFin());
-                sheetRow.createCell(dataCol++).setCellValue(row.getFullName());
+                var nameCell = sheetRow.createCell(dataCol++);
+                nameCell.setCellValue(row.getFullName());
+                if (Employee.EmploymentStatus.TERMINATED.equals(row.getEmploymentStatus())) {
+                    nameCell.setCellStyle(terminatedNameStyle);
+                }
                 sheetRow.createCell(dataCol++).setCellValue(row.getPosition());
 
                 for (int day = 1; day <= tabel.getDaysInMonth(); day++) {

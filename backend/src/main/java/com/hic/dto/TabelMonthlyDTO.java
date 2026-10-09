@@ -1,5 +1,6 @@
 package com.hic.dto;
 
+import com.hic.model.Employee.EmploymentStatus;
 import lombok.Data;
 
 import java.util.List;
@@ -19,6 +20,7 @@ public class TabelMonthlyDTO {
         private String fin;
         private String fullName;
         private String position;
+        private EmploymentStatus employmentStatus;
         private Map<Integer, Object> daily;
         private int workingDays;
         private double totalHours;

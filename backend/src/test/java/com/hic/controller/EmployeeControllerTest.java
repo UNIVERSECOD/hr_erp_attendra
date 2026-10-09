@@ -3,6 +3,7 @@ package com.hic.controller;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hic.dto.EmployeeDTO;
 import com.hic.dto.EmployeeResponseDTO;
+import com.hic.dto.EmployeeTerminationResultDTO;
 import com.hic.dto.PaginatedResponse;
 import com.hic.exception.ResourceNotFoundException;
 import com.hic.model.Employee.EmploymentStatus;
@@ -173,5 +174,20 @@ class EmployeeControllerTest {
                 .andExpect(status().isOk());
 
         verify(employeeService).delete(1L);
+    }
+
+    @Test
+    void terminate_existingEmployee_returnsPerDeviceResult() throws Exception {
+        EmployeeTerminationResultDTO result = new EmployeeTerminationResultDTO(
+                1L, 2, 1, 1, List.of("Çıxış terminalı: cihaz offline-dır"));
+        when(employeeService.terminate(1L)).thenReturn(result);
+
+        mockMvc.perform(post("/api/employees/1/terminate"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.employeeId").value(1))
+                .andExpect(jsonPath("$.data.removedDevices").value(1))
+                .andExpect(jsonPath("$.data.failedDevices").value(1));
+
+        verify(employeeService).terminate(1L);
     }
 }

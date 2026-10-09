@@ -70,9 +70,9 @@ function Select-BackupFolder {
     $owner = New-Object Windows.Forms.Form
     $owner.ShowInTaskbar = $false
     $owner.TopMost = $true
+    $owner.Opacity = 0
     $owner.FormBorderStyle = [Windows.Forms.FormBorderStyle]::FixedToolWindow
-    $owner.StartPosition = [Windows.Forms.FormStartPosition]::Manual
-    $owner.Location = New-Object Drawing.Point(-2000, -2000)
+    $owner.StartPosition = [Windows.Forms.FormStartPosition]::CenterScreen
     $owner.Size = New-Object Drawing.Size(1, 1)
 
     try {

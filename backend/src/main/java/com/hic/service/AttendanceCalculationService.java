@@ -104,7 +104,10 @@ public class AttendanceCalculationService {
         if (employeeId != null) {
             employees = employeeRepository.findById(employeeId).map(List::of).orElse(List.of());
         } else if (tenantId != null) {
-            employees = employeeRepository.findByTenantId(tenantId, org.springframework.data.domain.Pageable.unpaged()).getContent();
+            employees = employeeRepository.findByTenantId(tenantId, org.springframework.data.domain.Pageable.unpaged())
+                    .getContent().stream()
+                    .filter(employee -> !Employee.EmploymentStatus.TERMINATED.equals(employee.getEmploymentStatus()))
+                    .toList();
         } else {
             throw new IllegalStateException("Tenant context is required to recalculate attendance for all employees");
         }

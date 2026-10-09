@@ -13,7 +13,7 @@ import java.time.LocalDateTime;
 public class Employee {
 
     public enum EmploymentStatus {
-        ACTIVE, INACTIVE, ON_LEAVE
+        ACTIVE, INACTIVE, ON_LEAVE, TERMINATED
     }
 
     @Id

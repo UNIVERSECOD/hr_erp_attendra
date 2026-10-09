@@ -3,6 +3,8 @@ package com.hic.service;
 import com.hic.dto.EmployeeDTO;
 import com.hic.dto.EmployeeResponseDTO;
 import com.hic.dto.EmployeeSearchResultDTO;
+import com.hic.dto.EmployeeTerminationResultDTO;
+import com.hic.dto.DeviceSyncDTO;
 import com.hic.exception.BadRequestException;
 import com.hic.exception.DeviceSyncException;
 import com.hic.exception.ResourceNotFoundException;
@@ -73,6 +75,9 @@ class EmployeeServiceTest {
 
     @Mock
     private IsapiEmployeeUserSyncService isapiEmployeeUserSyncService;
+
+    @Mock
+    private DeviceSyncService deviceSyncService;
 
     @Mock
     private UserScopeService userScopeService;
@@ -417,26 +422,29 @@ class EmployeeServiceTest {
     }
 
     @Test
-    void delete_existingEmployee_deletesSuccessfully() {
+    void terminate_existingEmployee_preservesHistoryAndMarksTerminated() {
         when(employeeRepository.findById(1L)).thenReturn(Optional.of(testEmployee));
         when(employeeDeviceAccessRepository.findByEmployeeId(1L)).thenReturn(List.of());
 
-        employeeService.delete(1L);
+        EmployeeTerminationResultDTO result = employeeService.terminate(1L);
 
-        verify(employeeFaceImageService).deleteFaceImages(1L);
-        verify(employeeRepository).delete(testEmployee);
+        assertThat(result.getFailedDevices()).isZero();
+        assertThat(testEmployee.getEmploymentStatus()).isEqualTo(EmploymentStatus.TERMINATED);
+        verify(employeeRepository).saveAndFlush(testEmployee);
+        verify(employeeFaceImageService, never()).deleteFaceImages(anyLong());
+        verify(employeeRepository, never()).delete(any(Employee.class));
     }
 
     @Test
-    void delete_nonExistentEmployee_throwsResourceNotFoundException() {
+    void terminate_nonExistentEmployee_throwsResourceNotFoundException() {
         when(employeeRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> employeeService.delete(99L))
+        assertThatThrownBy(() -> employeeService.terminate(99L))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
     @Test
-    void delete_removesEmployeeFromEveryBranchDeviceBeforeLocalDelete() {
+    void terminate_removesEmployeeFromEveryVerifiedDeviceAfterLocalStatusSave() {
         testEmployee.setBranchId(1L);
         testEmployee.setDeviceEmployeeNo("1234");
         DeviceConfig firstDevice = device(10L, "101", 1L);
@@ -452,15 +460,25 @@ class EmployeeServiceTest {
                 .thenReturn(List.of(10L, 11L));
         when(deviceConfigRepository.findAllById(List.of(10L, 11L)))
                 .thenReturn(List.of(firstDevice, secondDevice));
+        when(deviceSyncService.getDeviceById(101L)).thenReturn(bridgeDevice(101L, firstDevice));
+        when(deviceSyncService.getDeviceById(102L)).thenReturn(bridgeDevice(102L, secondDevice));
+        when(deviceSyncService.getStatus(101L))
+                .thenReturn(new DeviceSyncDTO.DeviceStatusDTO(101L, true, 200, "OK"));
+        when(deviceSyncService.getStatus(102L))
+                .thenReturn(new DeviceSyncDTO.DeviceStatusDTO(102L, true, 200, "OK"));
 
-        employeeService.delete(1L);
+        EmployeeTerminationResultDTO result = employeeService.terminate(1L);
 
-        verify(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(101L, 102L));
-        verify(employeeRepository).delete(testEmployee);
+        assertThat(result.getRemovedDevices()).isEqualTo(2);
+        assertThat(result.getFailedDevices()).isZero();
+        verify(employeeRepository).saveAndFlush(testEmployee);
+        verify(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(101L));
+        verify(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(102L));
+        verify(employeeRepository, never()).delete(any(Employee.class));
     }
 
     @Test
-    void delete_deviceFailureKeepsLocalEmployee() {
+    void terminate_deviceFailureKeepsLocalTerminationAndReturnsWarning() {
         testEmployee.setBranchId(1L);
         DeviceConfig device = device(10L, "101", 1L);
 
@@ -470,20 +488,26 @@ class EmployeeServiceTest {
         when(employeeAreaAssignmentService.resolveDeviceIdsForAreas(List.of(1L), null))
                 .thenReturn(List.of(10L));
         when(deviceConfigRepository.findAllById(List.of(10L))).thenReturn(List.of(device));
-        doThrow(new DeviceSyncException("device offline"))
-                .when(isapiEmployeeUserSyncService).deleteEmployee(testEmployee, List.of(101L));
+        when(deviceSyncService.getDeviceById(101L)).thenReturn(bridgeDevice(101L, device));
+        when(deviceSyncService.getStatus(101L))
+                .thenReturn(new DeviceSyncDTO.DeviceStatusDTO(101L, false, 503, "offline"));
 
-        assertThatThrownBy(() -> employeeService.delete(1L))
-                .isInstanceOf(DeviceSyncException.class)
-                .hasMessageContaining("offline");
+        EmployeeTerminationResultDTO result = employeeService.terminate(1L);
+
+        assertThat(result.getFailedDevices()).isEqualTo(1);
+        assertThat(result.getErrors()).anyMatch(error -> error.contains("offline"));
+        assertThat(testEmployee.getEmploymentStatus()).isEqualTo(EmploymentStatus.TERMINATED);
+        verify(employeeRepository).saveAndFlush(testEmployee);
         verify(employeeRepository, never()).delete(any(Employee.class));
         verify(employeeFaceImageService, never()).deleteFaceImages(anyLong());
+        verify(isapiEmployeeUserSyncService, never()).deleteEmployee(any(), anyList());
     }
 
     @Test
     void getAll_returnsPaginatedResponse() {
         Page<Employee> page = new PageImpl<>(List.of(testEmployee));
-        when(employeeRepository.findAll(any(Pageable.class))).thenReturn(page);
+        when(employeeRepository.findByEmploymentStatusNot(eq(EmploymentStatus.TERMINATED), any(Pageable.class)))
+                .thenReturn(page);
         when(departmentRepository.findAllById(anyCollection())).thenReturn(List.of(testDepartment));
         when(positionRepository.findAllById(anyCollection())).thenReturn(Collections.emptyList());
 
@@ -496,7 +520,8 @@ class EmployeeServiceTest {
 
     @Test
     void getByDepartment_returnsBatchLoadedDTOs() {
-        when(employeeRepository.findByDepartmentId(1L)).thenReturn(List.of(testEmployee));
+        when(employeeRepository.findByDepartmentIdAndEmploymentStatusNot(
+                1L, EmploymentStatus.TERMINATED)).thenReturn(List.of(testEmployee));
         when(departmentRepository.findAllById(anyCollection())).thenReturn(List.of(testDepartment));
         when(positionRepository.findAllById(anyCollection())).thenReturn(Collections.emptyList());
 
@@ -629,5 +654,13 @@ class EmployeeServiceTest {
         device.setBranchId(branchId);
         device.setTenantId(testEmployee.getTenantId());
         return device;
+    }
+
+    private DeviceSyncDTO.DeviceConfigDTO bridgeDevice(Long id, DeviceConfig localDevice) {
+        DeviceSyncDTO.DeviceConfigDTO dto = new DeviceSyncDTO.DeviceConfigDTO();
+        dto.setId(id);
+        dto.setDeviceIp(localDevice.getDeviceIp());
+        dto.setDeviceName(localDevice.getDeviceName());
+        return dto;
     }
 }
