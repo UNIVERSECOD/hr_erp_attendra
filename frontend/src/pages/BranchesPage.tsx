@@ -160,17 +160,18 @@ export default function BranchesPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-700">{branch.isHeadOffice ? 'Bəli' : 'Xeyr'}</td>
                     <td className="px-4 py-3 text-gray-700">
-                      <button onClick={() => setDeviceArea(branch)} className="block mb-2 text-violet-700 underline">Cihazları aç</button>
+                      <button onClick={() => setDeviceArea(branch)} className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-purple-50 text-purple-700 text-xs font-medium hover:bg-purple-100 transition-colors mb-1">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17l-1 4h8l-1-4M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                        </svg>
+                        Cihazları aç{!deviceError && ` (${devices.filter(device => device.branchId === branch.id).length})`}
+                      </button>
                       {deviceError ? <span className="text-amber-700">Cihazlar yüklənmədi</span> : devices.filter((device) => device.branchId === branch.id).length === 0 ? (
                         <span className="text-gray-400">Cihaz yoxdur</span>
                       ) : (
-                        <div className="flex flex-wrap gap-1">
-                          {devices.filter((device) => device.branchId === branch.id).map((device) => (
-                            <span key={device.id} className="px-2 py-0.5 rounded bg-violet-50 text-violet-700 text-xs">
-                              {device.deviceName || device.deviceId}
-                            </span>
-                          ))}
-                        </div>
+                        <p className="text-xs text-gray-500 max-w-60 truncate" title={devices.filter(device => device.branchId === branch.id).map(device => device.deviceName || device.deviceId).join(', ')}>
+                          {devices.filter(device => device.branchId === branch.id).map(device => device.deviceName || device.deviceId).join(', ')}
+                        </p>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right space-x-2">

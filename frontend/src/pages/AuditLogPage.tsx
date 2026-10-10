@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react'
 import Layout from '../components/Layout'
+import PaginationBar from '../components/PaginationBar'
 import client from '../api/client'
 import { getApiErrorMessage } from '../utils/apiError'
 import { formatAttendanceDateTime } from '../utils/dateTime'
@@ -33,16 +34,15 @@ function Changes({ details }: { details: string }) {
   try {
     const parsed = JSON.parse(details) as { changes?: { field: string; before: string | null; after: string | null }[] }
     if (!Array.isArray(parsed.changes)) return <span>{details}</span>
-    return <details><summary className="cursor-pointer text-violet-700">{parsed.changes.length} sahə — bax</summary>
-      <dl className="mt-2 space-y-2 min-w-48">{parsed.changes.map((c, i) => <div key={i}><dt className="font-medium">{fields[c.field] || c.field}</dt><dd className="break-words text-gray-600"><span>{c.before ?? '—'}</span> → <span>{c.after ?? '—'}</span></dd></div>)}</dl></details>
+    return <details><summary className="cursor-pointer text-purple-600 font-medium hover:text-purple-700">{parsed.changes.length} sahə — bax</summary>
+      <dl className="mt-3 space-y-3 min-w-48 rounded-lg bg-gray-50 border border-gray-100 p-3">{parsed.changes.map((c, i) => <div key={i}><dt className="font-medium">{fields[c.field] || c.field}</dt><dd className="break-words text-xs text-gray-500 mt-1"><span>{c.before ?? '—'}</span> → <span>{c.after ?? '—'}</span></dd></div>)}</dl></details>
   } catch { return <span>{details}</span> }
 }
 const emptyFilters = { username: '', action: '', entityType: '', start: '', end: '' }
 export default function AuditLogPage() {
   const [draft, setDraft] = useState(emptyFilters)
-  const [query, setQuery] = useState({ ...emptyFilters, page: 0 })
+  const [query, setQuery] = useState({ ...emptyFilters, page: 0, size: 24 })
   const [rows, setRows] = useState<AuditRow[]>([])
-  const [pages, setPages] = useState(0)
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -51,7 +51,7 @@ export default function AuditLogPage() {
     setLoading(true); setError('')
     const params = Object.fromEntries(Object.entries(query).filter(([, v]) => v !== ''))
     client.get<{ data: { content: AuditRow[]; totalPages: number; totalElements: number } }>('/audit-logs', { params })
-      .then(({ data }) => { if (active) { setRows(data.data.content); setPages(data.data.totalPages); setTotal(data.data.totalElements) } })
+      .then(({ data }) => { if (active) { setRows(data.data.content); setTotal(data.data.totalElements) } })
       .catch(e => { if (active) { setRows([]); setError(getApiErrorMessage(e, 'Jurnal yüklənmədi.')) } })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -59,19 +59,63 @@ export default function AuditLogPage() {
   const submit = (e: FormEvent) => {
     e.preventDefault()
     if (draft.start && draft.end && draft.start > draft.end) { setError('Başlanğıc tarixi bitmə tarixindən sonra ola bilməz.'); return }
-    setQuery({ ...draft, page: 0 })
+    setQuery({ ...draft, page: 0, size: query.size })
   }
-  return <Layout><div className="p-4 sm:p-6 space-y-5"><div><h1 className="text-2xl font-bold">Əməliyyat jurnalı</h1><p className="text-sm text-gray-500 mt-1">Kim, nə vaxt, nəyi dəyişib. Tarix və saat Bakı vaxtı ilədir.</p><p className="text-sm text-gray-500">Jurnal aktivləşdirildikdən sonrakı saxlanılmış dəyişikliklər göstərilir. Məxfi dəyərlər saxlanılmır. Avtomatik əməliyyatlar “Sistem” kimi görünür.</p></div>
-    <form onSubmit={submit} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-6 rounded-xl border bg-white p-4">
-      <label className="text-sm">İstifadəçi adı<input placeholder="Dəqiq istifadəçi adı" className="w-full mt-1 rounded border p-2" value={draft.username} onChange={e => setDraft({ ...draft, username: e.target.value })} /></label>
-      <label className="text-sm">Əməliyyat<select className="w-full mt-1 rounded border p-2" value={draft.action} onChange={e => setDraft({ ...draft, action: e.target.value })}><option value="">Hamısı</option>{Object.entries(actions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-      <label className="text-sm">Bölmə<select className="w-full mt-1 rounded border p-2" value={draft.entityType} onChange={e => setDraft({ ...draft, entityType: e.target.value })}><option value="">Hamısı</option>{Object.entries(entities).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></label>
-      <label className="text-sm">Başlanğıc<input type="date" className="w-full mt-1 rounded border p-2" value={draft.start} onChange={e => setDraft({ ...draft, start: e.target.value })} /></label>
-      <label className="text-sm">Bitmə<input type="date" className="w-full mt-1 rounded border p-2" value={draft.end} onChange={e => setDraft({ ...draft, end: e.target.value })} /></label>
-      <button disabled={loading} className="self-end rounded bg-violet-600 text-white p-2 disabled:opacity-50">Göstər / yenilə</button>
-    </form>
-    {error && <p role="alert" className="bg-red-50 text-red-700 p-3 rounded">{error}</p>}
-    <div className="rounded-xl border bg-white overflow-x-auto"><table className="w-full text-sm"><thead className="bg-gray-50"><tr>{['Tarix / saat', 'İstifadəçi', 'Əməliyyat', 'Bölmə / qeyd', 'Dəyişiklik'].map(h => <th key={h} className="p-3 text-left">{h}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={5} className="p-6">Yüklənir...</td></tr> : rows.length ? rows.map(r => <tr key={r.id} className="border-t align-top"><td className="p-3 whitespace-nowrap">{formatAttendanceDateTime(r.createdAt)}</td><td className="p-3">{r.username}</td><td className="p-3">{actions[r.action] || r.action}</td><td className="p-3">{entities[r.entityType] || r.entityType} #{r.entityId}</td><td className="p-3"><Changes details={r.details} /></td></tr>) : <tr><td colSpan={5} className="p-6 text-gray-500">Uyğun qeyd tapılmadı.</td></tr>}</tbody></table></div>
-    <div className="flex flex-wrap justify-between items-center gap-3 text-sm"><span>{total} qeyd · Səhifə {query.page + 1} / {Math.max(1, pages)}</span><div className="flex gap-2"><button className="border rounded px-3 py-2 disabled:opacity-40" disabled={loading || query.page === 0} onClick={() => setQuery({ ...query, page: query.page - 1 })}>Əvvəlki</button><button className="border rounded px-3 py-2 disabled:opacity-40" disabled={loading || query.page + 1 >= pages} onClick={() => setQuery({ ...query, page: query.page + 1 })}>Növbəti</button></div></div>
-  </div></Layout>
+  const inputClass = 'w-full min-w-0 mt-1.5 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-purple-500'
+  return (
+    <Layout>
+      <div className="p-4 sm:p-8 bg-slate-50 min-h-screen">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Əməliyyat jurnalı</h1>
+          <p className="text-sm text-gray-500 mt-1">İstifadəçilərin etdiyi dəyişikliklər və əməliyyat tarixçəsi</p>
+        </div>
+        <form onSubmit={submit} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 items-end bg-white rounded-xl shadow-sm p-5 mb-6">
+          <label className="text-xs font-medium text-gray-500 min-w-0">İstifadəçi adı
+            <input placeholder="Dəqiq istifadəçi adı" className={inputClass} value={draft.username} onChange={e => setDraft({ ...draft, username: e.target.value })} />
+          </label>
+          <label className="text-xs font-medium text-gray-500 min-w-0">Əməliyyat
+            <select className={inputClass} value={draft.action} onChange={e => setDraft({ ...draft, action: e.target.value })}><option value="">Hamısı</option>{Object.entries(actions).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          </label>
+          <label className="text-xs font-medium text-gray-500 min-w-0">Bölmə
+            <select className={inputClass} value={draft.entityType} onChange={e => setDraft({ ...draft, entityType: e.target.value })}><option value="">Hamısı</option>{Object.entries(entities).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>
+          </label>
+          <label className="text-xs font-medium text-gray-500 min-w-0">Başlanğıc
+            <input type="date" className={inputClass} value={draft.start} onChange={e => setDraft({ ...draft, start: e.target.value })} />
+          </label>
+          <label className="text-xs font-medium text-gray-500 min-w-0">Bitmə
+            <input type="date" className={inputClass} value={draft.end} onChange={e => setDraft({ ...draft, end: e.target.value })} />
+          </label>
+          <button disabled={loading} className="flex items-center justify-center gap-2 px-5 py-2.5 text-sm font-medium text-white bg-purple-500 rounded-lg hover:bg-purple-600 disabled:opacity-50 transition-colors">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+            {loading ? 'Yüklənir...' : 'Göstər / yenilə'}
+          </button>
+        </form>
+        {error && <p role="alert" className="mb-4 px-4 py-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">{error}</p>}
+        <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+          <div className="flex flex-wrap items-center justify-between gap-2 px-5 py-4 border-b border-gray-100">
+            <h2 className="text-sm font-semibold text-gray-900">Dəyişikliklər <span className="ml-2 px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-xs">{total}</span></h2>
+            <span className="text-xs text-gray-400">Bakı vaxtı ilə</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 text-gray-500"><tr>{['Tarix / saat', 'İstifadəçi', 'Əməliyyat', 'Bölmə / qeyd', 'Dəyişiklik'].map(h => <th key={h} className="px-5 py-3 text-left text-xs font-medium whitespace-nowrap">{h}</th>)}</tr></thead>
+              <tbody>
+                {loading ? <tr><td colSpan={5} className="p-10 text-center text-gray-400">Yüklənir...</td></tr> : rows.length ? rows.map(r => (
+                  <tr key={r.id} className="border-t border-gray-100 align-top hover:bg-gray-50 transition-colors">
+                    <td className="px-5 py-3 whitespace-nowrap text-gray-500">{formatAttendanceDateTime(r.createdAt)}</td>
+                    <td className="px-5 py-3 font-medium text-gray-900">{r.username}</td>
+                    <td className="px-5 py-3"><span className={`inline-block whitespace-nowrap px-2 py-0.5 rounded-full text-xs font-medium ${r.action === 'CREATE' ? 'bg-emerald-100 text-emerald-800' : r.action === 'DELETE' ? 'bg-red-100 text-red-800' : 'bg-purple-100 text-purple-700'}`}>{actions[r.action] || r.action}</span></td>
+                    <td className="px-5 py-3 text-gray-700">{entities[r.entityType] || r.entityType} <span className="text-gray-400">#{r.entityId}</span></td>
+                    <td className="px-5 py-3"><Changes details={r.details} /></td>
+                  </tr>
+                )) : <tr><td colSpan={5} className="p-10 text-center text-gray-400">Uyğun qeyd tapılmadı.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+          <PaginationBar page={query.page} pageSize={query.size} totalItems={total} loading={loading} idPrefix="audit-log" onPageChange={page => setQuery({ ...query, page })} onPageSizeChange={size => setQuery({ ...query, size, page: 0 })} />
+        </div>
+        <p className="text-xs text-gray-400 mt-4">Jurnal aktivləşdirildikdən sonrakı dəyişikliklər göstərilir. Məxfi dəyərlər saxlanılmır. Avtomatik əməliyyatlar “Sistem” kimi görünür.</p>
+      </div>
+    </Layout>
+  )
 }
