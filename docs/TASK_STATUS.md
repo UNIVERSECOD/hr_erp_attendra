@@ -1,6 +1,6 @@
 # Attendra task ledger / AI handoff
 
-Reviewed: 2026-10-09. Source baseline: `b8a389d` on `main`.
+Reviewed: 2026-10-10. Latest delivered source baseline: `201023b` on `main`; older verification entries below retain their original commit context.
 
 Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and current source before editing; this is a handoff, not permission to implement the whole backlog. The user requested grouped tasks, then confirmation and one-at-a-time implementation. Current delivery expectation: verified changes pushed to `main`, author `UNIVERSECOD <leylaha@code.edu.az>`.
 
@@ -41,6 +41,19 @@ Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and cur
 - For design details and recovery behavior, read [EMPLOYEE_TERMINATION_JOBS.md](EMPLOYEE_TERMINATION_JOBS.md). No standalone job-management screen or automatic identity-remapping tool has been delivered.
 
 ## 2. Remaining user tasks, proposed order
+
+### Current planning decisions — 2026-10-10
+
+These items are planned, not implemented. The user requested planning first; do not treat this ledger as authorization to implement the entire backlog.
+
+1. **Standard attendance and delayed device events:** the user defines standard attendance as the day's first ENTRY-device punch and last EXIT-device punch across the area's devices, with schedule rules applied. Entry and exit terminals are separate. Match by employee and event timestamp, not ingestion time; a newer open entry must not prevent older events from updating the correct work date. Audit found an older day's events can be skipped when a newer open entry exists. Fix and verify replay, out-of-order arrival, multiple gates, missing exits, and preservation of manual corrections.
+2. **Area/device UI integration:** reuse the existing `DeviceConfig.branchId` relationship and existing device-name chips in `BranchesPage`. The user confirmed 4–6 devices are at main entrances/exits, not internal rooms. Plan an area detail device list with name, IP, ENTRY/EXIT role, online/offline state, and last successful sync; allow area/device management while preserving employee assignments. Preserve historical report area attribution when moving devices, since current reports resolve areas from current device configuration.
+3. **Offline-device warnings:** proposed toast on connection loss and every 30 minutes while the application is open and the issue continues; group multiple offline devices to avoid floods. Show recovery separately from successful attendance catch-up. Online status alone does not prove all punches have been ingested. No monitoring/toast implementation has been delivered.
+4. **Deferred explicitly by the user: midnight allocation in flexible attendance/Tabel.** Remember for later; do not change now. Current behavior assigns the entire closed interval to its check-in date: 9 October 20:00 → 10 October 02:00 gives 6 hours on 9 October and no hours from that interval on 10 October. Desired future daily allocation is 4 hours on 9 October plus 2 on 10 October, summing all completed interval portions per calendar day. Frontend session/report display remains one complete interval, 20:00–02:00, 6 hours, with entry/exit dates; do not split that display into two rows or double-count. Flexible attendance is based on actual entry/exit intervals, not fixed timetable bounds; a checkout is required before counting that interval. Cover month boundaries and recalculate every affected date when implementing later.
+
+Planning audit evidence: 38 focused backend tests passed. A disposable PostgreSQL/backend Docker fixture with a local bridge simulator ran 18 checks: 16 passed, two exposed the same delayed-event recovery defect. Four/six-device cross-gate pairing, pagination, standard/flexible totals, duplicate replay, overnight session display/basis, area-filtered Tabel and Excel passed under **current** semantics. The overnight tests credited the whole interval to the entry day; they do not validate the desired future midnight split. No real device was contacted. A later attempt to rerun the exact delayed-exit-only variant was blocked because Docker was stopped; that variant was inspected in source, not successfully rerun. Audit scripts/results are local ignored files under `build/audit/`.
+
+Previously deferred items remain deferred: physical-device acceptance, user/permission issues and audit journal, and the MCG version (last). Previously delivered filtering, backup and employee tasks below remain complete.
 
 ### A. Tabel department/position filtering — completed
 
