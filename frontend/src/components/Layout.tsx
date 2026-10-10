@@ -144,6 +144,12 @@ const navItems: NavItem[] = [
     ),
   },
   {
+    path: '/audit-logs',
+    labelKey: 'layout.navAuditLogs',
+    headOfficeOnly: true,
+    icon: <span className="text-lg">≡</span>,
+  },
+  {
     path: '/settings',
     labelKey: 'layout.navSettings',
     icon: (

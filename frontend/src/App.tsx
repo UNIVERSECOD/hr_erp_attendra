@@ -4,6 +4,7 @@ import { useAuthStore } from './store/authStore.ts'
 import { t } from './i18n/index.ts'
 import AttendraBrand from './components/AttendraBrand.tsx'
 import ToastViewport from './components/ToastViewport.tsx'
+import DeviceHealthMonitor from './components/DeviceHealthMonitor.tsx'
 import { toast } from './store/toastStore.ts'
 import { getSessionTimerDelay, hasUsableAccessToken } from './utils/jwt.ts'
 
@@ -25,6 +26,7 @@ const AccessLogsPage = lazy(() => import('./pages/AccessLogsPage.tsx'))
 const DeviceLogSearchPage = lazy(() => import('./pages/DeviceLogSearchPage.tsx'))
 const DeviceEmployeeImportPage = lazy(() => import('./pages/DeviceEmployeeImportPage.tsx'))
 const SettingsPage = lazy(() => import('./pages/SettingsPage.tsx'))
+const AuditLogPage = lazy(() => import('./pages/AuditLogPage.tsx'))
 
 const HR_ROLES = ['HEAD_OFFICE_HR', 'OFFICE_HR', 'DEPARTMENT_HR']
 
@@ -111,6 +113,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <SessionExpiryGuard />
+      <DeviceHealthMonitor />
       <ToastViewport />
       <Suspense
         fallback={
@@ -128,6 +131,7 @@ export default function App() {
           <Route path="/" element={<ProtectedRoute><AppLayout><DashboardPage /></AppLayout></ProtectedRoute>} />
           <Route path="/employees" element={<HrRoute><AppLayout><EmployeesPage /></AppLayout></HrRoute>} />
           <Route path="/branches" element={<HrRoute><AppLayout><BranchesPage /></AppLayout></HrRoute>} />
+          <Route path="/audit-logs" element={<HeadOfficeHrRoute><AppLayout><AuditLogPage /></AppLayout></HeadOfficeHrRoute>} />
           <Route path="/departments" element={<HrRoute><AppLayout><DepartmentsPage /></AppLayout></HrRoute>} />
           <Route path="/positions" element={<HrRoute><AppLayout><PositionsPage /></AppLayout></HrRoute>} />
           <Route path="/attendance" element={<HrRoute><AppLayout><AttendancePage /></AppLayout></HrRoute>} />

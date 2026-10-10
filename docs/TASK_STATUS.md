@@ -2,9 +2,11 @@
 
 Reviewed: 2026-10-10. Latest delivered source baseline: `201023b` on `main`; older verification entries below retain their original commit context.
 
-Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and current source before editing; this is a handoff, not permission to implement the whole backlog. The user requested grouped tasks, then confirmation and one-at-a-time implementation. Current delivery expectation: verified changes pushed to `main`, author `UNIVERSECOD <leylaha@code.edu.az>`.
+Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and current source before editing; this is a handoff, not permission to implement the whole backlog. **Latest user direction (2026-10-10): implement selected tasks 2, 3, 4 and 7 on a separate branch, not main.** This work belongs to `codex/area-device-audit`; do not merge or deploy it over the customer's installation before the user accepts it. Commit author remains `UNIVERSECOD <leylaha@code.edu.az>`.
 
 ## 1. Completed in source
+
+- 2026-10-10 selected tasks 2, 3, 4 and 7 implemented on **`codex/area-device-audit` only**. Area device panel shows device direction, connection state and last sync, supports local area assignment/move/detach, preserves manual assignments and reconciles area assignments. Global authenticated HR monitoring groups offline warnings and repeats after 30 minutes while the page is active; recovery and unknown bridge state are separate. V039 freezes attendance area ID/name for existing and new sessions so later device moves/area renames do not rewrite report/Excel area attribution. A tenant-scoped head-office-only operation journal captures database entity changes with actor, time, entity, and safe before/after fields; secrets and private contact/biometric values are omitted or marked changed. Backup settings have a separate safe summary record. See [AREA_DEVICES_AND_AUDIT.md](AREA_DEVICES_AND_AUDIT.md) for coverage and boundaries. Verification: 313 backend tests/package; frontend lint/build and four reminder-policy tests; separate frontend/backend Docker image builds; Compose config; 23 disposable Docker API checks; old-schema snapshot migration checks; browser area move, journal filtering/diff, offline/recovery toasts, edit deep-link and 390px layout. No physical device write or customer DB migration. Delayed attendance pairing, midnight Tabel allocation, broader user/permission fixes and MCG remain deferred.
 
 - 2026-10-09 follow-up tasks 1, 3 and 4 completed on this Windows installation (physical-device checks and MCG excluded by the user). Tabel now exposes the existing position filter; changing area clears department/position, changing department clears position, and table/export share one filter object. Stale requests cannot overwrite newer results. Table/export failures and export success show Azerbaijani toasts. The archive stacks above Tabel on narrow screens so filters stay accessible. Frontend lint/build passed; browser checks against disposable Docker fixtures covered combined filters, dependent resets, empty results, matching downloaded Excel (AUD0002, 16 hours), terminated-name styling, disabled deletion, successful termination, simulated offline-device warning and automatic removal of the pending badge after a simulated completion. Error toasts were verified with a fixture-only 503 response; 390px filter bounds were checked. These were not physical-device tests.
 - 2026-10-09 local backup acceptance completed: fixed parameterless script startup on Windows PowerShell 5.1 by resolving ProjectRoot after parameter binding; installer uses current-user Limited tasks unless already elevated and hides the backup console. 70 mock assertions passed on both PowerShell 5.1 and 7. On this host, configured the default C:\\AttendraBackups\\daily destination, created a real backup, restored both databases into a network-isolated disposable PostgreSQL container, and matched aggregate row counts for all 33 backend and 7 ISAPI tables. Configuration-copy hash and reported backup size matched. Both Windows tasks were registered; manual scheduler execution returned 0 and skipped the already completed daily copy; the folder picker task is running and returned the selected path successfully. Triggers were verified for logon + 3 minutes and daily 04:00; a future logon/04:00 execution was not observed. Backup directory access is limited to the current user, SYSTEM and Administrators. No restore was performed over customer databases.
@@ -44,7 +46,7 @@ Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and cur
 
 ### Current planning decisions — 2026-10-10
 
-These items are planned, not implemented. The user requested planning first; do not treat this ledger as authorization to implement the entire backlog.
+The following records the original planning decisions. The selected area/device, warning, history and journal work was subsequently implemented on the review branch described above. Delayed attendance pairing and midnight allocation remain unimplemented.
 
 1. **Standard attendance and delayed device events:** the user defines standard attendance as the day's first ENTRY-device punch and last EXIT-device punch across the area's devices, with schedule rules applied. Entry and exit terminals are separate. Match by employee and event timestamp, not ingestion time; a newer open entry must not prevent older events from updating the correct work date. Audit found an older day's events can be skipped when a newer open entry exists. Fix and verify replay, out-of-order arrival, multiple gates, missing exits, and preservation of manual corrections.
 2. **Area/device UI integration:** reuse the existing `DeviceConfig.branchId` relationship and existing device-name chips in `BranchesPage`. The user confirmed 4–6 devices are at main entrances/exits, not internal rooms. Plan an area detail device list with name, IP, ENTRY/EXIT role, online/offline state, and last successful sync; allow area/device management while preserving employee assignments. Preserve historical report area attribution when moving devices, since current reports resolve areas from current device configuration.
@@ -59,21 +61,13 @@ Previously deferred items remain deferred: physical-device acceptance, user/perm
 
 `TabelPage.tsx` now provides area, department and position choices with dependent resets, a shared table/export filter object and narrow-screen layout. Existing backend filters and historical totals/red terminated names are preserved. User/role scope is a separate deferred item, not a completed part of this filter feature.
 
-### B. User operation log / audit journal — foundation only
+### B. User operation log / audit journal — implemented on review branch
 
-Deferred by the user together with user/permission work; do not begin without a new request.
+The user explicitly selected this task on 2026-10-10, limited to showing who changed what. It is implemented on `codex/area-device-audit`; broader user/permission work remains deferred. The foundation assessment and initial requirements below are historical; use [AREA_DEVICES_AND_AUDIT.md](AREA_DEVICES_AND_AUDIT.md) for current coverage.
 
 User request: show which user performed which operation in the program.
 
-Current evidence: `AuditLog` entity, `AuditLogRepository`, `AuditLogService` and a settings label exist. At review, source search found no service callers recording operations and no dedicated audit journal controller/page. Do not present this as a completed logging feature.
-
-Remaining work after confirmation:
-
-1. Agree role visibility, operations covered, retention, and whether failures/read-only actions are logged.
-2. Record authenticated actor, tenant, action, entity reference, timestamp (`Asia/Baku` display), outcome and safe description. Cover employee create/edit/termination, device sync/retry, schedules, permissions, backup settings and other agreed mutations.
-3. Add tenant-scoped paginated read API and journal UI with user/action/date filters and useful empty/error states.
-4. Distinguish the user who requested termination from the background worker that later completed cleanup; do not fabricate an interactive user for scheduled work.
-5. Never record passwords, tokens, `.env` contents, biometric image bytes or unnecessary personal data. Test tenant isolation and failed-operation handling.
+Delivered: head-office-only journal UI/API, tenant-scoped pagination and filters, authenticated actor and safe field changes, transactional database recording, and separate system-worker identity. No historic user actions can be reconstructed. Read-only requests, rejected operations and direct SQL are outside the journal's scope. There is no automatic retention deletion. Broad permission defects documented elsewhere remain unresolved.
 
 ### C. Attendra MCG version — explicitly LAST, not implemented
 

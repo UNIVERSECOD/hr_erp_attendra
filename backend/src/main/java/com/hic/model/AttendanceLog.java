@@ -29,6 +29,15 @@ public class AttendanceLog {
     @Column(name = "device_id")
     private String deviceId;
 
+    @Column(name = "area_snapshot_id", insertable = false, updatable = false)
+    private Long areaSnapshotId;
+
+    @Column(name = "area_snapshot_name", insertable = false, updatable = false)
+    private String areaSnapshotName;
+
+    @Column(name = "area_snapshot_captured", insertable = false, updatable = false)
+    private Boolean areaSnapshotCaptured;
+
     @Column(name = "door_id")
     private String doorId;
 

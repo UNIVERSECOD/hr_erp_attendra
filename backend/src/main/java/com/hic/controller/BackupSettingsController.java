@@ -21,6 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class BackupSettingsController {
 
     private final BackupSettingsService backupSettingsService;
+    private final com.hic.service.AuditLogService auditLogService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<BackupSettingsResponse>> getSettings() {
@@ -30,8 +31,9 @@ public class BackupSettingsController {
     @PutMapping
     public ResponseEntity<ApiResponse<BackupSettingsResponse>> updateSettings(
             @Valid @RequestBody UpdateBackupSettingsRequest request) {
-        return ResponseEntity.ok(ApiResponse.success(
-                "Backup parametrləri yadda saxlanıldı",
-                backupSettingsService.updateSettings(request.enabled(), request.folderPath())));
+        var result = backupSettingsService.updateSettings(request.enabled(), request.folderPath());
+        auditLogService.log("UPDATE", "BackupSettings", "host",
+                "Backup parametrləri dəyişdirildi. Aktiv: " + request.enabled());
+        return ResponseEntity.ok(ApiResponse.success("Backup parametrləri yadda saxlanıldı", result));
     }
 }

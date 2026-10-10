@@ -423,6 +423,9 @@ public class AttendanceReportService {
             Map<String, String> areaNamesByDeviceIdentifier,
             String fallback
     ) {
+        if (log != null && Boolean.TRUE.equals(log.getAreaSnapshotCaptured())) {
+            return log.getAreaSnapshotName() != null ? log.getAreaSnapshotName() : "Ərazi məlum deyil";
+        }
         if (log != null && log.getDeviceId() != null && !log.getDeviceId().isBlank()) {
             String areaName = areaNamesByDeviceIdentifier.get(log.getDeviceId().trim());
             if (areaName != null && !areaName.isBlank()) {

@@ -510,6 +510,24 @@ class AttendanceReportServiceTest {
         assertThat(nonMatching.getContent()).isEmpty();
     }
 
+    @Test
+    void reportKeepsSnapshotAfterDeviceMovedOrDeleted() {
+        LocalDate day = LocalDate.of(2026, 10, 1);
+        Employee employee = employee(1L, "EMP-1", "Test", "Employee", 10L, "FLEXIBLE");
+        AttendanceLog attendance = log(1L, day.atTime(9, 0), day.atTime(18, 0));
+        attendance.setAreaSnapshotCaptured(true);
+        attendance.setAreaSnapshotName("Əvvəlki ərazi");
+        attendance.setDeviceId("900");
+        Timetable timetable = new Timetable(); timetable.setId(10L); timetable.setShiftType("FLEXIBLE");
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any())).thenReturn(List.of(attendance));
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee));
+        when(timetableRepository.findAllById(any())).thenReturn(List.of(timetable));
+        when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of());
+        var rows = attendanceReportService.getReport(day, day, "", null, null, null, null, null, "Əvvəlki ərazi", 0, 50);
+        assertThat(rows.getContent()).hasSize(1);
+        assertThat(rows.getContent().get(0).getArea()).isEqualTo("Əvvəlki ərazi");
+    }
+
     private static Employee employee(Long id, String code, String first, String last, Long timetableId, String shiftType) {
         Employee employee = new Employee();
         employee.setId(id);

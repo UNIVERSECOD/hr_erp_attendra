@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout.tsx'
 import { useDeviceStore } from '../store/deviceStore.ts'
 import { DeviceConfig, Branch, Door, DeviceEmployeeAssignmentView } from '../types'
@@ -32,6 +33,8 @@ const defaultForm: DeviceFormData = {
 }
 
 export default function DevicesPage() {
+  const [searchParams] = useSearchParams()
+  const linkOpened = useRef(false)
   const { devices, loading, error, fetchDevices, syncDevice, createDevice, updateDevice, deleteDevice } = useDeviceStore()
   const [branches, setBranches] = useState<Branch[]>([])
   const [showModal, setShowModal] = useState(false)
@@ -142,6 +145,17 @@ export default function DevicesPage() {
     setShowModal(true)
   }
 
+  useEffect(() => {
+    if (linkOpened.current) return
+    const deviceId = Number(searchParams.get('device'))
+    const areaId = Number(searchParams.get('area'))
+    const device = devices.find(d => d.id === deviceId)
+    if (device) { linkOpened.current = true; openEdit(device) }
+    else if (areaId > 0) { linkOpened.current = true; openCreate(); setForm({ ...defaultForm, branchId: areaId }); void loadDoors(areaId) }
+    // Open a deep link once, after the existing device list arrives.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [devices, searchParams])
+
   const handleSave = async () => {
     if (!form.deviceIp.trim()) { setFormError('Cihaz IP-si tələb olunur.'); return }
     if (!form.username.trim()) { setFormError('İstifadəçi adı tələb olunur.'); return }
@@ -156,7 +170,8 @@ export default function DevicesPage() {
       const payload = {
         ...form,
         devicePort: form.devicePort ? Number(form.devicePort) : 80,
-        branchId: form.branchId ? Number(form.branchId) : undefined,
+        // Area membership is saved through the local endpoint shared with the area panel.
+        branchId: undefined,
       }
       let deviceId = editingDevice?.id
       if (editingDevice) {
@@ -166,6 +181,10 @@ export default function DevicesPage() {
         const createRes = await deviceApi.create(payload)
         const created = Array.isArray(createRes.data) ? createRes.data[0] : createRes.data?.data ?? createRes.data
         deviceId = typeof created?.id === 'number' ? created.id : undefined
+      }
+
+      if (deviceId) {
+        await deviceApi.assignArea(deviceId, form.branchId ? Number(form.branchId) : null)
       }
 
       // Door and Role assignment

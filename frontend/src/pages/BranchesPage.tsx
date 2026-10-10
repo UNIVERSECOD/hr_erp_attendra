@@ -4,6 +4,7 @@ import { Branch, DeviceConfig } from '../types'
 import { useBranchStore } from '../store/branchStore.ts'
 import { deviceApi } from '../api/deviceApi.ts'
 import { toast } from '../store/toastStore.ts'
+import AreaDevicesPanel from '../components/AreaDevicesPanel'
 
 interface BranchFormData {
   name: string
@@ -29,13 +30,16 @@ export default function BranchesPage() {
   const [formError, setFormError] = useState<string | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Branch | null>(null)
   const [devices, setDevices] = useState<DeviceConfig[]>([])
+  const [deviceArea, setDeviceArea] = useState<Branch | null>(null)
+  const [deviceError, setDeviceError] = useState(false)
+  const [deviceRevision, setDeviceRevision] = useState(0)
 
   useEffect(() => {
     fetchBranches()
     deviceApi.getAll()
-      .then((response) => setDevices(response.data?.data ?? []))
-      .catch(() => setDevices([]))
-  }, [fetchBranches])
+      .then((response) => { setDevices(response.data?.data ?? []); setDeviceError(false) })
+      .catch(() => setDeviceError(true))
+  }, [fetchBranches, deviceRevision])
 
   const sortedBranches = useMemo(
     () => [...branches].sort((a, b) => a.name.localeCompare(b.name, 'az')),
@@ -156,7 +160,8 @@ export default function BranchesPage() {
                     </td>
                     <td className="px-4 py-3 text-gray-700">{branch.isHeadOffice ? 'Bəli' : 'Xeyr'}</td>
                     <td className="px-4 py-3 text-gray-700">
-                      {devices.filter((device) => device.branchId === branch.id).length === 0 ? (
+                      <button onClick={() => setDeviceArea(branch)} className="block mb-2 text-violet-700 underline">Cihazları aç</button>
+                      {deviceError ? <span className="text-amber-700">Cihazlar yüklənmədi</span> : devices.filter((device) => device.branchId === branch.id).length === 0 ? (
                         <span className="text-gray-400">Cihaz yoxdur</span>
                       ) : (
                         <div className="flex flex-wrap gap-1">
@@ -180,6 +185,7 @@ export default function BranchesPage() {
         </div>
       </div>
 
+      {deviceArea && <AreaDevicesPanel area={deviceArea} branches={branches} onClose={() => { setDeviceArea(null); setDeviceRevision(n => n + 1) }} />}
       {openModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <form onSubmit={handleSubmit} className="w-full max-w-lg bg-white rounded-xl p-6 shadow-lg space-y-4">

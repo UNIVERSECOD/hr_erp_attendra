@@ -72,6 +72,7 @@ export const az = {
     navDeviceSearch: 'Cihaz axtarışı',
     navAccessLogs: 'Keçid jurnalı',
     navSettings: 'Parametrlər',
+    navAuditLogs: 'Əməliyyat jurnalı',
   },
   login: {
     subtitle: 'Davamlı qeydiyyat, dəqiq hesabat',

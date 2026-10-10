@@ -46,6 +46,9 @@ class BackupSettingsControllerTest {
     @MockBean
     private BackupSettingsService backupSettingsService;
 
+    @MockBean
+    private com.hic.service.AuditLogService auditLogService;
+
     @Test
     void getSettings_returnsStorageInformation() throws Exception {
         when(backupSettingsService.getSettings()).thenReturn(response());

@@ -5,7 +5,6 @@ import com.hic.repository.AuditLogRepository;
 import com.hic.util.TenantContext;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 @Slf4j
@@ -15,7 +14,6 @@ public class AuditLogService {
 
     private final AuditLogRepository auditLogRepository;
 
-    @Async
     public void log(String action, String entityType, String entityId, String details, String ipAddress) {
         try {
             AuditLog auditLog = new AuditLog();
@@ -33,7 +31,6 @@ public class AuditLogService {
         }
     }
 
-    @Async
     public void log(String action, String entityType, String entityId, String details) {
         log(action, entityType, entityId, details, null);
     }

@@ -18,6 +18,8 @@ const toIsapiUpsertPayload = (data: DeviceWritePayload) => ({
 })
 
 export const deviceApi = {
+  getHealth: () => client.get<{ data: { available: boolean; devices: DeviceConfig[] } }>('/devices/health-overview'),
+  assignArea: (id: number, branchId: number | null) => client.put<{ data: DeviceConfig }>(`/devices/${id}/area`, { branchId }),
   getAll: () => client.get<{ data: DeviceConfig[] }>('/devices'),
   create: (data: DeviceWritePayload) => client.post<{ data: DeviceConfig }>('/devices', toIsapiUpsertPayload(data)),
   update: (id: number, data: DeviceWritePayload) => client.put<{ data: DeviceConfig }>(`/devices/${id}`, toIsapiUpsertPayload(data)),
