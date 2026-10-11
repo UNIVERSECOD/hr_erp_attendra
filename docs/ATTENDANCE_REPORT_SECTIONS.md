@@ -14,6 +14,14 @@ Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user 
 
 ## Calculation and history
 
+### Duration and overtime display (2026-10-11)
+
+- Reports and matching Excel exports display work, overtime, lateness, early departure and permission durations as `8 saat 30 dəqiqə`; totals above 24 hours do not wrap. API values remain numeric minutes.
+- `overtimeMinutes` is a nullable report field: actual counted daily work (excluding credited permission) above that day's schedule norm, clamped at zero. Existing standard first-entry/last-exit, break and flexible interval calculations are retained. Rest-day counted work is overtime; flexible or unconfigured working-day schedules have no norm and show `—`. The existing stored attendance-record calculation is unchanged.
+- Monthly/yearly overtime sums each day's positive excess, so short or absent days do not cancel overtime. A period containing only days without a norm stays `—`; mixed periods sum applicable days.
+- Details show the daily overtime total only on the last completed visit, chosen before area/timetable filtering and pagination. Other visits show `—`; filtering out that visit does not move the total to another area. This is a daily total, not per-area overtime allocation. An open visit adds no fabricated working time.
+- Verification: 58 focused and 365 total backend tests/package, frontend lint/build, Docker builds, four synthetic report API views and browser rendering/Excel download. Deployed on main after backup with employee/settings/device-mapping/photo preservation checks. No migration, recalculation or physical-device writes.
+
 ### Dashboard day overview (2026-10-11)
 
 `GET /api/dashboard/attendance-overview` is a tenant- and existing primary-area-scope-aware, read-only endpoint. The compact dashboard panel replaces the former three large cards while retaining the overall employee count. It shows six independent distinct-employee counts: attended during today, absent after scheduled start, late, early departure, approved/active permission for today (hourly included), and approved leave covering today. The shared attendance calculator and request-local schedule resolver provide tolerances, permissions and daily statuses. Inactive/terminated staff and future hires are excluded from these six counts.

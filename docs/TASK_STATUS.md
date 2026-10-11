@@ -1,5 +1,7 @@
 # Attendra task ledger / AI handoff
 
+- 2026-10-11 report duration/overtime follow-up: all report views and Excel display explicit hours/minutes and an `Əlavə iş vaxtı` column. Daily overtime uses actual counted work above the day's norm; monthly/yearly totals sum positive daily excess. Flexible schedules show no overtime norm. Details display the daily total once on the last completed visit, before filtering/pagination. 58 focused / 365 total backend tests, frontend lint/build, Docker builds, four synthetic API views and browser Excel download passed. Main deployed after backup; HR/settings/device mappings/photos preserved. No schema/device changes. See `ATTENDANCE_REPORT_SECTIONS.md` for semantics.
+
 Reviewed: 2026-10-11. User accepted `codex/attendance-report-sections` through `6ac1a7c` for main delivery and Docker deployment. Older verification entries below retain their original commit context.
 
 Read `AGENTS.md` and `CODEX_HANDOFF.md` first. Verify Git status/history and current source before editing; this is a handoff, not permission to implement the whole backlog. **Latest user direction (2026-10-11): merge `codex/attendance-report-sections` into `main` and build/deploy the main Docker application.** Commit author remains `UNIVERSECOD <leylaha@code.edu.az>`.

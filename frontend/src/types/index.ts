@@ -441,6 +441,7 @@ export interface AttendanceOverviewFilters {
 }
 
 export interface AttendanceOverviewRow extends Omit<AttendanceReportRow, 'status'> {
+  overtimeMinutes?: number | null
   period?: string
   periodStart?: string
   periodEnd?: string

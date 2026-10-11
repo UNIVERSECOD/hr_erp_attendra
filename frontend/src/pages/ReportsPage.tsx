@@ -27,9 +27,9 @@ const statusOptions = ['LATE', 'EARLY_LEAVE', 'LATE_AND_EARLY', 'PRESENT', 'ABSE
 const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400'
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
 
-function duration(minutes?: number) {
+function duration(minutes?: number | null) {
   if (minutes == null) return '—'
-  return `${Math.floor(minutes / 60).toString().padStart(2, '0')}:${(minutes % 60).toString().padStart(2, '0')}`
+  return `${Math.floor(minutes / 60)} saat ${minutes % 60} dəqiqə`
 }
 function statusClass(status: string) {
   if (status === 'LATE') return 'bg-amber-50 text-amber-800'
@@ -106,10 +106,11 @@ export default function ReportsPage() {
         ? formatAttendanceTime(r.checkOutTime) : formatAttendanceDateTime(r.checkOutTime) },
     ] : []),
     { label: 'İş müddəti', cell: r => <span className="font-semibold text-gray-900">{duration(r.workedMinutes)}</span> },
+    { label: 'Əlavə iş vaxtı', cell: r => <span className={r.overtimeMinutes ? 'font-semibold text-purple-700' : ''}>{duration(r.overtimeMinutes)}</span> },
     ...(!detail ? [
-      { label: 'Gecikmə (dəq)', cell: (r: AttendanceOverviewRow) => <span className={r.lateMinutes > 0 ? 'font-semibold text-amber-700' : ''}>{r.lateMinutes}</span> },
-      { label: 'Erkən çıxış (dəq)', cell: (r: AttendanceOverviewRow) => <span className={r.earlyLeaveMinutes > 0 ? 'font-semibold text-orange-700' : ''}>{r.earlyLeaveMinutes}</span> },
-      { label: 'İcazə (dəq)', cell: (r: AttendanceOverviewRow) => r.permissionMinutes },
+      { label: 'Gecikmə', cell: (r: AttendanceOverviewRow) => <span className={r.lateMinutes > 0 ? 'font-semibold text-amber-700' : ''}>{duration(r.lateMinutes)}</span> },
+      { label: 'Erkən çıxış', cell: (r: AttendanceOverviewRow) => <span className={r.earlyLeaveMinutes > 0 ? 'font-semibold text-orange-700' : ''}>{duration(r.earlyLeaveMinutes)}</span> },
+      { label: 'İcazə', cell: (r: AttendanceOverviewRow) => duration(r.permissionMinutes) },
     ] : [{ label: 'Tanıma metodu', cell: (r: AttendanceOverviewRow) => r.verificationMethod ?? '—' }]),
     ...(aggregate ? [
       { label: 'Gəldiyi gün', cell: (r: AttendanceOverviewRow) => r.attendedDays },
@@ -131,7 +132,9 @@ export default function ReportsPage() {
     <div className="p-4 sm:p-8 space-y-5 bg-gray-50 min-h-screen">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-gray-900">Davamiyyət hesabatları</h1>
-          <p className="mt-1 text-sm text-gray-500 max-w-3xl">{sections.find(s => s.value === filters.view)?.description}</p></div>
+          <p className="mt-1 text-sm text-gray-500 max-w-3xl">{sections.find(s => s.value === filters.view)?.description}</p>
+          <p className="mt-1 text-xs text-gray-500 max-w-3xl">Əlavə iş vaxtı gündəlik qrafik normasından artıq işlənən müddətdir. Sərbəst qrafikdə norma olmadığı üçün hesablanmır.
+            {detail && ' Günlük əlavə iş vaxtı yalnız günün son tamamlanmış giriş–çıxış sətrində göstərilir.'}</p></div>
         <div className="flex gap-2">
           <button className={actionClass} onClick={() => void fetchReport()} disabled={loading || !!dateError}>Yenilə</button>
           <button onClick={() => void exportExcel()} disabled={exporting || loading || !!dateError || !!error}

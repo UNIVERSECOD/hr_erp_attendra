@@ -74,8 +74,19 @@ public class AttendanceOverviewService {
         var schedules = scheduleResolver.forReport(tenant, selected, q.getStart(), q.getEnd());
         List<AttendanceOverviewRowDTO> result = new ArrayList<>();
         if (q.getView() == AttendanceReportQuery.View.DETAILS) {
-            for (var detail : details.getReport(q.getStart(), q.getEnd(), null, null, null, null,
-                    null, null, null, 0, Integer.MAX_VALUE).getContent()) {
+            var visits = details.getReport(q.getStart(), q.getEnd(), null, null, null, null,
+                    null, null, null, 0, Integer.MAX_VALUE).getContent();
+            // Assign the daily total once, before area filters and pagination, so it cannot move
+            // to another visit just because the last visit is hidden by the current filter.
+            Map<DayKey, AttendanceReportRowDTO> lastVisits = new HashMap<>();
+            for (var visit : visits) {
+                if (visit.getCheckOutTime() != null && employeeMap.containsKey(visit.getEmployeePk())) {
+                    lastVisits.merge(new DayKey(visit.getEmployeePk(), visit.getDate()), visit,
+                            (a, b) -> a.getCheckOutTime().isAfter(b.getCheckOutTime()) ? a : b);
+                }
+            }
+            Map<Long, Map<LocalDate, EmployeeAttendanceRowDTO>> dailyCache = new HashMap<>();
+            for (var detail : visits) {
                 Employee employee = employeeMap.get(detail.getEmployeePk());
                 if (employee == null) continue;
                 AttendanceLog log = sourceById.get(detail.getAttendanceLogId());
@@ -86,6 +97,13 @@ public class AttendanceOverviewService {
                 if (q.getTimetableId() != null && !q.getTimetableId().equals(timetableId)) continue;
                 var row = new AttendanceOverviewRowDTO();
                 BeanUtils.copyProperties(detail, row);
+                if (lastVisits.get(new DayKey(employee.getId(), detail.getDate())) == detail) {
+                    var daily = dailyCache.computeIfAbsent(employee.getId(), id -> attendance
+                            .getEmployeeAttendanceForReport(employee, q.getStart(), q.getEnd(), schedules).stream()
+                            .collect(Collectors.toMap(EmployeeAttendanceRowDTO::getDate, Function.identity())))
+                            .get(detail.getDate());
+                    if (daily != null) row.setOvertimeMinutes(overtime(daily, schedules.apply(employee, detail.getDate())));
+                }
                 setTimetable(row, timetableId, timetableMap);
                 result.add(row);
             }
@@ -124,6 +142,7 @@ public class AttendanceOverviewService {
                 row.setCheckInTime(daily.getCheckInTime());
                 row.setCheckOutTime(daily.getCheckOutTime());
                 row.setWorkedMinutes((int) Math.round(Optional.ofNullable(daily.getHoursWorked()).orElse(0.0) * 60));
+                row.setOvertimeMinutes(overtime(daily, schedule));
                 row.setLateMinutes(zero(daily.getLateMinutes()));
                 row.setEarlyLeaveMinutes(zero(daily.getEarlyLeaveMinutes()));
                 row.setPermissionMinutes(zero(daily.getPermissionMinutes()));
@@ -174,6 +193,9 @@ public class AttendanceOverviewService {
             } else {
                 sum.setPeriodEnd(day.getDate());
                 sum.setWorkedMinutes(sum.getWorkedMinutes() + day.getWorkedMinutes());
+                if (sum.getOvertimeMinutes() != null || day.getOvertimeMinutes() != null) {
+                    sum.setOvertimeMinutes(zero(sum.getOvertimeMinutes()) + zero(day.getOvertimeMinutes()));
+                }
                 sum.setLateMinutes(sum.getLateMinutes() + day.getLateMinutes());
                 sum.setEarlyLeaveMinutes(sum.getEarlyLeaveMinutes() + day.getEarlyLeaveMinutes());
                 sum.setPermissionMinutes(sum.getPermissionMinutes() + day.getPermissionMinutes());
@@ -251,9 +273,9 @@ public class AttendanceOverviewService {
         boolean detail = query.getView() == AttendanceReportQuery.View.DETAILS;
         boolean daily = query.getView() == AttendanceReportQuery.View.DAILY;
         List<String> headers = new ArrayList<>(List.of("Dövr", "ID", "Ad soyad", "FIN", "Qrafik", "Ərazi", "Departament", "Vəzifə"));
-        headers.addAll(detail || daily ? List.of("Giriş", "Çıxış", "İş müddəti", "Status")
-                : List.of("İş müddəti", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
-        if (!detail) headers.addAll(List.of("Gecikmə (dəq)", "Erkən çıxış (dəq)", "İcazə (dəq)"));
+        headers.addAll(detail || daily ? List.of("Giriş", "Çıxış", "İş müddəti", "Əlavə iş vaxtı", "Status")
+                : List.of("İş müddəti", "Əlavə iş vaxtı", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
+        if (!detail) headers.addAll(List.of("Gecikmə", "Erkən çıxış", "İcazə"));
         try (Workbook workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Davamiyyət");
             var bold = workbook.createFont(); bold.setBold(true);
@@ -265,11 +287,11 @@ public class AttendanceOverviewService {
                 List<Object> values = new ArrayList<>(Arrays.asList(detail ? dto.getDate() : dto.getPeriod(), dto.getEmployeeId(),
                         dto.getFullName(), dto.getFin(), dto.getTimetableName(), dto.getArea(), dto.getDepartment(), dto.getPosition()));
                 if (detail || daily) values.addAll(Arrays.asList(dateTime(dto.getCheckInTime()), dateTime(dto.getCheckOutTime()),
-                        duration(dto.getWorkedMinutes()), detail ? statusLabel(dto.getStatus())
+                        duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()), detail ? statusLabel(dto.getStatus())
                                 : dto.getStatuses().stream().map(AttendanceOverviewService::statusLabel).collect(Collectors.joining(", "))));
-                else values.addAll(List.of(duration(dto.getWorkedMinutes()), dto.getAttendedDays(), dto.getAbsentDays(),
+                else values.addAll(List.of(duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()), dto.getAttendedDays(), dto.getAbsentDays(),
                         dto.getLateDays(), dto.getEarlyLeaveDays(), dto.getLeaveDays(), dto.getMissingExitDays()));
-                if (!detail) values.addAll(List.of(dto.getLateMinutes(), dto.getEarlyLeaveMinutes(), dto.getPermissionMinutes()));
+                if (!detail) values.addAll(List.of(duration(dto.getLateMinutes()), duration(dto.getEarlyLeaveMinutes()), duration(dto.getPermissionMinutes())));
                 Row row = sheet.createRow(index++);
                 for (int i = 0; i < values.size(); i++) {
                     var cell = row.createCell(i); Object value = values.get(i);
@@ -296,7 +318,15 @@ public class AttendanceOverviewService {
         };
     }
     private static String dateTime(OffsetDateTime value) { return value == null ? "" : value.atZoneSameInstant(AppTimeZone.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")); }
-    private static String duration(Integer value) { int n = zero(value); return "%02d:%02d".formatted(n / 60, n % 60); }
+    // Match the shared calculator's daily threshold, excluding credited permission time.
+    // Flexible/unconfigured schedules have no daily norm; their work is not all overtime.
+    private static Integer overtime(EmployeeAttendanceRowDTO day, AttendanceScheduleResolver.DaySchedule schedule) {
+        if (schedule.flexible() || schedule.workingDay() && (schedule.startTime() == null || schedule.endTime() == null)) return null;
+        int actualMinutes = (int) Math.round(Optional.ofNullable(day.getHoursWorked()).orElse(0.0) * 60)
+                - zero(day.getCreditedPermissionMinutes());
+        return Math.max(actualMinutes - schedule.expectedMinutes(), 0);
+    }
+    private static String duration(Integer value) { return value == null ? "—" : "%d saat %d dəqiqə".formatted(value / 60, value % 60); }
     private static int zero(Integer value) { return value == null ? 0 : value; }
     private static String joinNames(String a, String b) { return java.util.stream.Stream.of(a, b).filter(Objects::nonNull).flatMap(s -> Arrays.stream(s.split(", "))).distinct().sorted().collect(Collectors.joining(", ")); }
     private static boolean contains(String text, String part) { return part == null || part.isBlank() || text != null && text.toLowerCase(Locale.forLanguageTag("az")).contains(part.trim().toLowerCase(Locale.forLanguageTag("az"))); }

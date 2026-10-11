@@ -13,6 +13,7 @@ public class AttendanceOverviewRowDTO extends AttendanceReportRowDTO {
     private LocalDate periodEnd;
     private Long timetableId;
     private String timetableName;
+    private Integer overtimeMinutes;
     private int lateMinutes;
     private int earlyLeaveMinutes;
     private int permissionMinutes;
