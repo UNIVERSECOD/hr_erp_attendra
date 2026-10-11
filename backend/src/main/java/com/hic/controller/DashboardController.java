@@ -38,6 +38,12 @@ public class DashboardController {
     private final AttendanceLogRepository attendanceLogRepository;
     private final LeaveRequestRepository leaveRequestRepository;
     private final AttendanceLogSyncService attendanceLogSyncService;
+    private final com.hic.service.DashboardAttendanceService dashboardAttendanceService;
+
+    @GetMapping("/attendance-overview")
+    public ResponseEntity<ApiResponse<com.hic.dto.DashboardAttendanceDTO>> getAttendanceOverview() {
+        return ResponseEntity.ok(ApiResponse.success(dashboardAttendanceService.today()));
+    }
 
 
     @GetMapping

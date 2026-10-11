@@ -14,6 +14,16 @@ Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user 
 
 ## Calculation and history
 
+### Dashboard day overview (2026-10-11)
+
+`GET /api/dashboard/attendance-overview` is a tenant- and existing primary-area-scope-aware, read-only endpoint. The compact dashboard panel replaces the former three large cards while retaining the overall employee count. It shows six independent distinct-employee counts: attended during today, absent after scheduled start, late, early departure, approved/active permission for today (hourly included), and approved leave covering today. The shared attendance calculator and request-local schedule resolver provide tolerances, permissions and daily statuses. Inactive/terminated staff and future hires are excluded from these six counts.
+
+Current area occupancy is separate from the day totals. It compares entry/repeated-entry and exit timestamps across recent attendance sessions, counts each employee once in their last recorded area snapshot, handles overnight presence, and lets a later exit supersede older unclosed duplicate rows. It does not infer physical location from current area membership. Entries expired under the existing session policy are excluded from current occupancy and disclosed separately; unknown snapshots have a separate count. A three-day lookback covers all unexpired sessions under the existing policy; this is not a complete historical missing-exit audit. Offline/delayed device data can still make current counts lag reality. This work does not change device ingestion, midnight Tabel allocation, or source attendance statuses.
+
+The panel refreshes every 60 seconds and offers manual refresh. Failed refreshes retain the prior figures with a visible stale-data message instead of replacing them with zeros; initial failure shows dashes. The clock uses Asia/Baku.
+
+Verification: 361 backend tests/package (including six new dashboard scenarios), frontend lint/build, separate Docker builds, 13 isolated Docker API scenarios with synthetic data, and desktop browser rendering/manual refresh. Scenarios include six repeated entries counted once, actual area versus home area, an exit closing current presence, re-entry into another area, all six day metrics, hourly permission and dated leave, expired exits and unauthenticated access. Physical devices were not contacted. Preview remains isolated from main.
+
 ### Review follow-up: shared departments and missing exits (2026-10-11)
 
 - Reports and their Excel exports label OPEN/OPEN_SESSION/MISSING_EXIT uniformly as `Çıxış yoxdur`; the one daily missing-exit filter includes both open and missing-exit records. Stored lifecycle statuses and time calculations remain unchanged.

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import Layout from '../components/Layout.tsx'
+import DashboardAttendancePanel from '../components/DashboardAttendancePanel.tsx'
 import client from '../api/client.ts'
 import { doorRoleLabel, statusLabel } from '../i18n/labels.ts'
 import { formatAttendanceDateTime } from '../utils/dateTime.ts'
@@ -70,8 +71,8 @@ export default function DashboardPage() {
     const updateTime = () => {
       const now = new Date()
       const formatted = now.toLocaleDateString('az-AZ', {
-        day: '2-digit', month: '2-digit', year: 'numeric'
-      }) + ' ' + now.toLocaleTimeString('az-AZ')
+        day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Asia/Baku'
+      }) + ' ' + now.toLocaleTimeString('az-AZ', { timeZone: 'Asia/Baku' })
       setCurrentTime({ datetime: now.toISOString(), formatted })
     }
     updateTime()
@@ -85,41 +86,6 @@ export default function DashboardPage() {
     return timeB - timeA
   })
 
-  const summaryCards = [
-    {
-      label: 'İşdə olan əməkdaş',
-      value: stats?.todayAttendance ?? 0,
-      icon: (
-        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-        </svg>
-      ),
-      bg: '#10b981',
-      light: '#d1fae5',
-    },
-    {
-      label: 'Ümumi əməkdaş',
-      value: stats?.totalEmployees ?? 0,
-      icon: (
-        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-        </svg>
-      ),
-      bg: '#a855f7',
-      light: '#f3e8ff',
-    },
-    {
-      label: 'Məzuniyyətdə olanlar',
-      value: stats?.onLeaveEmployees ?? 0,
-      icon: (
-        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-        </svg>
-      ),
-      bg: '#ec4899',
-      light: '#fce7f3',
-    },
-  ]
 
   return (
     <Layout>
@@ -136,22 +102,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* Summary Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-          {summaryCards.map((card) => (
-            <div key={card.label} className="bg-white rounded-xl shadow-sm p-5 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center flex-shrink-0" style={{ background: card.bg }}>
-                {card.icon}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs text-gray-500">{card.label}</p>
-                <p className="text-2xl font-bold text-gray-900">
-                  {loading ? <span className="text-gray-300">—</span> : card.value}
-                </p>
-              </div>
-            </div>
-          ))}
-        </div>
+        <DashboardAttendancePanel totalEmployees={stats?.totalEmployees} />
 
         {/* Device Status */}
         <div className="bg-white rounded-xl shadow-sm p-6 mb-6">
