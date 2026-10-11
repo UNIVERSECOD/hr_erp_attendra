@@ -1,5 +1,11 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Single-photo recovery succeeded; user confirmed
+
+- User enabled terminal picture retention and authorized the same original-photo re-upload. Read-only AcsCfg confirmed `saveFacePic=true`; device/employee identities and the backup photo hash were reverified. Updated production client uploaded successfully (HTTP 200); exact-person FDLib photo then downloaded and decoded successfully (29,651 bytes). User confirmed success.
+- This confirms the terminal-wide disabled retention setting was the blocker in the preceding check. The agent did not change global device settings. Only the explicitly approved person's photo on the entry terminal was re-uploaded; no other employee/device writes, local profile restoration, or runtime/Setup deployment.
+- Evidence: ignored `runtime/audit/approved-face-recovery-retention-enabled.log`. Existing mock tests/build remain unchanged. Physical face recognition after the re-upload was not separately measured; the confirmed result is photo recovery/display.
+
 ## 2026-10-12 — Authorized one-photo hardware check: terminal retention disabled
 
 - User explicitly approved one-photo recovery on the entry terminal. Reverified bridge identity, IP/name, live employee identity and source-photo hash before a single FDLib write. Updated production client/normalizer accepted the original photo with `saveFacePic: true` (HTTP 200); subsequent exact-person photo download still returned 404, including a delayed read. Recognition after re-upload needs user confirmation at the terminal.
