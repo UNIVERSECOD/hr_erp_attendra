@@ -12,6 +12,7 @@ import java.util.Optional;
 public interface EmployeeAreaRepository extends JpaRepository<EmployeeArea, Long> {
     List<EmployeeArea> findByEmployeeIdOrderByPrimaryDescBranchIdAsc(Long employeeId);
     List<EmployeeArea> findByEmployeeIdIn(Collection<Long> employeeIds);
+    List<EmployeeArea> findByTenantIdAndEmployeeIdIn(Long tenantId, Collection<Long> employeeIds);
     List<EmployeeArea> findByBranchId(Long branchId);
     Optional<EmployeeArea> findByEmployeeIdAndBranchId(Long employeeId, Long branchId);
     boolean existsByEmployeeIdAndBranchId(Long employeeId, Long branchId);

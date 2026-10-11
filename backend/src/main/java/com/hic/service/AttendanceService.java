@@ -131,6 +131,12 @@ public class AttendanceService {
 
     public List<EmployeeAttendanceRowDTO> getEmployeeAttendance(Long employeeId, LocalDate start, LocalDate end) {
         Employee employee = getAccessibleEmployee(employeeId);
+        return getEmployeeAttendanceForReport(employee, start, end, attendanceScheduleResolver::resolve);
+    }
+
+    List<EmployeeAttendanceRowDTO> getEmployeeAttendanceForReport(Employee employee, LocalDate start, LocalDate end,
+            java.util.function.BiFunction<Employee, LocalDate, AttendanceScheduleResolver.DaySchedule> schedules) {
+        Long employeeId = employee.getId();
         Long tenantId = TenantContext.getTenantId();
 
         // Sessions belong to the date on which they started, even when they end after midnight.
@@ -164,7 +170,7 @@ public class AttendanceService {
             // Prefer live work-date inference. Overnight sessions stay attached to check-in day.
             LocalDateTime firstCheckIn = inference.firstEntry();
             LocalDateTime lastCheckOut = inference.lastExit();
-            AttendanceScheduleResolver.DaySchedule daySchedule = attendanceScheduleResolver.resolve(employee, currentDate);
+            AttendanceScheduleResolver.DaySchedule daySchedule = schedules.apply(employee, currentDate);
             AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                     currentDate, inference, daySchedule);
             AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(

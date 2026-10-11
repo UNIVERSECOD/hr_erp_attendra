@@ -3,12 +3,19 @@ import {
   ApiResponse,
   AttendanceCorrectionRequest,
   AttendanceReportFilters,
+  AttendanceOverviewFilters,
+  AttendanceOverviewRow,
+  PaginatedResponse,
   EmployeeAttendanceRow,
   EmployeeAttendanceSummary,
   OpenAttendanceSession,
 } from '../types'
 
 export const attendanceApi = {
+  getOverview: (params: AttendanceOverviewFilters & { page?: number; size?: number }) =>
+    client.get<ApiResponse<PaginatedResponse<AttendanceOverviewRow>>>('/attendance/reports', { params }),
+  exportOverview: (params: AttendanceOverviewFilters) =>
+    client.get('/attendance/reports/export', { params, responseType: 'blob' }),
   getLogs: (employeeId: number, start: string, end: string) =>
     client.get(`/attendance/employee/${employeeId}?start=${start}&end=${end}`),
   getEmployeeAttendance: (employeePk: number, start: string, end: string) =>

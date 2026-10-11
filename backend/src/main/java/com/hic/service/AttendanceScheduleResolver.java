@@ -17,6 +17,12 @@ import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.util.Optional;
+import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
+import java.util.Comparator;
+import java.util.function.BiFunction;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -67,9 +73,13 @@ public class AttendanceScheduleResolver {
     }
 
     private DaySchedule fromTimetable(Timetable timetable, LocalDate date, String resolvedShiftType) {
-        String shiftType = resolvedShiftType != null ? resolvedShiftType : timetable.getShiftType();
         int isoDay = date.getDayOfWeek().getValue();
         Optional<TimetableDayRule> rule = dayRuleRepository.findByTimetableIdAndDayOfWeek(timetable.getId(), isoDay);
+        return fromTimetable(timetable, resolvedShiftType, rule);
+    }
+
+    private DaySchedule fromTimetable(Timetable timetable, String resolvedShiftType, Optional<TimetableDayRule> rule) {
+        String shiftType = resolvedShiftType != null ? resolvedShiftType : timetable.getShiftType();
         if (rule.isPresent()) {
             TimetableDayRule value = rule.get();
             return new DaySchedule(
@@ -110,6 +120,40 @@ public class AttendanceScheduleResolver {
                 nonNegative(schedule.getGracePeriodMinutes()),
                 0
         );
+    }
+
+    /** Request-local report cache: annual reports must not query the database for each employee-day. */
+    public BiFunction<Employee, LocalDate, DaySchedule> forReport(Long tenantId, List<Employee> employees,
+                                                                LocalDate start, LocalDate end) {
+        var ids = employees.stream().map(Employee::getId).collect(Collectors.toSet());
+        var assignments = employeeShiftResolver.loadAssignmentsByEmployee(tenantId, ids, start, end);
+        Map<Long, Timetable> timetables = timetableRepository.findByTenantId(tenantId).stream()
+                .collect(Collectors.toMap(Timetable::getId, value -> value));
+        Map<Long, Map<Integer, TimetableDayRule>> rules = new HashMap<>();
+        for (Timetable timetable : timetables.values()) {
+            rules.put(timetable.getId(), dayRuleRepository.findByTimetableIdOrderByDayOfWeek(timetable.getId())
+                    .stream().collect(Collectors.toMap(TimetableDayRule::getDayOfWeek, value -> value)));
+        }
+        Map<Long, List<WorkSchedule>> legacy = new HashMap<>();
+        for (Employee employee : employees) {
+            legacy.put(employee.getId(), workScheduleRepository.findByEmployeeIdAndEffectiveDateLessThanEqual(
+                    employee.getId(), end).stream()
+                    .sorted(Comparator.comparing(WorkSchedule::getEffectiveDate).reversed()).toList());
+        }
+        return (employee, date) -> {
+            var shift = employeeShiftResolver.resolveFromCache(employee, date, assignments, timetables);
+            Timetable timetable = timetables.get(shift.timetableId());
+            if (timetable != null) {
+                return fromTimetable(timetable, shift.shiftType(), Optional.ofNullable(
+                        rules.getOrDefault(timetable.getId(), Map.of()).get(date.getDayOfWeek().getValue())));
+            }
+            var old = legacy.getOrDefault(employee.getId(), List.of()).stream()
+                    .filter(s -> !s.getEffectiveDate().isAfter(date)).findFirst()
+                    .filter(s -> s.getEndDate() == null || !s.getEndDate().isBefore(date));
+            if (old.isPresent()) return fromLegacySchedule(old.get(), date, shift.shiftType());
+            return new DaySchedule(shift.timetableId(), shift.shiftType(), true,
+                    DEFAULT_SHIFT_START, DEFAULT_SHIFT_END, 0, DEFAULT_ALLOWED_LATE_MINUTES, 0);
+        };
     }
 
     private LocalTime getStart(WorkSchedule schedule, DayOfWeek day) {

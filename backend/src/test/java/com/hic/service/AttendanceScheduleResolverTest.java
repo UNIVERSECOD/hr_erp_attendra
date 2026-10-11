@@ -37,6 +37,30 @@ class AttendanceScheduleResolverTest {
     }
 
     @Test
+    void reportCacheUsesHistoricalAssignmentsAndWeeklyRulesWithoutPerDayQueries() {
+        var assignmentRepository = org.mockito.Mockito.mock(com.hic.repository.EmployeeShiftAssignmentRepository.class);
+        var realShiftResolver = new EmployeeShiftResolver(assignmentRepository, timetableRepository);
+        var reportResolver = new AttendanceScheduleResolver(realShiftResolver, timetableRepository, dayRuleRepository, workScheduleRepository);
+        Employee employee = new Employee(); employee.setId(1L); employee.setTenantId(7L); employee.setTimetableId(41L);
+        Timetable old = new Timetable(); old.setId(40L); old.setShiftType("STANDARD"); old.setStartTime(LocalTime.of(9, 0)); old.setEndTime(LocalTime.of(18, 0));
+        Timetable current = new Timetable(); current.setId(41L); current.setShiftType("FLEXIBLE");
+        var assignment = new com.hic.model.EmployeeShiftAssignment(); assignment.setEmployeeId(1L); assignment.setTimetableId(40L);
+        assignment.setEffectiveStartDate(LocalDate.of(2026, 1, 1)); assignment.setEffectiveEndDate(LocalDate.of(2026, 6, 30));
+        var sunday = new TimetableDayRule(); sunday.setDayOfWeek(7); sunday.setWorkingDay(false);
+        var start = LocalDate.of(2026, 1, 1); var end = LocalDate.of(2026, 12, 31);
+        when(assignmentRepository.findActiveForEmployeesInDateRange(7L, java.util.Set.of(1L), start, end)).thenReturn(java.util.List.of(assignment));
+        when(timetableRepository.findByTenantId(7L)).thenReturn(java.util.List.of(old, current));
+        when(dayRuleRepository.findByTimetableIdOrderByDayOfWeek(40L)).thenReturn(java.util.List.of(sunday));
+        var cache = reportResolver.forReport(7L, java.util.List.of(employee), start, end);
+        assertThat(cache.apply(employee, LocalDate.of(2026, 6, 28)).workingDay()).isFalse();
+        assertThat(cache.apply(employee, LocalDate.of(2026, 6, 29)).timetableId()).isEqualTo(40L);
+        assertThat(cache.apply(employee, LocalDate.of(2026, 7, 1)).flexible()).isTrue();
+        for (int i = 0; i < 365; i++) cache.apply(employee, start.plusDays(i));
+        org.mockito.Mockito.verify(timetableRepository, org.mockito.Mockito.never()).findById(org.mockito.ArgumentMatchers.anyLong());
+        org.mockito.Mockito.verify(dayRuleRepository, org.mockito.Mockito.never()).findByTimetableIdAndDayOfWeek(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void resolve_usesRuleForRequestedWeekdayWithinEmployeeTenant() {
         LocalDate saturday = LocalDate.of(2026, 9, 26);
         Employee employee = new Employee();

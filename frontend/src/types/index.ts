@@ -424,6 +424,40 @@ export interface AttendanceReportFilters {
   area?: string
 }
 
+export type AttendanceReportView = 'DETAILS' | 'DAILY' | 'MONTHLY' | 'YEARLY'
+
+export interface AttendanceOverviewFilters {
+  view: AttendanceReportView
+  start: string
+  end: string
+  name?: string
+  fin?: string
+  timetableId?: number
+  areaId?: number
+  departmentId?: number
+  positionId?: number
+  status?: string
+}
+
+export interface AttendanceOverviewRow extends Omit<AttendanceReportRow, 'status'> {
+  period?: string
+  periodStart?: string
+  periodEnd?: string
+  timetableId?: number
+  timetableName?: string
+  status?: string
+  statuses: string[]
+  lateMinutes: number
+  earlyLeaveMinutes: number
+  permissionMinutes: number
+  attendedDays: number
+  absentDays: number
+  lateDays: number
+  earlyLeaveDays: number
+  leaveDays: number
+  missingExitDays: number
+}
+
 export interface TabelFilters {
   year: number
   month: number

@@ -1,0 +1,303 @@
+package com.hic.service;
+
+import com.hic.dto.*;
+import com.hic.exception.BadRequestException;
+import com.hic.model.*;
+import com.hic.repository.*;
+import com.hic.util.AppTimeZone;
+import com.hic.util.TenantContext;
+import lombok.RequiredArgsConstructor;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.springframework.beans.BeanUtils;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.io.ByteArrayOutputStream;
+import java.time.*;
+import java.time.temporal.ChronoUnit;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+/** Read-only views over the existing attendance calculations. Does not recalculate or persist totals. */
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class AttendanceOverviewService {
+    private final EmployeeRepository employees;
+    private final EmployeeAreaRepository employeeAreas;
+    private final AttendanceLogRepository logs;
+    private final DepartmentRepository departments;
+    private final PositionRepository positions;
+    private final BranchRepository branches;
+    private final TimetableRepository timetables;
+    private final AttendanceService attendance;
+    private final AttendanceReportService details;
+    private final AttendanceScheduleResolver scheduleResolver;
+    private final UserScopeService userScope;
+
+    public PaginatedResponse<AttendanceOverviewRowDTO> report(AttendanceReportQuery query) {
+        List<AttendanceOverviewRowDTO> rows = rows(query);
+        int from = (int) Math.min((long) query.getPage() * query.getSize(), rows.size());
+        int to = Math.min(from + query.getSize(), rows.size());
+        return PaginatedResponse.of(rows.subList(from, to), rows.size(),
+                (int) Math.ceil((double) rows.size() / query.getSize()), query.getPage(), query.getSize());
+    }
+
+    private List<AttendanceOverviewRowDTO> rows(AttendanceReportQuery q) {
+        validate(q);
+        Long tenant = Objects.requireNonNull(TenantContext.getTenantId(), "Tenant context is required");
+        Long scope = userScope.resolveBranchScope(null);
+        List<Employee> selected = employees.findAllByTenantIdOrderByFirstNameAscLastNameAsc(tenant).stream()
+                .filter(e -> tenant.equals(e.getTenantId()))
+                .filter(e -> scope == null || scope.equals(e.getBranchId()))
+                .filter(e -> contains(e.getFirstName() + " " + e.getLastName(), q.getName()))
+                .filter(e -> contains(e.getFinNumber(), q.getFin()))
+                .filter(e -> q.getDepartmentId() == null || q.getDepartmentId().equals(e.getDepartmentId()))
+                .filter(e -> q.getPositionId() == null || q.getPositionId().equals(e.getPositionId()))
+                .toList();
+        if (selected.isEmpty()) return List.of();
+        var employeeMap = index(selected, Employee::getId);
+        var departmentMap = index(departments.findByTenantId(tenant), Department::getId);
+        var positionMap = index(positions.findByTenantId(tenant), Position::getId);
+        var branchMap = index(branches.findByTenantId(tenant), Branch::getId);
+        var timetableMap = index(timetables.findByTenantId(tenant), Timetable::getId);
+        var memberships = employeeAreas.findByTenantIdAndEmployeeIdIn(tenant, employeeMap.keySet()).stream()
+                .filter(a -> tenant.equals(a.getTenantId()))
+                .collect(Collectors.groupingBy(EmployeeArea::getEmployeeId));
+        List<AttendanceLog> source = logs.findByTenantIdAndCheckInTimeBetween(tenant,
+                q.getStart().atStartOfDay(), q.getEnd().atTime(LocalTime.MAX));
+        var sourceById = index(source, AttendanceLog::getId);
+        var sourceByDay = source.stream().filter(l -> l.getCheckInTime() != null)
+                .collect(Collectors.groupingBy(l -> new DayKey(l.getEmployeeId(), l.getCheckInTime().toLocalDate())));
+        var schedules = scheduleResolver.forReport(tenant, selected, q.getStart(), q.getEnd());
+        List<AttendanceOverviewRowDTO> result = new ArrayList<>();
+        if (q.getView() == AttendanceReportQuery.View.DETAILS) {
+            for (var detail : details.getReport(q.getStart(), q.getEnd(), null, null, null, null,
+                    null, null, null, 0, Integer.MAX_VALUE).getContent()) {
+                Employee employee = employeeMap.get(detail.getEmployeePk());
+                if (employee == null) continue;
+                AttendanceLog log = sourceById.get(detail.getAttendanceLogId());
+                List<AttendanceLog> visit = log == null ? List.of() : List.of(log);
+                if (!matchesArea(q.getAreaId(), employee, visit, memberships)) continue;
+                Long timetableId = log != null && log.getTimetableId() != null ? log.getTimetableId()
+                        : schedules.apply(employee, detail.getDate()).timetableId();
+                if (q.getTimetableId() != null && !q.getTimetableId().equals(timetableId)) continue;
+                var row = new AttendanceOverviewRowDTO();
+                BeanUtils.copyProperties(detail, row);
+                setTimetable(row, timetableId, timetableMap);
+                result.add(row);
+            }
+            return result;
+        }
+
+        // Never turn future dates or time before hire/after termination into absences.
+        LocalDate end = q.getEnd().isAfter(AppTimeZone.today()) ? AppTimeZone.today() : q.getEnd();
+        for (Employee employee : selected) {
+            LocalDate start = q.getStart();
+            if (employee.getHireDate() != null && employee.getHireDate().isAfter(start)) start = employee.getHireDate();
+            LocalDate employeeEnd = end;
+            if (start.isAfter(employeeEnd)) continue;
+            for (var daily : attendance.getEmployeeAttendanceForReport(employee, start, employeeEnd, schedules)) {
+                var dayLogs = sourceByDay.getOrDefault(new DayKey(employee.getId(), daily.getDate()), List.of());
+                // The legacy schema has no termination date; retain recorded history, do not invent absences.
+                if (employee.getEmploymentStatus() == Employee.EmploymentStatus.TERMINATED && dayLogs.isEmpty()
+                        && daily.getCheckInTime() == null && (daily.getHoursWorked() == null || daily.getHoursWorked() == 0)) continue;
+                if (!matchesArea(q.getAreaId(), employee, dayLogs, memberships)) continue;
+                var schedule = schedules.apply(employee, daily.getDate());
+                if (q.getTimetableId() != null && !q.getTimetableId().equals(schedule.timetableId())) continue;
+                var row = new AttendanceOverviewRowDTO();
+                row.setEmployeePk(employee.getId());
+                row.setEmployeeId(employee.getEmployeeId());
+                row.setFullName(employee.getFirstName() + " " + employee.getLastName());
+                row.setFin(employee.getFinNumber());
+                row.setDepartment(Optional.ofNullable(departmentMap.get(employee.getDepartmentId()))
+                        .map(Department::getDepartmentName).orElse(null));
+                row.setPosition(Optional.ofNullable(positionMap.get(employee.getPositionId()))
+                        .map(Position::getPositionName).orElse(null));
+                row.setArea(areaNames(employee, dayLogs, memberships, branchMap));
+                row.setDate(daily.getDate());
+                row.setPeriod(daily.getDate().toString());
+                row.setPeriodStart(daily.getDate());
+                row.setPeriodEnd(daily.getDate());
+                row.setCheckInTime(daily.getCheckInTime());
+                row.setCheckOutTime(daily.getCheckOutTime());
+                row.setWorkedMinutes((int) Math.round(Optional.ofNullable(daily.getHoursWorked()).orElse(0.0) * 60));
+                row.setLateMinutes(zero(daily.getLateMinutes()));
+                row.setEarlyLeaveMinutes(zero(daily.getEarlyLeaveMinutes()));
+                row.setPermissionMinutes(zero(daily.getPermissionMinutes()));
+                row.setShiftType(daily.getShiftType());
+                setTimetable(row, schedule.timetableId(), timetableMap);
+                String status = daily.getStatus().name();
+                if (status.equals("ABSENT") && daily.getDate().equals(AppTimeZone.today())
+                        && schedule.startTime() != null && AppTimeZone.now().toLocalTime().isBefore(schedule.startTime())) {
+                    status = "NOT_STARTED";
+                }
+                row.setStatus(status);
+                var statuses = new LinkedHashSet<String>();
+                statuses.add(status);
+                if (row.getLateMinutes() > 0) statuses.add("LATE");
+                if (row.getEarlyLeaveMinutes() > 0) statuses.add("EARLY_LEAVE");
+                row.setStatuses(List.copyOf(statuses));
+                row.setAttendedDays(daily.getCheckInTime() != null ? 1 : 0);
+                row.setAbsentDays(status.equals("ABSENT") ? 1 : 0);
+                row.setLateDays(row.getLateMinutes() > 0 ? 1 : 0);
+                row.setEarlyLeaveDays(row.getEarlyLeaveMinutes() > 0 ? 1 : 0);
+                row.setLeaveDays(status.equals("ON_LEAVE") ? 1 : 0);
+                row.setMissingExitDays(status.equals("MISSING_EXIT") || status.equals("OPEN_SESSION") ? 1 : 0);
+                if (q.getView() != AttendanceReportQuery.View.DAILY || matchesStatus(row, q.getStatus())) result.add(row);
+            }
+        }
+        if (q.getView() != AttendanceReportQuery.View.DAILY) result = aggregate(result, q.getView());
+        return result.stream().sorted(Comparator.comparing(AttendanceOverviewRowDTO::getPeriod)
+                .thenComparing(AttendanceOverviewRowDTO::getFullName)
+                .thenComparing(AttendanceOverviewRowDTO::getEmployeePk)).toList();
+    }
+
+    private List<AttendanceOverviewRowDTO> aggregate(List<AttendanceOverviewRowDTO> days, AttendanceReportQuery.View view) {
+        Map<String, AttendanceOverviewRowDTO> grouped = new LinkedHashMap<>();
+        for (var day : days) {
+            String period = view == AttendanceReportQuery.View.MONTHLY ? day.getPeriod().substring(0, 7)
+                    : day.getPeriod().substring(0, 4);
+            String key = day.getEmployeePk() + ":" + period;
+            var sum = grouped.get(key);
+            if (sum == null) {
+                sum = new AttendanceOverviewRowDTO();
+                BeanUtils.copyProperties(day, sum);
+                sum.setPeriod(period);
+                sum.setCheckInTime(null);
+                sum.setCheckOutTime(null);
+                sum.setStatuses(List.of());
+                sum.setStatus(null);
+                grouped.put(key, sum);
+            } else {
+                sum.setPeriodEnd(day.getDate());
+                sum.setWorkedMinutes(sum.getWorkedMinutes() + day.getWorkedMinutes());
+                sum.setLateMinutes(sum.getLateMinutes() + day.getLateMinutes());
+                sum.setEarlyLeaveMinutes(sum.getEarlyLeaveMinutes() + day.getEarlyLeaveMinutes());
+                sum.setPermissionMinutes(sum.getPermissionMinutes() + day.getPermissionMinutes());
+                sum.setAttendedDays(sum.getAttendedDays() + day.getAttendedDays());
+                sum.setAbsentDays(sum.getAbsentDays() + day.getAbsentDays());
+                sum.setLateDays(sum.getLateDays() + day.getLateDays());
+                sum.setEarlyLeaveDays(sum.getEarlyLeaveDays() + day.getEarlyLeaveDays());
+                sum.setLeaveDays(sum.getLeaveDays() + day.getLeaveDays());
+                sum.setMissingExitDays(sum.getMissingExitDays() + day.getMissingExitDays());
+                sum.setArea(joinNames(sum.getArea(), day.getArea()));
+                sum.setTimetableName(joinNames(sum.getTimetableName(), day.getTimetableName()));
+                if (!Objects.equals(sum.getTimetableId(), day.getTimetableId())) sum.setTimetableId(null);
+            }
+        }
+        return new ArrayList<>(grouped.values());
+    }
+
+    static boolean matchesStatus(AttendanceOverviewRowDTO row, String status) {
+        if (status == null || status.isBlank()) return true;
+        if ("LATE_AND_EARLY".equals(status)) return row.getLateMinutes() > 0 && row.getEarlyLeaveMinutes() > 0;
+        return row.getStatuses().contains(status);
+    }
+
+    private boolean matchesArea(Long area, Employee employee, List<AttendanceLog> visits,
+                                Map<Long, List<EmployeeArea>> memberships) {
+        if (area == null) return true;
+        if (!visits.isEmpty() && visits.stream().allMatch(l -> Boolean.TRUE.equals(l.getAreaSnapshotCaptured()))) {
+            return visits.stream().anyMatch(l -> area.equals(l.getAreaSnapshotId()));
+        }
+        return area.equals(employee.getBranchId()) || memberships.getOrDefault(employee.getId(), List.of())
+                .stream().anyMatch(a -> area.equals(a.getBranchId()));
+    }
+
+    private String areaNames(Employee employee, List<AttendanceLog> visits, Map<Long, List<EmployeeArea>> memberships,
+                             Map<Long, Branch> branchMap) {
+        if (!visits.isEmpty() && visits.stream().allMatch(l -> Boolean.TRUE.equals(l.getAreaSnapshotCaptured()))) {
+            return visits.stream().map(l -> l.getAreaSnapshotName() == null ? "Ərazi məlum deyil" : l.getAreaSnapshotName())
+                    .distinct().sorted().collect(Collectors.joining(", "));
+        }
+        Set<Long> ids = new HashSet<>();
+        ids.add(employee.getBranchId());
+        memberships.getOrDefault(employee.getId(), List.of()).forEach(a -> ids.add(a.getBranchId()));
+        return ids.stream().map(branchMap::get).filter(Objects::nonNull).map(Branch::getName)
+                .sorted().collect(Collectors.joining(", "));
+    }
+
+    private void setTimetable(AttendanceOverviewRowDTO row, Long id, Map<Long, Timetable> map) {
+        row.setTimetableId(id);
+        row.setTimetableName(Optional.ofNullable(map.get(id)).map(Timetable::getName).orElse("Qrafik təyin edilməyib"));
+    }
+
+    private void validate(AttendanceReportQuery q) {
+        if (q.getStart() == null || q.getEnd() == null || q.getStart().isAfter(q.getEnd())) {
+            throw new BadRequestException("Başlanğıc tarixi bitmə tarixindən sonra ola bilməz.");
+        }
+        if (ChronoUnit.DAYS.between(q.getStart(), q.getEnd()) >= 366) {
+            throw new BadRequestException("Bir hesabatda ən çox 366 günlük aralıq seçin.");
+        }
+        if (q.getView() == null || q.getPage() < 0 || q.getSize() < 1 || q.getSize() > 200) {
+            throw new BadRequestException("Hesabat bölməsini və səhifə ölçüsünü düzgün seçin (1–200).");
+        }
+        if (q.getStatus() != null && !q.getStatus().isBlank()) {
+            if (q.getView() != AttendanceReportQuery.View.DAILY || (!q.getStatus().equals("LATE_AND_EARLY")
+                    && !q.getStatus().equals("NOT_STARTED") && Arrays.stream(DailyAttendanceSummary.AttendanceStatus.values())
+                    .noneMatch(s -> s.name().equals(q.getStatus())))) {
+                throw new BadRequestException("Status filtri yalnız gündəlik hesabat üçün düzgün seçilməlidir.");
+            }
+        }
+    }
+
+    public byte[] export(AttendanceReportQuery query) {
+        List<AttendanceOverviewRowDTO> data = rows(query);
+        boolean detail = query.getView() == AttendanceReportQuery.View.DETAILS;
+        boolean daily = query.getView() == AttendanceReportQuery.View.DAILY;
+        List<String> headers = new ArrayList<>(List.of("Dövr", "ID", "Ad soyad", "FIN", "Qrafik", "Ərazi", "Departament", "Vəzifə"));
+        headers.addAll(detail || daily ? List.of("Giriş", "Çıxış", "İş müddəti", "Status")
+                : List.of("İş müddəti", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
+        if (!detail) headers.addAll(List.of("Gecikmə (dəq)", "Erkən çıxış (dəq)", "İcazə (dəq)"));
+        try (Workbook workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
+            Sheet sheet = workbook.createSheet("Davamiyyət");
+            var bold = workbook.createFont(); bold.setBold(true);
+            var style = workbook.createCellStyle(); style.setFont(bold);
+            Row header = sheet.createRow(0);
+            for (int i = 0; i < headers.size(); i++) { var cell = header.createCell(i); cell.setCellValue(headers.get(i)); cell.setCellStyle(style); sheet.setColumnWidth(i, 5500); }
+            int index = 1;
+            for (var dto : data) {
+                List<Object> values = new ArrayList<>(Arrays.asList(detail ? dto.getDate() : dto.getPeriod(), dto.getEmployeeId(),
+                        dto.getFullName(), dto.getFin(), dto.getTimetableName(), dto.getArea(), dto.getDepartment(), dto.getPosition()));
+                if (detail || daily) values.addAll(Arrays.asList(dateTime(dto.getCheckInTime()), dateTime(dto.getCheckOutTime()),
+                        duration(dto.getWorkedMinutes()), detail ? statusLabel(dto.getStatus())
+                                : dto.getStatuses().stream().map(AttendanceOverviewService::statusLabel).collect(Collectors.joining(", "))));
+                else values.addAll(List.of(duration(dto.getWorkedMinutes()), dto.getAttendedDays(), dto.getAbsentDays(),
+                        dto.getLateDays(), dto.getEarlyLeaveDays(), dto.getLeaveDays(), dto.getMissingExitDays()));
+                if (!detail) values.addAll(List.of(dto.getLateMinutes(), dto.getEarlyLeaveMinutes(), dto.getPermissionMinutes()));
+                Row row = sheet.createRow(index++);
+                for (int i = 0; i < values.size(); i++) {
+                    var cell = row.createCell(i); Object value = values.get(i);
+                    if (value instanceof Number number) cell.setCellValue(number.doubleValue());
+                    else cell.setCellValue(value == null ? "" : value.toString());
+                }
+            }
+            sheet.createFreezePane(0, 1);
+            sheet.setAutoFilter(new org.apache.poi.ss.util.CellRangeAddress(0, Math.max(data.size(), 0), 0, headers.size() - 1));
+            workbook.write(output); return output.toByteArray();
+        } catch (java.io.IOException e) { throw new IllegalStateException("Excel faylı hazırlanmadı", e); }
+    }
+
+    public static String statusLabel(String value) {
+        if (value == null) return "";
+        return switch (value) {
+            case "LATE" -> "Gecikib"; case "EARLY_LEAVE" -> "Erkən çıxıb";
+            case "ABSENT" -> "Gəlməyib"; case "ON_LEAVE" -> "Məzuniyyətdə";
+            case "DAY_OFF" -> "İstirahət günü"; case "OPEN", "OPEN_SESSION" -> "Açıq sessiya";
+            case "MISSING_EXIT" -> "Çıxış yoxdur"; case "ON_PERMISSION" -> "İcazədə";
+            case "PERMITTED_EARLY_LEAVE" -> "İcazəli erkən çıxış"; case "NOT_STARTED" -> "İş vaxtı başlamayıb";
+            case "MANUALLY_CORRECTED" -> "Manual düzəliş"; case "CLOSED" -> "Bağlanıb";
+            case "WORKDAY_COMPLETE" -> "İş günü tamamlanıb"; default -> "İşdə";
+        };
+    }
+    private static String dateTime(OffsetDateTime value) { return value == null ? "" : value.atZoneSameInstant(AppTimeZone.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")); }
+    private static String duration(Integer value) { int n = zero(value); return "%02d:%02d".formatted(n / 60, n % 60); }
+    private static int zero(Integer value) { return value == null ? 0 : value; }
+    private static String joinNames(String a, String b) { return java.util.stream.Stream.of(a, b).filter(Objects::nonNull).flatMap(s -> Arrays.stream(s.split(", "))).distinct().sorted().collect(Collectors.joining(", ")); }
+    private static boolean contains(String text, String part) { return part == null || part.isBlank() || text != null && text.toLowerCase(Locale.forLanguageTag("az")).contains(part.trim().toLowerCase(Locale.forLanguageTag("az"))); }
+    private static <T> Map<Long, T> index(List<T> values, Function<T, Long> id) { return values.stream().collect(Collectors.toMap(id, Function.identity(), (a, b) -> a)); }
+    private record DayKey(Long employee, LocalDate date) {}
+}

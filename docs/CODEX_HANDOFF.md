@@ -12,6 +12,8 @@ Attendance reports (2026-10-11 correction) display separate completed visits for
 
 This document transfers project context to a new computer or Codex session. Read `AGENTS.md` first, then verify this document against the current source and `git log` before changing code.
 
+Current review work on `codex/attendance-report-sections`: the user requested the four attendance report views on a separate branch. See [ATTENDANCE_REPORT_SECTIONS.md](ATTENDANCE_REPORT_SECTIONS.md). Keep this feature separate from `main` and the main installation until user acceptance.
+
 ## 1. System Map
 
 Attendra is a local-network HR and attendance monorepo:
