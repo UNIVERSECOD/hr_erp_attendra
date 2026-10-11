@@ -19,6 +19,8 @@ public class AttendanceReportQuery {
     private Long departmentId;
     private Long positionId;
     private String status;
+    private String sortBy;
+    private String sortDirection = "asc";
     private int page = 0;
     private int size = 20;
 }

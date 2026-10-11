@@ -253,6 +253,25 @@ class AttendanceOverviewServiceTest {
         verify(attendance, never()).generateDailySummary(any(), any());
     }
 
+    @Test void sortingPrecedesPaginationAndExcelKeepsTheCompleteSortedResult() throws Exception {
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
+                .thenReturn(List.of(day(start, 4, 0, 0, "PRESENT"), day(start.plusDays(1), 12, 0, 0, "PRESENT"),
+                        day(start.plusDays(2), 9.5, 0, 0, "PRESENT")));
+        query.setSortBy("workedMinutes"); query.setSortDirection("desc"); query.setSize(1);
+        assertThat(service.report(query).getContent().get(0).getWorkedMinutes()).isEqualTo(720);
+        query.setPage(1);
+        assertThat(service.report(query).getContent().get(0).getWorkedMinutes()).isEqualTo(570);
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            var sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getLastRowNum()).isEqualTo(3);
+            assertThat(sheet.getRow(1).getCell(10).getStringCellValue()).isEqualTo("12 saat 0 dəqiqə");
+            assertThat(sheet.getRow(2).getCell(10).getStringCellValue()).isEqualTo("9 saat 30 dəqiqə");
+            assertThat(sheet.getRow(3).getCell(10).getStringCellValue()).isEqualTo("4 saat 0 dəqiqə");
+        }
+        query.setPage(0); query.setSortDirection("asc");
+        assertThat(service.report(query).getContent().get(0).getWorkedMinutes()).isEqualTo(240);
+    }
+
     private AttendanceReportRowDTO visit(Long id, int entry, Integer exit) {
         var row = new AttendanceReportRowDTO(); row.setAttendanceLogId(id); row.setEmployeePk(1L); row.setDate(start);
         row.setCheckInTime(start.atTime(entry, 0).atOffset(ZoneOffset.ofHours(4)));

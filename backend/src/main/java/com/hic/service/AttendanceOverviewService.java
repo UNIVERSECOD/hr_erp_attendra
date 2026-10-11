@@ -38,7 +38,7 @@ public class AttendanceOverviewService {
     private final UserScopeService userScope;
 
     public PaginatedResponse<AttendanceOverviewRowDTO> report(AttendanceReportQuery query) {
-        List<AttendanceOverviewRowDTO> rows = rows(query);
+        List<AttendanceOverviewRowDTO> rows = AttendanceReportSort.apply(rows(query), query);
         int from = (int) Math.min((long) query.getPage() * query.getSize(), rows.size());
         int to = Math.min(from + query.getSize(), rows.size());
         return PaginatedResponse.of(rows.subList(from, to), rows.size(),
@@ -250,6 +250,7 @@ public class AttendanceOverviewService {
     }
 
     private void validate(AttendanceReportQuery q) {
+        AttendanceReportSort.validate(q);
         if (q.getStart() == null || q.getEnd() == null || q.getStart().isAfter(q.getEnd())) {
             throw new BadRequestException("Başlanğıc tarixi bitmə tarixindən sonra ola bilməz.");
         }
@@ -269,7 +270,7 @@ public class AttendanceOverviewService {
     }
 
     public byte[] export(AttendanceReportQuery query) {
-        List<AttendanceOverviewRowDTO> data = rows(query);
+        List<AttendanceOverviewRowDTO> data = AttendanceReportSort.apply(rows(query), query);
         boolean detail = query.getView() == AttendanceReportQuery.View.DETAILS;
         boolean daily = query.getView() == AttendanceReportQuery.View.DAILY;
         List<String> headers = new ArrayList<>(List.of("Dövr", "ID", "Ad soyad", "FIN", "Qrafik", "Ərazi", "Departament", "Vəzifə"));

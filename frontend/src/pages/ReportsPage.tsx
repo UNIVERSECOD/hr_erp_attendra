@@ -7,7 +7,7 @@ import { branchApi } from '../api/branchApi.ts'
 import { timetableApi } from '../api/timetableApi.ts'
 import { reportDateError, useAttendanceReportStore } from '../store/attendanceReportStore.ts'
 import { toast } from '../store/toastStore.ts'
-import { AttendanceOverviewFilters, AttendanceOverviewRow, AttendanceReportView, Position, Department, Branch, Timetable } from '../types'
+import { AttendanceOverviewFilters, AttendanceOverviewRow, AttendanceReportView, AttendanceReportSortField, Position, Department, Branch, Timetable } from '../types'
 import { formatAttendanceDateTime, formatAttendanceTime, monthStartInAppTimeZone, todayInAppTimeZone } from '../utils/dateTime.ts'
 
 const sections: { value: AttendanceReportView; label: string; description: string }[] = [
@@ -26,6 +26,11 @@ const statusOptions = ['LATE', 'EARLY_LEAVE', 'LATE_AND_EARLY', 'PRESENT', 'ABSE
   'ON_LEAVE', 'DAY_OFF', 'ON_PERMISSION', 'PERMITTED_EARLY_LEAVE', 'WORKDAY_COMPLETE', 'NOT_STARTED']
 const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400'
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
+const sortFields: Partial<Record<string, AttendanceReportSortField>> = {
+  'Ad soyad': 'fullName', 'Status': 'status', 'Giriş': 'checkInTime', 'Çıxış': 'checkOutTime',
+  'İş müddəti': 'workedMinutes', 'Əlavə iş vaxtı': 'overtimeMinutes', 'ID': 'employeeId', 'FIN': 'fin',
+}
+const descendingFirst = new Set<AttendanceReportSortField>(['checkInTime', 'checkOutTime', 'workedMinutes', 'overtimeMinutes'])
 
 function duration(minutes?: number | null) {
   if (minutes == null) return '—'
@@ -79,6 +84,13 @@ export default function ReportsPage() {
 
   const update = (patch: Partial<AttendanceOverviewFilters>) =>
     setFilters({ ...useAttendanceReportStore.getState().filters, ...patch })
+  const nextSortDirection = (field: AttendanceReportSortField) => filters.sortBy === field
+    ? filters.sortDirection === 'asc' ? 'desc' : 'asc' : descendingFirst.has(field) ? 'desc' : 'asc'
+  const changeView = (view: AttendanceReportView) => {
+    const hideSort = (view === 'MONTHLY' || view === 'YEARLY')
+      && ['status', 'checkInTime', 'checkOutTime'].includes(filters.sortBy ?? '')
+    update({ view, status: undefined, ...(hideSort ? { sortBy: undefined, sortDirection: undefined } : {}) })
+  }
   const visibleDepartments = departments.filter(d => !filters.areaId || d.allAreas || d.branchId === filters.areaId)
   const visiblePositions = positions.filter(p => filters.departmentId ? p.departmentId === filters.departmentId
     : !filters.areaId || visibleDepartments.some(d => d.id === p.departmentId))
@@ -143,7 +155,7 @@ export default function ReportsPage() {
       </div>
       <div role="tablist" aria-label="Hesabat bölmələri" className="flex flex-wrap gap-2 bg-white p-2 rounded-xl shadow-sm">
         {sections.map(section => <button role="tab" aria-selected={filters.view === section.value} key={section.value}
-          onClick={() => update({ view: section.value, status: undefined })}
+          onClick={() => changeView(section.value)}
           className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${filters.view === section.value
             ? 'bg-purple-500 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}>{section.label}</button>)}
       </div>
@@ -192,8 +204,21 @@ export default function ReportsPage() {
       {!detail && <p className="text-xs text-gray-500">Gecikmə və erkən çıxış qrafikin güzəşt müddəti və təsdiqlənmiş icazələr nəzərə alınaraq hesablanır. Gələcək günlər yekuna daxil edilmir.
         {filters.areaId && ' Ərazi filtri uyğun əməkdaş günlərini seçir; göstərilən saat həmin günün bütün ərazilər üzrə yekunudur.'}</p>}
       <div className="bg-white rounded-xl shadow-sm overflow-x-auto" role="region" aria-label="Hesabat cədvəli" tabIndex={0}>
-        <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr>{columns.map(c =>
-          <th scope="col" key={c.label} className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{c.label}</th>)}</tr></thead>
+        <table className="min-w-full text-sm"><thead className="bg-gray-50"><tr>{columns.map(c => {
+          const field = sortFields[c.label]
+          const active = field != null && filters.sortBy === field
+          const next = field ? nextSortDirection(field) : 'asc'
+          const directionLabel = field && descendingFirst.has(field)
+            ? next === 'asc' ? 'azdan çoxa' : 'çoxdan aza' : next === 'asc' ? 'A–Z / artan' : 'Z–A / azalan'
+          return <th scope="col" key={c.label} aria-sort={field ? active ? filters.sortDirection === 'asc' ? 'ascending' : 'descending' : 'none' : undefined}
+            className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">
+            {field ? <button type="button" onClick={() => update({ sortBy: field, sortDirection: next })}
+              title={`${c.label}: ${directionLabel} sırala`} aria-label={`${c.label}: ${directionLabel} sırala`}
+              className={`inline-flex items-center gap-2 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 hover:text-purple-700 uppercase tracking-wide ${active ? 'text-purple-700' : ''}`}>
+              {c.label}<span aria-hidden="true">{active ? filters.sortDirection === 'asc' ? '↑' : '↓' : '↕'}</span>
+            </button> : c.label}
+          </th>
+        })}</tr></thead>
           <tbody>{loading ? <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-gray-500">Yüklənir...</td></tr>
             : error ? <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-red-600">{error} Yenilə düyməsi ilə təkrar yoxlayın.</td></tr>
             : rows.length === 0 ? <tr><td colSpan={columns.length} className="px-4 py-8 text-center text-gray-500">{dateError ? 'Tarix aralığını düzəldin.' : 'Seçilmiş filtrlərə uyğun məlumat tapılmadı.'}</td></tr>

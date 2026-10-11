@@ -426,8 +426,12 @@ export interface AttendanceReportFilters {
 }
 
 export type AttendanceReportView = 'DETAILS' | 'DAILY' | 'MONTHLY' | 'YEARLY'
+export type AttendanceReportSortField = 'fullName' | 'status' | 'checkInTime' | 'checkOutTime'
+  | 'workedMinutes' | 'overtimeMinutes' | 'employeeId' | 'fin'
 
 export interface AttendanceOverviewFilters {
+  sortBy?: AttendanceReportSortField
+  sortDirection?: 'asc' | 'desc'
   view: AttendanceReportView
   start: string
   end: string
