@@ -45,6 +45,16 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
     java.util.Optional<AttendanceLog> findByTenantIdAndEntryPunchId(Long tenantId, Long entryPunchId);
     boolean existsByTenantIdAndExitPunchId(Long tenantId, Long exitPunchId);
 
+    @Query("""
+            select count(a) > 0 from AttendanceLog a
+            where a.tenantId = :tenantId and a.employeeId = :employeeId
+              and a.checkOutTime is not null
+              and a.checkInTime < :punchTime and a.lastEntryTime >= :punchTime
+            """)
+    boolean isRepeatedEntryAlreadyClosed(@Param("tenantId") Long tenantId,
+                                         @Param("employeeId") Long employeeId,
+                                         @Param("punchTime") LocalDateTime punchTime);
+
     java.util.Optional<AttendanceLog> findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(
             Long tenantId, Long employeeId);
     java.util.Optional<AttendanceLog> findFirstByEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(Long employeeId);

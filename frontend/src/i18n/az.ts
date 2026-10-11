@@ -361,7 +361,7 @@ export const az = {
     area: 'Ərazi',
     prev: 'Əvvəlki',
     next: 'Növbəti',
-    subtitle: 'Bütün giriş-çıxış loqları, növbə filtri və Excel ixracı.',
+    subtitle: 'Hər giriş–çıxış cütü ayrıca sətirdədir. Çıxışsız təkrar girişdə son giriş saatı göstərilir.',
     records: '{n} qeyd',
     checkIn: 'Giriş',
     checkOut: 'Çıxış',

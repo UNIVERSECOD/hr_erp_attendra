@@ -8,6 +8,8 @@ Baseline at review: `b8a389d Persist employee device removal jobs with automatic
 
 Read [TASK_STATUS.md](TASK_STATUS.md) for the latest completed tasks, remaining user requests, acceptance criteria, and verification limits. That task ledger supersedes older progress notes below. Also read [BACKUP_SETUP.md](BACKUP_SETUP.md) and [EMPLOYEE_TERMINATION_JOBS.md](EMPLOYEE_TERMINATION_JOBS.md) when working on those features.
 
+Attendance reports (2026-10-11 correction) display separate completed visits for every shift type. Consecutive automatic entries without an exit share one visible row with the latest entry time. This is a report/Excel projection: the existing daily/Tabel first-entry calculation is preserved. V040 adds `last_entry_time` for debounced repeated entries without overwriting their original check-in. See the task ledger for verification and the separately deferred delayed-event and midnight-allocation work.
+
 This document transfers project context to a new computer or Codex session. Read `AGENTS.md` first, then verify this document against the current source and `git log` before changing code.
 
 ## 1. System Map

@@ -46,7 +46,6 @@ class AttendanceReportServiceTest {
     @Mock private PositionRepository positionRepository;
     @Mock private FaceDataRepository faceDataRepository;
     @Mock private TimetableRepository timetableRepository;
-    @Mock private AttendanceInferenceService attendanceInferenceService;
     @Mock private EmployeeShiftResolver employeeShiftResolver;
     @Mock private AttendanceSessionPolicy attendanceSessionPolicy;
 
@@ -78,11 +77,6 @@ class AttendanceReportServiceTest {
     @BeforeEach
     void setTenant() {
         TenantContext.setTenantId(1L);
-        // Pass-through unless a test stubs a tighter behavior.
-        lenient().when(attendanceInferenceService.dedupeSessions(any()))
-                .thenAnswer(invocation -> invocation.getArgument(0));
-        lenient().when(attendanceInferenceService.inferDay(any(), any())).thenAnswer(invocation ->
-                new AttendanceInferenceService().inferDay(invocation.getArgument(0), invocation.getArgument(1)));
         lenient().when(attendanceSessionPolicy.effectiveStatus(any(), any())).thenAnswer(invocation -> {
             AttendanceLog log = invocation.getArgument(1);
             return log.getCheckOutTime() == null ? "OPEN" : "CLOSED";
@@ -305,10 +299,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.dedupeSessions(any())).thenAnswer(invocation -> {
-            List<AttendanceLog> logs = invocation.getArgument(0);
-            return new AttendanceInferenceService().dedupeSessions(logs);
-        });
 
         PaginatedResponse<AttendanceReportRowDTO> rows = attendanceReportService.getReport(
                 day, day, "", null, null, null, null, null, null, 0, 50);
@@ -320,7 +310,7 @@ class AttendanceReportServiceTest {
     }
 
     @Test
-    void getReport_standardShiftCollapsesToOneRowPerDay() {
+    void getReport_standardShiftKeepsEachCompletedVisit() {
         LocalDate day = LocalDate.of(2026, 7, 28);
         Employee employee = employee(1L, "STD-1", "Sara", "Standard", 11L, "STANDARD");
 
@@ -342,16 +332,16 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.inferDay(any(), eq(day))).thenAnswer(invocation ->
-                new AttendanceInferenceService().inferDay(invocation.getArgument(0), day));
 
         PaginatedResponse<AttendanceReportRowDTO> rows = attendanceReportService.getReport(
                 day, day, "STANDARD", null, null, null, null, null, null, 0, 50);
 
-        assertThat(rows.getContent()).hasSize(1);
+        assertThat(rows.getContent()).hasSize(2);
         assertThat(rows.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(9, 0));
-        assertThat(rows.getContent().get(0).getCheckOutTime().toLocalDateTime()).isEqualTo(day.atTime(18, 0));
-        assertThat(rows.getContent().get(0).getWorkedMinutes()).isEqualTo(9 * 60);
+        assertThat(rows.getContent().get(0).getCheckOutTime().toLocalDateTime()).isEqualTo(day.atTime(12, 0));
+        assertThat(rows.getContent().get(0).getWorkedMinutes()).isEqualTo(3 * 60);
+        assertThat(rows.getContent().get(1).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(13, 0));
+        assertThat(rows.getContent().get(1).getCheckOutTime().toLocalDateTime()).isEqualTo(day.atTime(18, 0));
     }
 
     @Test
@@ -410,8 +400,6 @@ class AttendanceReportServiceTest {
         when(departmentRepository.findAllById(any())).thenReturn(List.of());
         when(positionRepository.findAllById(any())).thenReturn(List.of());
         when(faceDataRepository.findTopByEmployeeIdOrderByCreatedAtDesc(any())).thenReturn(Optional.empty());
-        when(attendanceInferenceService.inferDay(any(), eq(standardDay))).thenAnswer(invocation ->
-                new AttendanceInferenceService().inferDay(invocation.getArgument(0), standardDay));
         org.mockito.Mockito.doAnswer(invocation -> {
             AttendanceLog punched = invocation.getArgument(1);
             LocalDate date = punched != null && punched.getCheckInTime() != null
@@ -430,10 +418,11 @@ class AttendanceReportServiceTest {
 
         assertThat(flexibleOnly.getContent()).hasSize(1);
         assertThat(flexibleOnly.getContent().get(0).getDate()).isEqualTo(flexibleDay);
-        assertThat(standardOnly.getContent()).hasSize(1);
+        assertThat(standardOnly.getContent()).hasSize(2);
         assertThat(standardOnly.getContent().get(0).getDate()).isEqualTo(standardDay);
         assertThat(standardOnly.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(standardDay.atTime(9, 0));
-        assertThat(standardOnly.getContent().get(0).getCheckOutTime().toLocalDateTime()).isEqualTo(standardDay.atTime(18, 0));
+        assertThat(standardOnly.getContent().get(0).getCheckOutTime().toLocalDateTime()).isEqualTo(standardDay.atTime(12, 0));
+        assertThat(standardOnly.getContent().get(1).getCheckInTime().toLocalDateTime()).isEqualTo(standardDay.atTime(13, 0));
     }
 
     @Test
@@ -526,6 +515,83 @@ class AttendanceReportServiceTest {
         var rows = attendanceReportService.getReport(day, day, "", null, null, null, null, null, "Əvvəlki ərazi", 0, 50);
         assertThat(rows.getContent()).hasSize(1);
         assertThat(rows.getContent().get(0).getArea()).isEqualTo("Əvvəlki ərazi");
+    }
+
+    @Test
+    void repeatedOpenEntriesShowLatestUntilExitThenNextVisitGetsAnotherRow() throws Exception {
+        LocalDate day = LocalDate.of(2026, 10, 11);
+        Employee employee = employee(1L, "TEST-1", "Test", "Worker", null, "STANDARD");
+        AttendanceLog first = log(1L, day.atTime(9, 0), null);
+        AttendanceLog repeated = log(1L, day.atTime(9, 20), null);
+        AttendanceLog closed = log(1L, day.atTime(9, 40), day.atTime(12, 0));
+        closed.setShiftType("STANDARD");
+        AttendanceLog next = log(1L, day.atTime(13, 0), null);
+        AttendanceLog latest = log(1L, day.atTime(13, 45), null);
+        latest.setShiftType("STANDARD"); latest.setId(5L);
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee));
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(latest, repeated, next, closed, first));
+        var result = attendanceReportService.getReport(day, day, "STANDARD", null, null, null, null, null, null, 0, 50);
+        assertThat(result.getContent()).hasSize(2);
+        assertThat(result.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(9, 40));
+        assertThat(result.getContent().get(0).getWorkedMinutes()).isEqualTo(140);
+        assertThat(result.getContent().get(1).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(13, 45));
+        assertThat(result.getContent().get(1).getCheckOutTime()).isNull();
+        assertThat(result.getContent().get(1).getWorkedMinutes()).isZero();
+        // Report is a projection: source entries and the daily first-entry basis survive.
+        assertThat(first.getCheckInTime()).isEqualTo(day.atTime(9, 0));
+        org.mockito.Mockito.verify(attendanceLogRepository, org.mockito.Mockito.never()).save(any());
+        var page = attendanceReportService.getReport(day, day, "STANDARD", null, null, null, null, null, null, 1, 1);
+        assertThat(page.getTotalElements()).isEqualTo(2);
+        assertThat(page.getContent().get(0).getAttendanceLogId()).isEqualTo(5L);
+        byte[] excel = attendanceReportService.exportExcel(day, day, "STANDARD", null, null, null, null, null, null);
+        try (var workbook = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(excel))) {
+            var sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getLastRowNum()).isEqualTo(2);
+            assertThat(sheet.getRow(1).getCell(6).getStringCellValue()).isEqualTo("2026-10-11 09:40");
+            assertThat(sheet.getRow(2).getCell(6).getStringCellValue()).isEqualTo("2026-10-11 13:45");
+            assertThat(sheet.getRow(2).getCell(7).getStringCellValue()).isEmpty();
+        }
+    }
+
+    @Test
+    void completedVisitsSecondsApartAreNeverDebouncedTogether() {
+        LocalDate day = LocalDate.of(2026, 10, 11);
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee(1L, "TEST", "Test", "Worker", null, "STANDARD")));
+        AttendanceLog first = log(1L, day.atTime(9, 0, 0), day.atTime(9, 0, 10));
+        AttendanceLog second = log(1L, day.atTime(9, 0, 20), day.atTime(9, 0, 30));
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any())).thenReturn(List.of(first, second));
+        var rows = attendanceReportService.getReport(day, day, null, null, null, null, null, null, null, 0, 50);
+        assertThat(rows.getContent()).hasSize(2);
+    }
+
+    @Test
+    void latestDebouncedEntryDisplayedWithoutChangingOriginalAndManualCorrectionWins() {
+        LocalDate day = LocalDate.of(2026, 10, 11);
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee(1L, "TEST", "Test", "Worker", null, "FLEXIBLE")));
+        AttendanceLog open = log(1L, day.atTime(9, 0, 50), null);
+        open.setLastEntryTime(day.atTime(9, 1, 10));
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any())).thenReturn(List.of(open));
+        var rows = attendanceReportService.getReport(day, day, null, null, null, null, null, null, null, 0, 50);
+        assertThat(rows.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(9, 1, 10));
+        assertThat(open.getCheckInTime()).isEqualTo(day.atTime(9, 0, 50));
+        open.setManualOverride(true);
+        var manual = attendanceReportService.getReport(day, day, null, null, null, null, null, null, null, 0, 50);
+        assertThat(manual.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(9, 0, 50));
+    }
+
+    @Test
+    void openManualCorrectionRemainsSeparateAndDoesNotGetHiddenByRepeatedScans() {
+        LocalDate day = LocalDate.of(2026, 10, 11);
+        when(employeeRepository.findAllById(any())).thenReturn(List.of(employee(1L, "TEST", "Test", "Worker", null, "FLEXIBLE")));
+        AttendanceLog manual = log(1L, day.atTime(8, 0), null); manual.setManualOverride(true);
+        AttendanceLog later = log(1L, day.atTime(9, 0), null);
+        AttendanceLog latest = log(1L, day.atTime(10, 0), null);
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any())).thenReturn(List.of(manual, later, latest));
+        var rows = attendanceReportService.getReport(day, day, null, null, null, null, null, null, null, 0, 50);
+        assertThat(rows.getContent()).hasSize(2);
+        assertThat(rows.getContent().get(0).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(8, 0));
+        assertThat(rows.getContent().get(1).getCheckInTime().toLocalDateTime()).isEqualTo(day.atTime(10, 0));
     }
 
     private static Employee employee(Long id, String code, String first, String last, Long timetableId, String shiftType) {

@@ -172,10 +172,22 @@ public class DoorAttendanceSyncService {
                     if (isEntryPunchProcessed(tenantId, punch.getId())) {
                         continue;
                     }
+                    // Debounced scans have no separate entryPunchId. Do not reopen them on replay.
+                    if (tenantId != null && attendanceLogRepository.isRepeatedEntryAlreadyClosed(
+                            tenantId, employee.getId(), punchTime)) {
+                        continue;
+                    }
                     if (openLog != null) {
                         LocalDateTime previousEntry = openLog.getCheckInTime();
-                        if (previousEntry != null && (!punchTime.isAfter(previousEntry)
-                                || attendanceSessionPolicy.isDuplicateEntry(openLog, punchTime))) {
+                        if (previousEntry != null && !punchTime.isAfter(previousEntry)) {
+                            continue;
+                        }
+                        if (attendanceSessionPolicy.isDuplicateEntry(openLog, punchTime)) {
+                            // Keep the original calculation basis, but show the latest scan in reports.
+                            if (openLog.getLastEntryTime() == null || punchTime.isAfter(openLog.getLastEntryTime())) {
+                                openLog.setLastEntryTime(punchTime);
+                                attendanceLogRepository.save(openLog);
+                            }
                             continue;
                         }
 

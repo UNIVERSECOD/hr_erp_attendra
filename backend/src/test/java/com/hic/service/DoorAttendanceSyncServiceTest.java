@@ -320,6 +320,43 @@ class DoorAttendanceSyncServiceTest {
         verify(attendanceLogRepository, never()).save(any(AttendanceLog.class));
     }
 
+    @Test
+    void repeatedEntryUpdatesReportTimeAndReplayDoesNotReopenClosedVisit() {
+        DeviceConfig entry = device(10L, "101", "ENTRY");
+        DeviceConfig exit = device(11L, "102", "EXIT");
+        Employee employee = employee(5L, "1001");
+        stubDevicesAndEmployee(entry, exit, employee);
+        LocalDate day = LocalDate.of(2026, 7, 1);
+        AttendanceLog open = new AttendanceLog();
+        open.setId(50L);
+        open.setEmployeeId(5L);
+        open.setTenantId(1L);
+        open.setCheckInTime(day.atTime(9, 0, 50));
+        open.setDeviceId("101");
+        when(attendanceLogRepository
+                .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(1L, 5L))
+                .thenReturn(Optional.of(open), Optional.empty());
+        var repeated = punch("1001", 101L, day.atTime(9, 1, 10));
+        when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(repeated));
+        when(attendanceLogSyncService.getAttendanceLogs(eq(102L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(punch("1001", 102L, day.atTime(12, 0))));
+        when(attendanceLogRepository.save(open)).thenReturn(open);
+
+        var first = doorAttendanceSyncService.syncAllDevices(day.atStartOfDay(), day.plusDays(1).atStartOfDay(), 100);
+        assertThat(first.getMatchedSessions()).isEqualTo(1);
+        assertThat(open.getCheckInTime()).isEqualTo(day.atTime(9, 0, 50));
+        assertThat(open.getLastEntryTime()).isEqualTo(day.atTime(9, 1, 10));
+        assertThat(open.getCheckOutTime()).isEqualTo(day.atTime(12, 0));
+
+        when(attendanceLogRepository.isRepeatedEntryAlreadyClosed(1L, 5L, day.atTime(9, 1, 10)))
+                .thenReturn(true);
+        var replay = doorAttendanceSyncService.syncAllDevices(day.atStartOfDay(), day.plusDays(1).atStartOfDay(), 100);
+        assertThat(replay.getCreatedLogs()).isZero();
+        assertThat(replay.getMatchedSessions()).isZero();
+        verify(attendanceLogRepository, never()).findByTenantIdAndEmployeeIdAndCheckInTime(any(), any(), any());
+    }
+
     private void stubDevicesAndEmployee(DeviceConfig entryDevice, DeviceConfig exitDevice, Employee employee) {
         when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(entryDevice, exitDevice));
         when(employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(anyLong(), eq("1001")))

@@ -23,6 +23,10 @@ public class AttendanceLog {
     @Column(name = "check_in_time")
     private LocalDateTime checkInTime;
 
+    /** Latest repeated entry for report display; original check-in remains the daily calculation basis. */
+    @Column(name = "last_entry_time")
+    private LocalDateTime lastEntryTime;
+
     @Column(name = "check_out_time")
     private LocalDateTime checkOutTime;
 

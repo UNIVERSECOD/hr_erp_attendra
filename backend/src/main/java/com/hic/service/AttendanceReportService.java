@@ -60,7 +60,6 @@ public class AttendanceReportService {
     private final PositionRepository positionRepository;
     private final FaceDataRepository faceDataRepository;
     private final TimetableRepository timetableRepository;
-    private final AttendanceInferenceService attendanceInferenceService;
     private final EmployeeShiftResolver employeeShiftResolver;
     private final AttendanceSessionPolicy attendanceSessionPolicy;
 
@@ -226,7 +225,7 @@ public class AttendanceReportService {
                 continue;
             }
 
-            List<AttendanceLog> employeeLogs = attendanceInferenceService.dedupeSessions(
+            List<AttendanceLog> employeeLogs = reportSessions(
                     entry.getValue().stream()
                             .filter(log -> log.getCheckInTime() != null)
                             .filter(log -> overlapsReportRange(log, start, end))
@@ -235,64 +234,18 @@ public class AttendanceReportService {
                             .toList()
             );
 
-            List<LabeledSession> sessionLogs = new ArrayList<>();
-            Map<LocalDate, List<AttendanceLog>> standardByDay = new HashMap<>();
-            Map<LocalDate, String> standardShiftTypeByDay = new HashMap<>();
-
             for (AttendanceLog log : employeeLogs) {
                 EmployeeShiftResolver.ResolvedShift resolved = employeeShiftResolver.resolveForLog(
                         employee, log, assignmentsByEmployee, timetableMap);
                 String scheduleShiftType = resolved.shiftType() != null ? resolved.shiftType() : employee.getShiftType();
-                boolean knownStandard = resolved.knownFromHistory()
-                        && ShiftTypes.STANDARD.equals(ShiftTypes.canonical(resolved.shiftType()));
-
-                if (knownStandard) {
-                    // Only collapse when we KNOW this punch belonged to STANDARD.
-                    LocalDate workDate = log.getCheckInTime().toLocalDate();
-                    if (!workDate.isBefore(start) && !workDate.isAfter(end)) {
-                        standardByDay.computeIfAbsent(workDate, ignored -> new ArrayList<>()).add(log);
-                        standardShiftTypeByDay.putIfAbsent(workDate, scheduleShiftType);
-                    }
-                } else {
-                    // Flexible, night, or unmarked history after schedule change: keep every session.
-                    sessionLogs.add(new LabeledSession(log, scheduleShiftType));
-                }
-            }
-
-            for (LabeledSession labeled : sessionLogs) {
                 AttendanceReportRowDTO dto = buildSessionRow(
                         employee,
-                        labeled.log(),
-                        labeled.shiftType(),
+                        log,
+                        scheduleShiftType,
                         departmentNames,
                         positionNames,
                         branchNames,
                         areaNamesByDeviceIdentifier);
-                if (predicate.test(dto)) {
-                    rows.add(dto);
-                }
-            }
-
-            // STANDARD: one row per calendar day — first entry / last exit.
-            for (Map.Entry<LocalDate, List<AttendanceLog>> dayEntry : standardByDay.entrySet()) {
-                LocalDate day = dayEntry.getKey();
-                AttendanceInferenceService.AttendanceInference inference =
-                        attendanceInferenceService.inferDay(dayEntry.getValue(), day);
-                if (inference.firstEntry() == null && inference.lastExit() == null && !inference.currentlyInside()) {
-                    continue;
-                }
-                String dayShiftType = standardShiftTypeByDay.getOrDefault(day, ShiftTypes.STANDARD);
-                AttendanceReportRowDTO dto = buildDailyRow(
-                        employee,
-                        day,
-                        inference,
-                        dayShiftType,
-                        dayEntry.getValue(),
-                        departmentNames,
-                        positionNames,
-                        branchNames,
-                        areaNamesByDeviceIdentifier
-                );
                 if (predicate.test(dto)) {
                     rows.add(dto);
                 }
@@ -305,7 +258,40 @@ public class AttendanceReportService {
                 .toList();
     }
 
-    private record LabeledSession(AttendanceLog log, String shiftType) {
+    /** Report projection only: never delete source logs or change the daily/Tabel calculation. */
+    private List<AttendanceLog> reportSessions(List<AttendanceLog> ordered) {
+        List<AttendanceLog> sessions = new ArrayList<>();
+        Set<SessionIdentity> seen = new java.util.HashSet<>();
+        AttendanceLog pending = null;
+        for (AttendanceLog log : ordered) {
+            boolean manual = Boolean.TRUE.equals(log.getManualOverride());
+            SessionIdentity identity = new SessionIdentity(log.getCheckInTime(), log.getCheckOutTime(), log.getDeviceId());
+            // Only exact copies are duplicates. Two completed visits seconds apart are distinct.
+            if (!manual && log.getCheckOutTime() != null && !seen.add(identity)) continue;
+            if (manual) {
+                if (pending != null) sessions.add(pending);
+                pending = null;
+                sessions.add(log);
+            } else if (log.getCheckOutTime() == null) {
+                // Repeated entries without an exit update the same visible row to the latest entry.
+                if (pending == null || !reportEntry(log).isBefore(reportEntry(pending))) pending = log;
+            } else {
+                sessions.add(log);
+                pending = null;
+            }
+        }
+        if (pending != null) sessions.add(pending);
+        return sessions;
+    }
+
+    private record SessionIdentity(LocalDateTime entry, LocalDateTime exit, String device) {}
+
+    private LocalDateTime reportEntry(AttendanceLog log) {
+        LocalDateTime latest = log.getLastEntryTime();
+        return !Boolean.TRUE.equals(log.getManualOverride()) && latest != null
+                && !latest.isBefore(log.getCheckInTime())
+                && (log.getCheckOutTime() == null || latest.isBefore(log.getCheckOutTime()))
+                ? latest : log.getCheckInTime();
     }
 
     private AttendanceReportRowDTO buildSessionRow(
@@ -321,61 +307,17 @@ public class AttendanceReportService {
         dto.setArea(resolveLogArea(log, areaNamesByDeviceIdentifier, dto.getArea()));
         dto.setAttendanceLogId(log.getId());
         dto.setDate(log.getCheckInTime().toLocalDate());
-        dto.setCheckInTime(toOffsetDateTime(log.getCheckInTime()));
+        LocalDateTime entry = reportEntry(log);
+        dto.setCheckInTime(toOffsetDateTime(entry));
         dto.setCheckOutTime(toOffsetDateTime(log.getCheckOutTime()));
-        if (log.getCheckOutTime() != null && log.getCheckOutTime().isAfter(log.getCheckInTime())) {
-            dto.setWorkedMinutes((int) Duration.between(log.getCheckInTime(), log.getCheckOutTime()).toMinutes());
+        if (log.getCheckOutTime() != null && log.getCheckOutTime().isAfter(entry)) {
+            dto.setWorkedMinutes((int) Duration.between(entry, log.getCheckOutTime()).toMinutes());
         } else {
             dto.setWorkedMinutes(0);
         }
         dto.setVerificationMethod(normalizeVerificationMethod(log.getVerificationMethod()));
         dto.setShiftType(scheduleShiftType);
         dto.setStatus(attendanceSessionPolicy.effectiveStatus(employee, log));
-        return dto;
-    }
-
-    private AttendanceReportRowDTO buildDailyRow(
-            Employee employee,
-            LocalDate day,
-            AttendanceInferenceService.AttendanceInference inference,
-            String scheduleShiftType,
-            List<AttendanceLog> dayLogs,
-            Map<Long, String> departmentNames,
-            Map<Long, String> positionNames,
-            Map<Long, String> branchNames,
-            Map<String, String> areaNamesByDeviceIdentifier
-    ) {
-        AttendanceReportRowDTO dto = baseEmployeeRow(employee, departmentNames, positionNames, branchNames);
-        String visitedAreas = dayLogs.stream()
-                .sorted(Comparator.comparing(AttendanceLog::getCheckInTime,
-                        Comparator.nullsLast(Comparator.naturalOrder())))
-                .map(log -> resolveLogArea(log, areaNamesByDeviceIdentifier, null))
-                .filter(Objects::nonNull)
-                .filter(value -> !value.isBlank())
-                .distinct()
-                .collect(Collectors.joining(", "));
-        if (!visitedAreas.isBlank()) {
-            dto.setArea(visitedAreas);
-        }
-        Long firstLogId = dayLogs.stream()
-                .filter(l -> l.getCheckInTime() != null)
-                .min(Comparator.comparing(AttendanceLog::getCheckInTime)
-                        .thenComparing(l -> l.getId() != null ? l.getId() : 0L))
-                .map(AttendanceLog::getId)
-                .orElse(null);
-        dto.setAttendanceLogId(firstLogId);
-        dto.setDate(day);
-        dto.setCheckInTime(toOffsetDateTime(inference.firstEntry()));
-        dto.setCheckOutTime(toOffsetDateTime(inference.lastExit()));
-        dto.setWorkedMinutes(inference.workedMinutesForShift(scheduleShiftType));
-        String method = dayLogs.stream()
-                .map(AttendanceLog::getVerificationMethod)
-                .filter(Objects::nonNull)
-                .findFirst()
-                .orElse(null);
-        dto.setVerificationMethod(normalizeVerificationMethod(method));
-        dto.setShiftType(scheduleShiftType);
-        dto.setStatus(resolveDailySessionStatus(employee, dayLogs));
         return dto;
     }
 
@@ -443,23 +385,6 @@ public class AttendanceReportService {
         }
         LocalDate workDate = entry.toLocalDate();
         return !workDate.isBefore(start) && !workDate.isAfter(end);
-    }
-
-    private String resolveDailySessionStatus(Employee employee, List<AttendanceLog> logs) {
-        List<String> statuses = logs.stream()
-                .map(log -> attendanceSessionPolicy.effectiveStatus(employee, log))
-                .filter(Objects::nonNull)
-                .toList();
-        if (statuses.contains("MISSING_EXIT")) {
-            return "MISSING_EXIT";
-        }
-        if (statuses.contains("OPEN")) {
-            return "OPEN";
-        }
-        if (statuses.contains("MANUALLY_CORRECTED")) {
-            return "MANUALLY_CORRECTED";
-        }
-        return statuses.isEmpty() ? null : "CLOSED";
     }
 
     private OffsetDateTime toOffsetDateTime(LocalDateTime localDateTime) {
