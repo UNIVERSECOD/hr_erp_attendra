@@ -1,6 +1,6 @@
-# Attendance report sections (review branch)
+# Attendance report sections
 
-Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user explicitly requested a separate branch. Do not merge into `main` or replace the main installation until accepted.
+Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user accepted the complete feature through `6ac1a7c` on 2026-10-11 and explicitly requested merging to `main` and Docker deployment. Review-stage isolation statements below describe the earlier test runs; the current delivery status is in `TASK_STATUS.md`.
 
 ## Views and filters
 

@@ -12,7 +12,7 @@ Attendance reports (2026-10-11 correction) display separate completed visits for
 
 This document transfers project context to a new computer or Codex session. Read `AGENTS.md` first, then verify this document against the current source and `git log` before changing code.
 
-Current review work on `codex/attendance-report-sections`: the user requested the four attendance report views on a separate branch. See [ATTENDANCE_REPORT_SECTIONS.md](ATTENDANCE_REPORT_SECTIONS.md). Keep this feature separate from `main` and the main installation until user acceptance.
+User acceptance (2026-10-11): merge `codex/attendance-report-sections` through `6ac1a7c` into `main` and build/deploy with Docker. This includes report sections, shared departments (V041), dashboard metrics and simplified labels. See [ATTENDANCE_REPORT_SECTIONS.md](ATTENDANCE_REPORT_SECTIONS.md) and the latest task-ledger delivery entry. Earlier separate-branch restrictions are superseded by this acceptance.
 
 ## 1. System Map
 
