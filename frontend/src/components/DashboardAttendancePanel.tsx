@@ -19,9 +19,9 @@ interface DayOverview {
 
 const cards = [
   { key: 'attended', label: 'İşdə olan', hint: 'Bu gün ən azı bir dəfə işdə olan əməkdaşlar', color: 'bg-emerald-50 text-emerald-700' },
-  { key: 'absent', label: 'İşə gəlməyən', hint: 'Qrafik üzrə iş vaxtı başlayıb, giriş qeydi yoxdur', color: 'bg-red-50 text-red-700' },
-  { key: 'late', label: 'İşə gecikən', hint: 'Qrafikin güzəşt müddəti və təsdiqlənmiş icazələr nəzərə alınır', color: 'bg-amber-50 text-amber-700' },
-  { key: 'earlyLeave', label: 'İşdən tez çıxan', hint: 'Qrafik və icazələr nəzərə alınmaqla erkən çıxanlar', color: 'bg-orange-50 text-orange-700' },
+  { key: 'absent', label: 'Gəlməyənlər', hint: 'Qrafik üzrə iş vaxtı başlayıb, giriş qeydi yoxdur', color: 'bg-red-50 text-red-700' },
+  { key: 'late', label: 'Gecikənlər', hint: 'Qrafikin güzəşt müddəti və təsdiqlənmiş icazələr nəzərə alınır', color: 'bg-amber-50 text-amber-700' },
+  { key: 'earlyLeave', label: 'Tez çıxanlar', hint: 'Qrafik və icazələr nəzərə alınmaqla erkən çıxanlar', color: 'bg-orange-50 text-orange-700' },
   { key: 'permitted', label: 'İcazə alan', hint: 'Bu gün üçün təsdiqlənmiş saatlıq və ya tam günlük icazəsi olanlar', color: 'bg-purple-50 text-purple-700' },
   { key: 'onLeave', label: 'Məzuniyyətdə', hint: 'Bu günü əhatə edən təsdiqlənmiş məzuniyyəti olanlar', color: 'bg-pink-50 text-pink-700' },
 ] as const
