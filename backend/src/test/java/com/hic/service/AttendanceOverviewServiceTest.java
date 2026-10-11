@@ -272,6 +272,26 @@ class AttendanceOverviewServiceTest {
         assertThat(service.report(query).getContent().get(0).getWorkedMinutes()).isEqualTo(240);
     }
 
+    @Test void missingExitSortLeadsFirstPageAndExcelInBothDirectionsAndViews() throws Exception {
+        var closed = visit(1L, 9, 18); var open = visit(2L, 19, null);
+        lenient().when(details.getReport(start, query.getEnd(), null, null, null, null, null, null, null, 0, Integer.MAX_VALUE))
+                .thenReturn(PaginatedResponse.of(List.of(closed, open), 2, 1, 0, Integer.MAX_VALUE));
+        query.setSortBy("checkOutTime"); query.setSize(1);
+        for (var view : List.of(AttendanceReportQuery.View.DETAILS, AttendanceReportQuery.View.DAILY)) {
+            query.setView(view);
+            for (String direction : List.of("asc", "desc")) {
+                query.setSortDirection(direction);
+                assertThat(service.report(query).getContent()).singleElement()
+                        .satisfies(row -> assertThat(row.getCheckOutTime()).isNull());
+                try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+                    var sheet = workbook.getSheetAt(0);
+                    assertThat(sheet.getRow(1).getCell(9).getStringCellValue()).isEmpty();
+                    assertThat(sheet.getRow(sheet.getLastRowNum()).getCell(9).getStringCellValue()).isNotEmpty();
+                }
+            }
+        }
+    }
+
     private AttendanceReportRowDTO visit(Long id, int entry, Integer exit) {
         var row = new AttendanceReportRowDTO(); row.setAttendanceLogId(id); row.setEmployeePk(1L); row.setDate(start);
         row.setCheckInTime(start.atTime(entry, 0).atOffset(ZoneOffset.ofHours(4)));

@@ -48,12 +48,13 @@ final class AttendanceReportSort {
             }, descending);
             case "status" -> comparing(AttendanceReportSort::statusText, text, descending);
             case "checkInTime" -> comparing(AttendanceOverviewRowDTO::getCheckInTime, Comparator.naturalOrder(), descending);
-            case "checkOutTime" -> comparing(AttendanceOverviewRowDTO::getCheckOutTime, Comparator.naturalOrder(), descending);
+            case "checkOutTime" -> comparing(AttendanceOverviewRowDTO::getCheckOutTime, Comparator.naturalOrder(), descending, true);
             case "workedMinutes" -> comparing(AttendanceOverviewRowDTO::getWorkedMinutes, Comparator.naturalOrder(), descending);
             case "overtimeMinutes" -> comparing(AttendanceOverviewRowDTO::getOvertimeMinutes, Comparator.naturalOrder(), descending);
             default -> throw new IllegalArgumentException("Unvalidated report sort field");
         };
-        // Deterministic ties keep records from shifting between pages. Missing values stay last in both directions.
+        // Deterministic ties keep records from shifting between pages. Missing exits come first;
+        // other missing values stay last, regardless of direction.
         order = order.thenComparing(AttendanceOverviewRowDTO::getDate, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(AttendanceOverviewRowDTO::getEmployeePk, Comparator.nullsLast(Comparator.naturalOrder()))
                 .thenComparing(AttendanceOverviewRowDTO::getCheckInTime, Comparator.nullsLast(Comparator.naturalOrder()))
@@ -63,7 +64,13 @@ final class AttendanceReportSort {
 
     private static <T> Comparator<AttendanceOverviewRowDTO> comparing(Function<AttendanceOverviewRowDTO, T> field,
             Comparator<T> order, boolean descending) {
-        return Comparator.comparing(field, Comparator.nullsLast(descending ? order.reversed() : order));
+        return comparing(field, order, descending, false);
+    }
+
+    private static <T> Comparator<AttendanceOverviewRowDTO> comparing(Function<AttendanceOverviewRowDTO, T> field,
+            Comparator<T> order, boolean descending, boolean missingFirst) {
+        Comparator<T> directed = descending ? order.reversed() : order;
+        return Comparator.comparing(field, missingFirst ? Comparator.nullsFirst(directed) : Comparator.nullsLast(directed));
     }
 
     private static String statusText(AttendanceOverviewRowDTO row) {
