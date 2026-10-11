@@ -2,7 +2,7 @@
 
 ## Müştəri üçün
 
-Paket Windows 10/11 x64 üçün nəzərdə tutulur. Son loqolu sınaq paketi `Attendra-Setup-1.0.1.exe` administrator hüququ ilə açılır. Java, PostgreSQL, Caddy və xidmət wrapper-i paketə daxildir; Docker və internet tələb olunmur. Microsoft Visual C++ x64 runtime da offline quraşdırılır. Setup/uninstall ikonları, quraşdırıcı başlığı və masaüstü/Start qısayollarında mövcud Attendra loqosu istifadə olunur.
+Paket Windows 10/11 x64 üçün nəzərdə tutulur. Son loqolu sınaq paketi `Attendra-Setup-1.0.2.exe` administrator hüququ ilə açılır. Java, PostgreSQL, Caddy və xidmət wrapper-i paketə daxildir; Docker və internet tələb olunmur. Microsoft Visual C++ x64 runtime da offline quraşdırılır. Setup/uninstall ikonları, quraşdırıcı başlığı və masaüstü/Start qısayollarında mövcud Attendra loqosu istifadə olunur.
 
 - Proqram: `C:\Program Files\Attendra`.
 - Baza, konfiqurasiya, fotolar, loglar və standart backup: `C:\ProgramData\Attendra`.
@@ -35,7 +35,9 @@ Build kompüterində Node/npm, Maven, Java 21 JDK və PowerShell lazımdır. Mü
 
 `Test-Native.ps1 -Payload <build-payload-yolu>` real cihazlara qoşulmadan yeni native PostgreSQL bazasında Java xidmətlərini və Caddy-ni 39100–39103 portlarında yoxlayır. Baza miqrasiyaları, SPA/proxy, idempotent baza hazırlığı, backup, hər iki bazanın ayrıca bərpası, foto və açar saxlanması sınaqdan keçirilir. Bu sınaq xidmət qeydiyyatı etmir və mövcud Docker verilənlərinə toxunmur.
 
-İlk paket sınaq buraxılışıdır. Bu sessiyada administrator tokeni olmadığından aşağıdakılar təmiz Windows VM-də hələ yoxlanmalıdır:
+1.0.1-də səhv WinSW XML sahəsi xidmətlərin LocalSystem hesabına yazılmasına və PostgreSQL-in başlamamasına səbəb olmuşdu. 1.0.2 bunu düzəldir, mövcud xidmət hesabını yoxlayır və təmir edir. Yarımçıq quraşdırmanın yolu avtomatik tapılır; ilk quraşdırma tamamlanmayıbsa, dayandırılmış baza və konfiqurasiyanın surəti `ProgramData\Attendra\recovery` altında saxlanır. Bu kompüterdə administrator təsdiqi ilə təmir yoxlanıb: dörd xidmət LocalService ilə işləyir, web/API HTTP 200 qaytarır. `Test-ServiceAccount.ps1` təmir, təkrar icra və başqa quraşdırmaya müdaxilənin bloklanmasını yoxlayır.
+
+Paket sınaq buraxılışıdır. Aşağıdakılar təmiz Windows VM-də hələ yoxlanmalıdır:
 
 1. Offline Setup ilə SCM xidmət qeydiyyatı və LocalService hüquqları.
 2. Windows hesabına daxil olmadan reboot sonrası avtomatik açılış.

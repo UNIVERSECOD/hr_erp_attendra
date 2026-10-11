@@ -2,6 +2,7 @@
 !include "MUI2.nsh"
 !include "LogicLib.nsh"
 !include "x64.nsh"
+!include "FileFunc.nsh"
 Name "Attendra"
 OutFile "${OUTPUT}"
 InstallDir "$PROGRAMFILES64\Attendra"
@@ -32,6 +33,15 @@ Function .onInit
   Abort
  ${EndIf}
  SetRegView 64
+ ReadRegStr $0 HKLM "SYSTEM\CurrentControlSet\Services\AttendraDatabase" "ImagePath"
+ ${If} $0 != ""
+  StrCpy $1 $0 1
+  ${If} $1 == '$\"'
+   StrCpy $0 $0 -1 1
+  ${EndIf}
+  ${GetParent} "$0" $1
+  ${GetParent} "$1" $INSTDIR
+ ${EndIf}
 FunctionEnd
 Section "Attendra"
  InitPluginsDir
@@ -45,6 +55,7 @@ Section "Attendra"
  ${EndIf}
  SetOutPath "$INSTDIR"
  File /r "${PAYLOAD}\*"
+ WriteRegStr HKLM "Software\Attendra" "InstallDir" "$INSTDIR"
  ExecWait '"$INSTDIR\tools\vc_redist.x64.exe" /install /quiet /norestart' $0
  ${If} $0 == 3010
   SetRebootFlag true

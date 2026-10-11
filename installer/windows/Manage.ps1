@@ -5,6 +5,7 @@ param([ValidateSet('Prepare','Install','Uninstall')][string]$Action,
 $InstallRoot = [IO.Path]::GetFullPath($InstallRoot).TrimEnd('\')
 $DataRoot = [IO.Path]::GetFullPath($DataRoot).TrimEnd('\')
 $names = @('Database', 'Isapi', 'Backend', 'Web')
+$resumeOnFailure = $false
 if ($InstallRoot -eq [IO.Path]::GetPathRoot($InstallRoot).TrimEnd('\') -or
     $DataRoot.StartsWith($InstallRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or
     $InstallRoot.StartsWith($DataRoot + '\', [StringComparison]::OrdinalIgnoreCase) -or $DataRoot -eq $InstallRoot) {
@@ -29,9 +30,25 @@ try {
                 if ([version](Get-Content "$DataRoot\version.txt") -gt [version]$Version) { throw 'Downgrades are not supported.' }
             }
             if (Test-Path "$DataRoot\postgres\PG_VERSION") {
+                if (-not (Test-Path "$DataRoot\version.txt")) {
+                    # A failed first install may not have application databases yet.
+                    # Preserve the entire stopped cluster instead of requiring pg_dump.
+                    Stop-Components
+                    if (Test-Path "$DataRoot\postgres\postmaster.pid") { throw 'Database is still running; refusing an inconsistent recovery snapshot.' }
+                    $snapshot = Join-Path $DataRoot ('recovery\' + [Guid]::NewGuid().ToString('N'))
+                    New-Item -ItemType Directory -Force $snapshot | Out-Null
+                    foreach ($entry in @('postgres','native.json','faces','runtime')) {
+                        if (Test-Path "$DataRoot\$entry") { Copy-Item -LiteralPath "$DataRoot\$entry" -Destination $snapshot -Recurse }
+                    }
+                    Write-Utf8 "$snapshot\complete.txt" 'Cold snapshot of incomplete installation; original data preserved.'
+                    exit 0
+                }
                 # Freeze application writes while taking both databases and photos.
-                Stop-Components -KeepDatabase
+                $resumeOnFailure = $true
+                Stop-Components
+                foreach ($name in $names) { Repair-ServiceAccount $name $InstallRoot }
                 Start-Service AttendraDatabase
+                Wait-Database $config
                 & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$InstallRoot\scripts\backup-attendra.ps1" -ProjectRoot $DataRoot -Force -Required
                 if ($LASTEXITCODE) { throw 'Pre-upgrade backup failed. Upgrade cancelled.' }
                 Stop-Components
@@ -82,14 +99,10 @@ try {
             & "$InstallRoot\services\Attendra$name.exe" install
             if ($LASTEXITCODE) { throw "Cannot install Attendra$name service." }
         }
+        Repair-ServiceAccount $name $InstallRoot
     }
     Start-Service AttendraDatabase
-    $deadline = (Get-Date).AddSeconds(60)
-    do {
-        & "$InstallRoot\postgres\bin\pg_isready.exe" -h 127.0.0.1 -p $config.databasePort -U hic_user *> $null
-        if ($LASTEXITCODE -eq 0) { break }
-        Start-Sleep -Seconds 2
-    } while ((Get-Date) -lt $deadline)
+    Wait-Database $config
     Ensure-Databases $config
     Start-Service AttendraIsapi
     Wait-Http "http://127.0.0.1:$($config.isapiPort)/api/devices" 120 @{'X-API-Key'=$config.apiKey}
@@ -108,7 +121,7 @@ try {
     Write-Utf8 "$DataRoot\version.txt" $Version
     Write-Output 'Attendra installed and health checks passed.'
 } catch {
-    if ($Action -eq 'Prepare' -and (Test-Path "$DataRoot\native.json")) {
+    if ($Action -eq 'Prepare' -and $resumeOnFailure) {
         foreach ($name in $names) { if (Get-Service "Attendra$name" -ErrorAction SilentlyContinue) { Start-Service "Attendra$name" -ErrorAction SilentlyContinue } }
     }
     if (Test-Path "$DataRoot\logs") { Write-Utf8 "$DataRoot\logs\setup-error.txt" $_.Exception.Message }

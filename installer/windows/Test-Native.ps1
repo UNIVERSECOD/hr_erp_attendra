@@ -12,7 +12,7 @@ try {
     Write-ServiceFiles $config
     foreach ($name in @('Database','Backend','Isapi','Web')) {
         $xml = [xml](Get-Content "$Payload\services\Attendra$name.xml" -Raw)
-        Check ($xml.service.serviceaccount.username -eq 'NT AUTHORITY\LocalService') "$name uses LocalService"
+        Check ($xml.service.serviceaccount.domain -eq 'NT AUTHORITY' -and $xml.service.serviceaccount.user -eq 'LocalService') "$name uses WinSW v2 LocalService configuration"
     }
     $starter = Start-Process "$Payload\postgres\bin\pg_ctl.exe" -ArgumentList "-D `"$data\postgres`" -l `"$data\logs\postgres.log`" -w start" -WindowStyle Hidden -PassThru
     if (-not $starter.WaitForExit(60000) -or $starter.ExitCode -ne 0) { throw 'Test PostgreSQL did not start' }

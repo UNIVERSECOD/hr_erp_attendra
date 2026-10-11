@@ -58,6 +58,15 @@ function Initialize-Database($Config) {
     } finally { Remove-Item -LiteralPath $passwordFile -Force -ErrorAction SilentlyContinue }
     Write-Utf8 (Join-Path $pgData 'postgresql.auto.conf') "listen_addresses = '127.0.0.1'`nport = $($Config.databasePort)`ntimezone = 'Asia/Baku'`n"
 }
+function Wait-Database($Config) {
+    $deadline = (Get-Date).AddSeconds(60)
+    do {
+        & (Join-Path $Config.installRoot 'postgres\bin\pg_isready.exe') -h 127.0.0.1 -p $Config.databasePort -U hic_user *> $null
+        if ($LASTEXITCODE -eq 0) { return }
+        Start-Sleep -Seconds 2
+    } while ((Get-Date) -lt $deadline)
+    throw 'PostgreSQL readiness timed out.'
+}
 function Ensure-Databases($Config) {
     $prior = $env:PGPASSWORD
     try {
@@ -92,7 +101,7 @@ function Write-ServiceFiles($Config) {
  <id>Attendra$name</id><name>Attendra $name</name><description>Attendra attendance system</description>
  <executable>$(& $escape $def.exe)</executable><arguments>$(& $escape $def.args)</arguments>
  <workingdirectory>$(& $escape $data)</workingdirectory>
- <serviceaccount><username>NT AUTHORITY\LocalService</username></serviceaccount>
+ <serviceaccount><domain>NT AUTHORITY</domain><user>LocalService</user></serviceaccount>
  <startmode>Automatic</startmode><delayedAutoStart>true</delayedAutoStart>$dependency
  <onfailure action="restart" delay="15 sec"/><stoptimeout>45 sec</stoptimeout>
  <logpath>$(& $escape "$data\logs")</logpath><log mode="roll-by-size"><sizeThreshold>10240</sizeThreshold><keepFiles>5</keepFiles></log>
@@ -125,6 +134,22 @@ function Write-ServiceFiles($Config) {
 }
 "@
 }
+function Repair-ServiceAccount([string]$Name, [string]$InstallRoot) {
+    $service = Get-CimInstance Win32_Service -Filter "Name='Attendra$Name'" -ErrorAction Stop
+    if (-not $service) { return }
+    $expected = Join-Path $InstallRoot "services\Attendra$Name.exe"
+    if ($service.PathName.Trim('"') -ne $expected) { throw 'Service belongs to another installation; refusing to change it.' }
+    if ($service.StartName -ne 'NT AUTHORITY\LocalService') {
+        if ($service.State -ne 'Stopped') { throw 'Stop the service before changing its account.' }
+        $result = Invoke-CimMethod -InputObject $service -MethodName Change -Arguments @{
+            StartName = 'NT AUTHORITY\LocalService'; StartPassword = ''
+        }
+        if ($result.ReturnValue -ne 0) { throw "Cannot repair Attendra$Name service account (code $($result.ReturnValue))." }
+    }
+    $actual = Get-CimInstance Win32_Service -Filter "Name='Attendra$Name'"
+    if ($actual.StartName -ne 'NT AUTHORITY\LocalService') { throw 'Service account verification failed.' }
+}
+
 function Wait-Http([string]$Url, [int]$Seconds = 120, [hashtable]$Headers = @{}) {
     $deadline = (Get-Date).AddSeconds($Seconds)
     do {

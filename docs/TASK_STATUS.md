@@ -1,5 +1,12 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Windows service startup repair (1.0.2)
+
+- Corrected WinSW 2.12 service account XML from unsupported `username` to `domain`/`user`; the previous version silently registered LocalSystem, which PostgreSQL refuses. Existing matching service registrations are repaired while stopped and their actual SCM accounts are verified. Foreign installation paths are rejected.
+- Setup discovers a partially installed directory through the database service path and records its own path before starting services. Incomplete first installations receive a cold cluster/config/photo snapshot before retry; completed installations still require both database backups. Database readiness is awaited before backup, and validation failures do not start unrelated services.
+- Mock service-account repair/idempotence/foreign-path checks passed in Windows PowerShell 5.1. Actual elevated in-place repair succeeded: all four services run as LocalService; web/API health returned HTTP 200. Customer data was preserved. Corrected Setup re-run and artifact details will be recorded after verification.
+- Clean Windows install without developer prerequisites, reboot without login, and data-preserving uninstall remain unverified. No physical-device operations or application code changes.
+
 ## 2026-10-11 — Offline Windows Setup (test release)
 
 - Final branded test artifact: `build/windows-installer/Attendra-Setup-1.0.1.exe` (209,466,643 bytes) plus `.sha256`. Source snapshot `537d6a4`; logo included in EXE/uninstaller, wizard and shortcuts at 16–256 px. Final native smoke passed 14 checks including both database restores and mandatory backup while daily backup is disabled.
