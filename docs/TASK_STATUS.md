@@ -2,6 +2,8 @@
 
 ## 2026-10-11 — Offline Windows Setup (test release)
 
+- Final branded test artifact: `build/windows-installer/Attendra-Setup-1.0.1.exe` (209,466,643 bytes) plus `.sha256`. Source snapshot `537d6a4`; logo included in EXE/uninstaller, wizard and shortcuts at 16–256 px. Final native smoke passed 14 checks including both database restores and mandatory backup while daily backup is disabled.
+
 - Added NSIS offline packaging, pinned runtime downloads, per-installation secrets, protected native configuration, LocalService definitions, local-only backend/ISAPI/PostgreSQL ports, web proxy, shortcuts, daily SYSTEM backup task, mandatory backup before update, downgrade checks and uninstall preserving all customer data.
 - Backup script now chooses native PostgreSQL tools for native installations while preserving the existing Docker flow and 183-day validated retention behavior.
 - Verification: native Java/PG/Caddy startup, 42 backend migrations, SPA/proxy, native backup and restore, photos/keys preservation; 33 ISAPI Maven tests and 70 PowerShell 5.1 backup assertions passed. No app Java/React source changes and no physical-device writes.

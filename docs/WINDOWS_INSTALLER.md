@@ -2,7 +2,7 @@
 
 ## Müştəri üçün
 
-Paket Windows 10/11 x64 üçün nəzərdə tutulur. `Attendra-Setup-1.0.0.exe` administrator hüququ ilə açılır. Java, PostgreSQL, Caddy və xidmət wrapper-i paketə daxildir; Docker və internet tələb olunmur. Microsoft Visual C++ x64 runtime da offline quraşdırılır.
+Paket Windows 10/11 x64 üçün nəzərdə tutulur. Son loqolu sınaq paketi `Attendra-Setup-1.0.1.exe` administrator hüququ ilə açılır. Java, PostgreSQL, Caddy və xidmət wrapper-i paketə daxildir; Docker və internet tələb olunmur. Microsoft Visual C++ x64 runtime da offline quraşdırılır. Setup/uninstall ikonları, quraşdırıcı başlığı və masaüstü/Start qısayollarında mövcud Attendra loqosu istifadə olunur.
 
 - Proqram: `C:\Program Files\Attendra`.
 - Baza, konfiqurasiya, fotolar, loglar və standart backup: `C:\ProgramData\Attendra`.
