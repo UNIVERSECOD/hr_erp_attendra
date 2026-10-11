@@ -9,6 +9,12 @@ InstallDirRegKey HKLM "Software\Attendra" "InstallDir"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
 !define MUI_ABORTWARNING
+!define MUI_ICON "${PAYLOAD}\assets\Attendra.ico"
+!define MUI_UNICON "${PAYLOAD}\assets\Attendra.ico"
+!define MUI_HEADERIMAGE
+!define MUI_HEADERIMAGE_BITMAP "${PAYLOAD}\assets\header.bmp"
+!define MUI_WELCOMEFINISHPAGE_BITMAP "${PAYLOAD}\assets\welcome.bmp"
+!define MUI_UNWELCOMEFINISHPAGE_BITMAP "${PAYLOAD}\assets\welcome.bmp"
 !define MUI_WELCOMEPAGE_TITLE "Attendra quraşdırılması"
 !define MUI_WELCOMEPAGE_TEXT "Attendra və tələb olunan xidmətlər bu kompüterə quraşdırılacaq. Docker və ayrıca Java quraşdırılması tələb olunmur.$\r$\n$\r$\nMövcud quraşdırma yenilənirsə, əvvəl məlumatların ehtiyat nüsxəsi alınacaq."
 !insertmacro MUI_PAGE_WELCOME
@@ -58,12 +64,13 @@ Section "Attendra"
  WriteRegStr HKLM "Software\Attendra" "InstallDir" "$INSTDIR"
  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Attendra" "DisplayName" "Attendra"
  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Attendra" "DisplayVersion" "${VERSION}"
+ WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Attendra" "DisplayIcon" "$INSTDIR\assets\Attendra.ico"
  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\Attendra" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
  SetShellVarContext all
  WriteINIStr "$INSTDIR\Attendra.url" "InternetShortcut" "URL" "http://localhost:3000"
- CreateShortcut "$DESKTOP\Attendra.lnk" "$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\Open-Attendra.ps1"'
+ CreateShortcut "$DESKTOP\Attendra.lnk" "$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\Open-Attendra.ps1"' "$INSTDIR\assets\Attendra.ico"
  CreateDirectory "$SMPROGRAMS\Attendra"
- CreateShortcut "$SMPROGRAMS\Attendra\Attendra.lnk" "$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\Open-Attendra.ps1"'
+ CreateShortcut "$SMPROGRAMS\Attendra\Attendra.lnk" "$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" '-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$INSTDIR\scripts\Open-Attendra.ps1"' "$INSTDIR\assets\Attendra.ico"
 SectionEnd
 Section "Uninstall"
  SetRegView 64

@@ -23,6 +23,7 @@ if (-not $UseBuiltArtifacts) {
     } finally { Pop-Location }
 }
 foreach ($dir in @('app','web','tools','scripts','licenses')) { New-Item -ItemType Directory "$stage\$dir" | Out-Null }
+& "$PSScriptRoot\Build-BrandAssets.ps1" -Source "$repo\frontend\public\attendra-mark.png" -Destination "$stage\assets"
 Copy-Item "$repo\backend\target\hr-erp-1.0.0-SNAPSHOT.jar" "$stage\app\backend.jar"
 Copy-Item "$repo\isapi\target\hr-erp-isapi-1.0.0-SNAPSHOT.jar" "$stage\app\isapi.jar"
 Copy-Item "$repo\frontend\dist" "$stage\web\dist" -Recurse
