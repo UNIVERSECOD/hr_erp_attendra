@@ -160,7 +160,7 @@ export default function DashboardPage() {
               {sortedLogs.map((log) => {
                 const eventTime = log.checkInTime ?? log.punchTime
                 const role = log.doorRole?.toUpperCase()
-                const roleLabel = role === 'ENTRY' ? 'Giriş' : role === 'EXIT' ? 'Çıxış' : (log.status ? statusLabel(log.status) : (log.eventType || 'Keçid'))
+                const roleLabel = role === 'BOTH' ? 'Keçid' : role === 'ENTRY' ? 'Giriş' : role === 'EXIT' ? 'Çıxış' : (log.status ? statusLabel(log.status) : (log.eventType || 'Keçid'))
                 const deviceDisplay = log.deviceName
                   || (log.deviceId !== undefined ? `Cihaz #${log.deviceId}` : 'Bilinməyən cihaz')
                 const badgeStyle = role === 'ENTRY'

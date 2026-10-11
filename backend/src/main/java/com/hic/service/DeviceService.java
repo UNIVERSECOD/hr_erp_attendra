@@ -104,8 +104,15 @@ public class DeviceService {
             throw new BadRequestException("Device does not belong to your tenant");
         }
         String role = dto.getRole() != null ? dto.getRole().trim().toUpperCase() : null;
-        if (role != null && !"ENTRY".equals(role) && !"EXIT".equals(role)) {
-            throw new BadRequestException("Role must be ENTRY or EXIT");
+        if (role != null && !"ENTRY".equals(role) && !"EXIT".equals(role) && !"BOTH".equals(role)) {
+            throw new BadRequestException("Rol Giriş, Çıxış və ya Giriş və çıxış olmalıdır.");
+        }
+        if ("BOTH".equals(role) && (tenantId == null || device.getBranchId() == null)) {
+            throw new BadRequestException("Giriş və çıxış rejimi üçün ərazi seçin.");
+        }
+        if (!java.util.Objects.equals(role, device.getDoorRole())
+                && ("BOTH".equals(role) || "BOTH".equals(device.getDoorRole()))) {
+            device.setAttendanceRoleSince(com.hic.util.AppTimeZone.now());
         }
 
         if (dto.getDoorId() == null) {

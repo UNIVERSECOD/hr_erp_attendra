@@ -45,6 +45,7 @@ public class DoorAttendanceSyncService {
     private final AttendanceService attendanceService;
     private final EmployeeShiftResolver employeeShiftResolver;
     private final AttendanceSessionPolicy attendanceSessionPolicy;
+    private final CombinedDeviceAttendanceService combinedDeviceAttendanceService;
 
     /** Serializes sync per tenant so UI + scheduler cannot create duplicate sessions. */
     private final ConcurrentHashMap<Long, Object> tenantSyncLocks = new ConcurrentHashMap<>();
@@ -93,12 +94,14 @@ public class DoorAttendanceSyncService {
 
         List<DeviceConfig> activeDevicesWithRoles = devices.stream()
                 .filter(d -> "ACTIVE".equalsIgnoreCase(d.getStatus()))
-                .filter(d -> "ENTRY".equalsIgnoreCase(d.getDoorRole()) || "EXIT".equalsIgnoreCase(d.getDoorRole()))
+                .filter(d -> "ENTRY".equalsIgnoreCase(d.getDoorRole()) || "EXIT".equalsIgnoreCase(d.getDoorRole())
+                        || "BOTH".equalsIgnoreCase(d.getDoorRole()))
                 .toList();
 
         List<AttendanceLogSyncDTO.AttendanceLogEntryDTO> allPunches = new ArrayList<>();
         Map<Long, String> deviceRolesByIsapiId = new HashMap<>();
         Map<Long, Long> backendIdByIsapiId = new HashMap<>();
+        Map<Long, Long> areaByIsapiId = new HashMap<>();
 
         for (DeviceConfig device : activeDevicesWithRoles) {
             Long isapiDeviceId = toIsapiDeviceId(device);
@@ -108,9 +111,12 @@ public class DoorAttendanceSyncService {
             }
             deviceRolesByIsapiId.put(isapiDeviceId, device.getDoorRole());
             backendIdByIsapiId.put(isapiDeviceId, device.getId());
+            areaByIsapiId.put(isapiDeviceId, device.getBranchId());
             allPunches.addAll(fetchPunchesInRange(isapiDeviceId, start, end, effectiveLimit)
                     .stream()
                     .filter(p -> p.getPunchTime() != null && p.getEmployeeNo() != null)
+                    .filter(p -> device.getAttendanceRoleSince() == null
+                            || !toLocalDateTime(p.getPunchTime()).isBefore(device.getAttendanceRoleSince()))
                     .toList());
         }
 
@@ -167,6 +173,18 @@ public class DoorAttendanceSyncService {
             for (AttendanceLogSyncDTO.AttendanceLogEntryDTO punch : employeePunches) {
                 LocalDateTime punchTime = toLocalDateTime(punch.getPunchTime());
                 String role = deviceRolesByIsapiId.get(punch.getDeviceId());
+
+                if ("BOTH".equalsIgnoreCase(role)) {
+                    var result = combinedDeviceAttendanceService.accept(
+                            tenantId, employee, areaByIsapiId.get(punch.getDeviceId()), punch);
+                    if (result.skipped()) skippedPunches++;
+                    if (result.changed()) {
+                        createdLogs++;
+                        if (result.closed()) matchedSessions++;
+                        addRecalcDate(recalcDatesByEmployee, employee.getId(), punchTime.toLocalDate());
+                    }
+                    continue;
+                }
 
                 if ("ENTRY".equals(role)) {
                     if (isEntryPunchProcessed(tenantId, punch.getId())) {

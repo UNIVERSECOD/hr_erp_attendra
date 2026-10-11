@@ -555,6 +555,21 @@ class AttendanceReportServiceTest {
     }
 
     @Test
+    void combinedAreaBucketsRemainSeparateFromEachOtherAndDirectionalVisits() {
+        LocalDate day = LocalDate.of(2026, 10, 11);
+        when(employeeRepository.findAllById(any())).thenReturn(
+                List.of(employee(1L, "TEST", "Test", "Worker", null, "STANDARD")));
+        AttendanceLog areaA = log(1L, day.atTime(9, 0), null); areaA.setCombinedAreaId(10L);
+        AttendanceLog areaB = log(1L, day.atTime(9, 1), null); areaB.setCombinedAreaId(20L);
+        AttendanceLog directional = log(1L, day.atTime(10, 0), day.atTime(18, 0));
+        when(attendanceLogRepository.findByTenantIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of(areaA, areaB, directional));
+        var result = attendanceReportService.getReport(day, day, null, null, null, null, null, null, null, 0, 50);
+        assertThat(result.getContent()).hasSize(3);
+        assertThat(result.getContent().stream().filter(row -> row.getCheckOutTime() == null)).hasSize(2);
+    }
+
+    @Test
     void completedVisitsSecondsApartAreNeverDebouncedTogether() {
         LocalDate day = LocalDate.of(2026, 10, 11);
         when(employeeRepository.findAllById(any())).thenReturn(List.of(employee(1L, "TEST", "Test", "Worker", null, "STANDARD")));

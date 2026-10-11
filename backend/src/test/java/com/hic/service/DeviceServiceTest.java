@@ -31,6 +31,30 @@ class DeviceServiceTest {
     @InjectMocks
     private DeviceService deviceService;
 
+    @org.junit.jupiter.api.AfterEach
+    void clearTenant() { com.hic.util.TenantContext.clear(); }
+
+    @Test
+    void combinedRoleRequiresAreaAndPreservesActivationTimeWhenSavedAgain() {
+        com.hic.util.TenantContext.setTenantId(1L);
+        DeviceConfig device = new DeviceConfig(); device.setId(7L); device.setTenantId(1L);
+        when(deviceConfigRepository.findById(7L)).thenReturn(Optional.of(device));
+        var request = new com.hic.dto.DoorDTO.AssignDoorRequest(); request.setRole("BOTH");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> deviceService.assignDoor(7L, request))
+                .isInstanceOf(com.hic.exception.BadRequestException.class).hasMessageContaining("ərazi");
+        device.setBranchId(8L);
+        deviceService.assignDoor(7L, request);
+        assertThat(device.getDoorRole()).isEqualTo("BOTH");
+        var since = device.getAttendanceRoleSince();
+        assertThat(since).isNotNull();
+        deviceService.assignDoor(7L, request);
+        assertThat(device.getAttendanceRoleSince()).isEqualTo(since);
+        device.setAttendanceRoleSince(since.minusDays(1));
+        request.setRole("ENTRY");
+        deviceService.assignDoor(7L, request);
+        assertThat(device.getAttendanceRoleSince()).isAfter(since.minusDays(1));
+    }
+
     @Test
     void syncFromIsapi_offlineResponsePreservesLastSuccessfulSync() {
         LocalDateTime lastSuccessfulSync = LocalDateTime.of(2026, 9, 23, 9, 45);

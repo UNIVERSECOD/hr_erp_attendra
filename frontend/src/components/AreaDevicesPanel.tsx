@@ -71,8 +71,8 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
         <div className="overflow-y-auto min-h-0 p-4 sm:p-6 bg-slate-50 space-y-4">
           {error && <p role="alert" className="px-4 py-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">{error}</p>}
           {!loading && !available && <p className="px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 text-sm text-amber-800">Cihaz xidməti ilə əlaqə yoxdur. Bağlantı vəziyyəti hazırda məlum deyil.</p>}
-          <div className="grid grid-cols-3 gap-3">
-            {[['Ümumi cihazlar', assigned.length], ['Giriş', assigned.filter(d => d.doorRole === 'ENTRY').length], ['Çıxış', assigned.filter(d => d.doorRole === 'EXIT').length]].map(([label, count]) => (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[['Ümumi cihazlar', assigned.length], ['Giriş', assigned.filter(d => d.doorRole === 'ENTRY').length], ['Çıxış', assigned.filter(d => d.doorRole === 'EXIT').length], ['Giriş və çıxış', assigned.filter(d => d.doorRole === 'BOTH').length]].map(([label, count]) => (
               <div key={label} className="bg-white rounded-xl shadow-sm p-3 sm:p-4">
                 <p className="text-xs text-gray-500">{label}</p>
                 <p className="mt-1 text-lg font-bold text-gray-900">{loading ? '—' : count}</p>
@@ -98,9 +98,10 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
                 </div>
                 <label className="text-xs font-medium text-gray-500 w-full sm:w-40">Keçid rolu
                   <select aria-label={`${d.deviceName} keçid rolu`} className={`${inputClass} mt-1 text-gray-700`} disabled={saving} value={d.doorRole || ''} onChange={e => { void role(d, e.target.value) }}>
-                    <option value="">Təyin edilməyib</option><option value="ENTRY">Giriş</option><option value="EXIT">Çıxış</option>
+                    <option value="">Təyin edilməyib</option><option value="ENTRY">Giriş</option><option value="EXIT">Çıxış</option><option value="BOTH">Giriş və çıxış</option>
                   </select>
-                  {!d.doorRole && <span className="block mt-1 text-amber-700">Giriş və ya çıxış rolu seçin.</span>}
+                  {!d.doorRole && <span className="block mt-1 text-amber-700">Keçid rolu seçin.</span>}
+                  {d.doorRole === 'BOTH' && <span className="block mt-1 text-amber-700">İlk və son keçid ərazi üzrə birləşdirilir. Sərbəst qrafik dəstəklənmir.</span>}
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <button disabled={saving} onClick={() => setMove({ device: d, areaId: '' })} className={secondaryClass}>Ərazini dəyiş</button>
@@ -112,6 +113,7 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
           </div>
           {loading ? <p className="py-8 text-sm text-center text-gray-400">Cihazlar yüklənir...</p> : !assigned.length && <p className="py-8 text-sm text-center text-gray-500">Bu əraziyə cihaz bağlanmayıb.</p>}
           <p className="text-xs text-gray-500">Onlayn vəziyyət bağlantını göstərir. Son sinxronizasiya vaxtını ayrıca yoxlayın.</p>
+          <p className="text-xs text-gray-500">Giriş və çıxış rejimi hər təqvim günü ayrıca hesablanır. Bu rejimə keçid və ərazi dəyişikliyi saxlandıqdan sonrakı keçidlərə tətbiq olunur.</p>
           {move && (
             <div className="rounded-xl bg-white shadow-sm border border-purple-200 p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-900">{move.device.deviceName} — ərazini dəyiş</h3>

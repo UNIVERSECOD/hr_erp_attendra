@@ -264,6 +264,11 @@ public class AttendanceReportService {
         Set<SessionIdentity> seen = new java.util.HashSet<>();
         AttendanceLog pending = null;
         for (AttendanceLog log : ordered) {
+            // Combined devices already represent one independent area/day bucket.
+            if (log.getCombinedAreaId() != null) {
+                sessions.add(log);
+                continue;
+            }
             boolean manual = Boolean.TRUE.equals(log.getManualOverride());
             SessionIdentity identity = new SessionIdentity(log.getCheckInTime(), log.getCheckOutTime(), log.getDeviceId());
             // Only exact copies are duplicates. Two completed visits seconds apart are distinct.

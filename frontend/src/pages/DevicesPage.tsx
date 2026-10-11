@@ -49,7 +49,7 @@ export default function DevicesPage() {
   const [syncFeedback, setSyncFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
   const [doors, setDoors] = useState<Door[]>([])
   const [selectedDoorId, setSelectedDoorId] = useState<number | '' | 'new'>('')
-  const [doorRole, setDoorRole] = useState<'ENTRY' | 'EXIT' | ''>('')
+  const [doorRole, setDoorRole] = useState<'ENTRY' | 'EXIT' | 'BOTH' | ''>('')
   const [newDoorName, setNewDoorName] = useState('')
   const [showDoorManager, setShowDoorManager] = useState(false)
   const [managerBranchId, setManagerBranchId] = useState<number | ''>('')
@@ -140,7 +140,7 @@ export default function DevicesPage() {
       status: device.status || 'ACTIVE',
     })
     setSelectedDoorId(device.doorId ?? '')
-    setDoorRole((device.doorRole as 'ENTRY' | 'EXIT') ?? '')
+    setDoorRole((device.doorRole as 'ENTRY' | 'EXIT' | 'BOTH') ?? '')
     setNewDoorName('')
     setFormError(null)
     if (device.branchId) {
@@ -713,13 +713,22 @@ export default function DevicesPage() {
                     <label className="block text-sm font-medium text-gray-700 mb-1">Rol</label>
                     <select
                       value={doorRole}
-                      onChange={(e) => setDoorRole(e.target.value as 'ENTRY' | 'EXIT' | '')}
+                      onChange={(e) => setDoorRole(e.target.value as 'ENTRY' | 'EXIT' | 'BOTH' | '')}
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm"
                     >
                       <option value="">Rol seçin...</option>
                       <option value="ENTRY">Giriş</option>
                       <option value="EXIT">Çıxış</option>
+                      <option value="BOTH">Giriş və çıxış</option>
                     </select>
+                    {doorRole === 'BOTH' && (
+                      <p className="mt-2 text-xs text-amber-700">
+                        Eyni ərazidə bu roldakı cihazların günün ilk keçidi giriş, son keçidi çıxış sayılır.
+                        Çıxış saatı günün sonunadək yenilənir. Tək keçiddə çıxış yoxdur.
+                        Sərbəst qrafik dəstəklənmir; gecə yarısından sonrakı keçid yeni günə aiddir.
+                        Yeni rol və ərazi təyinatı saxlandıqdan sonrakı keçidlərə tətbiq olunur.
+                      </p>
+                    )}
                   </div>
                 </>
               )}

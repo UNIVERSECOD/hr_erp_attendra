@@ -70,6 +70,18 @@ class AttendanceSessionPolicyTest {
         assertThat(policy.isExpired(employee, session, day.plusDays(1).atTime(6, 0))).isTrue();
     }
 
+    @Test
+    void combinedSessionExpiresAtBakuCalendarMidnightWithoutInventingExit() {
+        AttendanceSessionPolicy policy = new AttendanceSessionPolicy(scheduleResolver);
+        LocalDate day = LocalDate.of(2026, 10, 9);
+        AttendanceLog session = openSession(day.atTime(23, 58));
+        session.setCombinedAreaId(7L);
+        session.setCombinedWorkDate(day);
+        assertThat(policy.isExpired(new Employee(), session, day.atTime(23, 59, 59))).isFalse();
+        assertThat(policy.isExpired(new Employee(), session, day.plusDays(1).atStartOfDay())).isTrue();
+        assertThat(session.getCheckOutTime()).isNull();
+    }
+
     private AttendanceLog openSession(LocalDateTime checkIn) {
         AttendanceLog session = new AttendanceLog();
         session.setCheckInTime(checkIn);

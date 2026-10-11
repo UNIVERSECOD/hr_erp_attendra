@@ -29,6 +29,7 @@ export function doorRoleLabel(role?: string | null): string {
   const upper = role.toUpperCase()
   if (upper === 'ENTRY') return 'Giriş'
   if (upper === 'EXIT') return 'Çıxış'
+  if (upper === 'BOTH') return 'Giriş və çıxış'
   return role
 }
 

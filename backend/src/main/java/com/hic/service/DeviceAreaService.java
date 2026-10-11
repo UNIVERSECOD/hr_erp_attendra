@@ -28,6 +28,9 @@ public class DeviceAreaService {
         if (branchId != null) branches.findByIdAndTenantId(branchId, tenantId)
                 .orElseThrow(() -> new ResourceNotFoundException("Ərazi", branchId));
         if (java.util.Objects.equals(device.getBranchId(), branchId)) return;
+        if ("BOTH".equals(device.getDoorRole())) {
+            device.setAttendanceRoleSince(com.hic.util.AppTimeZone.now());
+        }
         device.setBranchId(branchId);
         // A door belongs to the previous area. Preserve direction, clear only its door link.
         device.setDoorId(null);

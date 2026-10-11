@@ -160,6 +160,15 @@ class AttendanceInferenceServiceTest {
         assertThat(service.inferDay(List.of(open, closed), date).currentlyInside()).isTrue();
     }
 
+    @Test
+    void combinedAreaBucketsAreNotDeduplicatedAgainstOtherAreasOrDirectionalVisits() {
+        LocalDate date = LocalDate.of(2026, 10, 9);
+        var a = session(date.atTime(9, 0), null); a.setCombinedAreaId(10L);
+        var b = session(date.atTime(9, 0, 20), date.atTime(18, 0)); b.setCombinedAreaId(20L);
+        var directional = session(date.atTime(9, 0, 30), date.atTime(18, 0));
+        assertThat(service.dedupeSessions(List.of(a, b, directional))).hasSize(3);
+    }
+
     private static AttendanceLog session(LocalDateTime in, LocalDateTime out) {
         AttendanceLog log = new AttendanceLog();
         log.setEmployeeId(1L);

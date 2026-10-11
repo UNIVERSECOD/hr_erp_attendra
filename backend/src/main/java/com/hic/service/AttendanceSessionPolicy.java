@@ -33,6 +33,9 @@ public class AttendanceSessionPolicy {
         }
 
         LocalDateTime checkIn = session.getCheckInTime();
+        if (session.getCombinedWorkDate() != null) {
+            return !now.isBefore(session.getCombinedWorkDate().plusDays(1).atStartOfDay());
+        }
         if (ShiftTypes.isFlexible(session.getShiftType())) {
             return !now.isBefore(checkIn.plusHours(FLEXIBLE_MAX_SESSION_HOURS));
         }

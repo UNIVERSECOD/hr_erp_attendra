@@ -18,7 +18,7 @@ public class AttendanceLogSyncDTO {
         private String firstName;
         private String lastName;
         private String deviceName;
-        /** ENTRY or EXIT from device_configs.door_role */
+        /** ENTRY, EXIT or BOTH from device_configs.door_role */
         private String doorRole;
 
         public AttendanceLogEntryDTO(Long id, Long deviceId, String employeeNo, OffsetDateTime punchTime, Long rawEventId) {

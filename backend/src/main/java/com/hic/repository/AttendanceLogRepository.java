@@ -14,6 +14,9 @@ import java.util.List;
 public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Long> {
 
     // Tenant-aware methods
+    java.util.Optional<AttendanceLog> findByTenantIdAndEmployeeIdAndCombinedAreaIdAndCombinedWorkDate(
+            Long tenantId, Long employeeId, Long areaId, java.time.LocalDate workDate);
+
     List<AttendanceLog> findByTenantIdAndCheckInTimeBetween(Long tenantId, LocalDateTime start, LocalDateTime end);
     List<AttendanceLog> findByTenantIdAndEmployeeIdAndCheckInTimeBetween(Long tenantId, Long employeeId,
                                                                           LocalDateTime start, LocalDateTime end);
@@ -59,8 +62,14 @@ public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Lo
             Long tenantId, Long employeeId);
     java.util.Optional<AttendanceLog> findFirstByEmployeeIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(Long employeeId);
 
+    @Query(value = "select * from attendance_logs where tenant_id = :tenantId and employee_id = :employeeId "
+            + "and check_out_time is null and manual_override = false and combined_area_id is null "
+            + "order by check_in_time desc limit 1", nativeQuery = true)
     java.util.Optional<AttendanceLog> findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
             Long tenantId, Long employeeId);
+    @Query(value = "select * from attendance_logs where employee_id = :employeeId "
+            + "and check_out_time is null and manual_override = false and combined_area_id is null "
+            + "order by check_in_time desc limit 1", nativeQuery = true)
     java.util.Optional<AttendanceLog> findFirstByEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
             Long employeeId);
     List<AttendanceLog> findByTenantIdAndCheckOutTimeIsNullOrderByCheckInTimeDesc(Long tenantId);

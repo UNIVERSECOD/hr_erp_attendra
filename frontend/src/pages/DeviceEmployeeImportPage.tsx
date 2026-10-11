@@ -9,6 +9,7 @@ import {
 import { Branch, DeviceConfig } from '../types'
 import { useAuthStore } from '../store/authStore.ts'
 import { Navigate } from 'react-router-dom'
+import { doorRoleLabel } from '../i18n/labels'
 
 /**
  * Setup-team page: import existing device users into employees for one branch.
@@ -195,7 +196,7 @@ export default function DeviceEmployeeImportPage() {
                               </span>
                               <span className="text-xs text-gray-500">
                                 {d.deviceIp}
-                                {d.doorRole ? ` · ${d.doorRole === 'ENTRY' ? 'Giriş' : 'Çıxış'}` : ''}
+                                {d.doorRole ? ` · ${doorRoleLabel(d.doorRole)}` : ''}
                               </span>
                             </span>
                           </label>

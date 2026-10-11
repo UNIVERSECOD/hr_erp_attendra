@@ -38,6 +38,17 @@ class DeviceAreaServiceTest {
         verifyNoInteractions(assignments, branches);
         verify(devices, never()).save(any());
     }
+    @Test void movingCombinedDeviceStartsNewAreaBoundaryWithoutChangingRole() {
+        TenantContext.setTenantId(1L);
+        DeviceConfig d = new DeviceConfig(); d.setId(5L); d.setTenantId(1L);
+        d.setBranchId(1L); d.setDoorRole("BOTH");
+        when(devices.findById(5L)).thenReturn(Optional.of(d));
+        when(branches.findByIdAndTenantId(2L, 1L)).thenReturn(Optional.of(new Branch()));
+        service.assign(5L, 2L);
+        assertThat(d.getAttendanceRoleSince()).isNotNull();
+        assertThat(d.getDoorRole()).isEqualTo("BOTH");
+        assertThat(d.getBranchId()).isEqualTo(2L);
+    }
     @Test void rejectsAnotherTenantsArea() {
         TenantContext.setTenantId(1L);
         DeviceConfig d = new DeviceConfig(); d.setId(5L); d.setTenantId(1L);

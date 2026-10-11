@@ -151,7 +151,8 @@ public class AttendanceInferenceService {
             boolean sameEnd = previous.getCheckOutTime() != null && log.getCheckOutTime() != null
                     && Duration.between(previous.getCheckOutTime(), log.getCheckOutTime()).abs()
                     .compareTo(DUPLICATE_PUNCH_WINDOW) <= 0;
-            if (sameStart && (sameEnd || previous.getCheckOutTime() == null || log.getCheckOutTime() == null)) {
+            boolean sameCombinedArea = java.util.Objects.equals(previous.getCombinedAreaId(), log.getCombinedAreaId());
+            if (sameCombinedArea && sameStart && (sameEnd || previous.getCheckOutTime() == null || log.getCheckOutTime() == null)) {
                 // Prefer the longer / more complete session
                 if (previous.getCheckOutTime() == null && log.getCheckOutTime() != null) {
                     deduped.set(deduped.size() - 1, log);

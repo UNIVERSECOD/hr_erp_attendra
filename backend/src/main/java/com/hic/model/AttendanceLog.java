@@ -48,6 +48,12 @@ public class AttendanceLog {
     @Column(name = "event_type")
     private String eventType;
 
+    @Column(name = "combined_area_id")
+    private Long combinedAreaId;
+
+    @Column(name = "combined_work_date")
+    private java.time.LocalDate combinedWorkDate;
+
     @Column(name = "verification_method")
     private String verificationMethod;
 

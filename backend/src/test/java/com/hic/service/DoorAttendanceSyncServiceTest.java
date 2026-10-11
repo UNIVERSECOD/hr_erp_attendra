@@ -48,6 +48,7 @@ class DoorAttendanceSyncServiceTest {
     @Mock private AttendanceService attendanceService;
     @Mock private EmployeeShiftResolver employeeShiftResolver;
     @Mock private AttendanceSessionPolicy attendanceSessionPolicy;
+    @Mock private CombinedDeviceAttendanceService combinedDeviceAttendanceService;
 
     @InjectMocks
     private DoorAttendanceSyncService doorAttendanceSyncService;
@@ -355,6 +356,31 @@ class DoorAttendanceSyncServiceTest {
         assertThat(replay.getCreatedLogs()).isZero();
         assertThat(replay.getMatchedSessions()).isZero();
         verify(attendanceLogRepository, never()).findByTenantIdAndEmployeeIdAndCheckInTime(any(), any(), any());
+    }
+
+    @Test
+    void combinedRoleUsesBridgeIdsAndAreaAndSkipsPunchesBeforeRoleChange() {
+        DeviceConfig device = device(10L, "101", "BOTH");
+        device.setBranchId(7L);
+        LocalDate day = LocalDate.of(2026, 10, 9);
+        device.setAttendanceRoleSince(day.atTime(8, 0));
+        Employee employee = employee(5L, "1001");
+        when(deviceConfigRepository.findByTenantId(1L)).thenReturn(List.of(device));
+        when(employeeRepository.findByDeviceAccessAndDeviceEmployeeNo(10L, "1001")).thenReturn(List.of(employee));
+        when(employeeRepository.findByTenantIdAndId(1L, 5L)).thenReturn(Optional.of(employee));
+        var old = punch("1001", 101L, day.atTime(7, 59));
+        var current = punch("1001", 101L, day.atTime(9, 0));
+        when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
+                .thenReturn(List.of(old, current));
+        when(combinedDeviceAttendanceService.accept(1L, employee, 7L, current))
+                .thenReturn(new CombinedDeviceAttendanceService.Result(true, false, false));
+        var result = doorAttendanceSyncService.syncAllDevices(day.atStartOfDay(), day.plusDays(1).atStartOfDay(), 100);
+        assertThat(result.getCreatedLogs()).isEqualTo(1);
+        assertThat(result.getRecalculatedDays()).isEqualTo(1);
+        verify(combinedDeviceAttendanceService, never()).accept(1L, employee, 7L, old);
+        verify(attendanceCalculationService).calculateForDay(5L, day);
+        verify(attendanceService).generateDailySummary(5L, day);
+        verify(attendanceLogRepository, never()).save(any());
     }
 
     private void stubDevicesAndEmployee(DeviceConfig entryDevice, DeviceConfig exitDevice, Employee employee) {

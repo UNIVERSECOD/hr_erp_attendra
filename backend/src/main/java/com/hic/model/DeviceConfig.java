@@ -44,6 +44,10 @@ public class DeviceConfig {
     @Column(name = "door_role")
     private String doorRole;
 
+    /** Prevent reinterpreting old punches after switching to/from combined mode or moving it. */
+    @Column(name = "attendance_role_since")
+    private LocalDateTime attendanceRoleSince;
+
     @Column(name = "status")
     private String status;
 
