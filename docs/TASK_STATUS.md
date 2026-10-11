@@ -1,5 +1,12 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-11 — Offline Windows Setup (test release)
+
+- Added NSIS offline packaging, pinned runtime downloads, per-installation secrets, protected native configuration, LocalService definitions, local-only backend/ISAPI/PostgreSQL ports, web proxy, shortcuts, daily SYSTEM backup task, mandatory backup before update, downgrade checks and uninstall preserving all customer data.
+- Backup script now chooses native PostgreSQL tools for native installations while preserving the existing Docker flow and 183-day validated retention behavior.
+- Verification: native Java/PG/Caddy startup, 42 backend migrations, SPA/proxy, native backup and restore, photos/keys preservation; 33 ISAPI Maven tests and 70 PowerShell 5.1 backup assertions passed. No app Java/React source changes and no physical-device writes.
+- Remaining release gate: clean Windows administrator VM test of actual Setup, LocalService/SCM, reboot without login, upgrade and uninstall; this host session has no administrator token. No code-signing certificate configured. Docker-to-native customer data migration is not automated. Build EXE is in ignored `build/windows-installer`, not committed to Git.
+
 ## 2026-10-11 — Permission schedule validation and overtime correction
 
 - Create/edit/bulk permission operations validate all requested employee-days before saving. Reject rest days, missing assignments/hours and hourly periods partly or wholly outside the assigned shift. Full-day permission requires a working day. Overnight intervals are anchored to the shift date, consistent with attendance calculation.

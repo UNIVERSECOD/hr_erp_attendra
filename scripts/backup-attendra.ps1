@@ -1,7 +1,8 @@
 ﻿[CmdletBinding()]
 param(
     [string]$ProjectRoot,
-    [switch]$Force
+    [switch]$Force,
+    [switch]$Required
 )
 
 $ErrorActionPreference = 'Stop'
@@ -189,7 +190,7 @@ try {
     }
 
     $configuration = Get-Content -LiteralPath $settingsFile -Raw -Encoding UTF8 | ConvertFrom-Json
-    if (-not $configuration.enabled) {
+    if (-not $configuration.enabled -and -not $Required) {
         exit 0
     }
 
@@ -212,7 +213,12 @@ try {
         exit 0
     }
 
-    if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+    $nativeFile = Join-Path $resolvedProjectRoot 'native.json'
+    $native = $null
+    if (Test-Path -LiteralPath $nativeFile) {
+        $native = Get-Content -LiteralPath $nativeFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    }
+    if (-not $native -and -not (Get-Command docker -ErrorAction SilentlyContinue)) {
         throw 'Docker əmri tapılmadı.'
     }
 
@@ -221,7 +227,7 @@ try {
         -LastBackupBytes ([long]$previousStatus.lastBackupBytes) `
         -TotalBackupBytes (Get-DirectoryBytes -Path $backupRoot)
 
-    Wait-AttendraContainers
+    if (-not $native) { Wait-AttendraContainers }
 
     $backupTime = Get-Date
     do {
@@ -231,10 +237,27 @@ try {
         $backupTime = $backupTime.AddSeconds(1)
     } while ((Test-Path -LiteralPath $incompleteDirectory) -or (Test-Path -LiteralPath $completedDirectory))
     New-Item -ItemType Directory -Path $incompleteDirectory | Out-Null
+    if ($native) {
+        $ownerSid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        & icacls.exe $incompleteDirectory /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' '*S-1-5-19:(OI)(CI)M' "*$($ownerSid):(OI)(CI)F" | Out-Null
+        if ($LASTEXITCODE) { throw 'Backup qovluğunun giriş hüquqları qoruna bilmədi.' }
+    }
 
     $backendTempDump = "/tmp/hic_backend-$timestamp.dump"
     $isapiTempDump = "/tmp/hic_isapi-$timestamp.dump"
     try {
+        if ($native) {
+            $oldPassword = $env:PGPASSWORD
+            try {
+                $env:PGPASSWORD = $native.databasePassword
+                foreach ($db in @('hic_backend', 'hic_isapi')) {
+                    & (Join-Path $native.installRoot 'postgres\bin\pg_dump.exe') -h 127.0.0.1 -p $native.databasePort -U hic_user -d $db -Fc -f (Join-Path $incompleteDirectory "$db.dump")
+                    if ($LASTEXITCODE) { throw 'Windows PostgreSQL backup alınmadı.' }
+                }
+            } finally { $env:PGPASSWORD = $oldPassword }
+            Copy-Item -LiteralPath (Join-Path $resolvedProjectRoot 'faces') -Destination (Join-Path $incompleteDirectory 'faces') -Recurse
+            Copy-Item -LiteralPath $nativeFile -Destination (Join-Path $incompleteDirectory '.env.backup')
+        } else {
         & docker exec hic_postgres pg_dump -U hic_user -d hic_backend -Fc -f $backendTempDump
         if ($LASTEXITCODE -ne 0) { throw 'Əsas bazanın backup-u alınmadı.' }
         & docker cp "hic_postgres:$backendTempDump" (Join-Path $incompleteDirectory 'hic_backend.dump')
@@ -251,6 +274,8 @@ try {
         $environmentFile = Join-Path $resolvedProjectRoot '.env'
         if (Test-Path -LiteralPath $environmentFile -PathType Leaf) {
             Copy-Item -LiteralPath $environmentFile -Destination (Join-Path $incompleteDirectory '.env.backup')
+        }
+
         }
 
         foreach ($dumpName in @('hic_backend.dump', 'hic_isapi.dump')) {
@@ -278,7 +303,8 @@ try {
         # Directory.Move fails if the destination exists instead of nesting/overwriting it.
         [System.IO.Directory]::Move($incompleteDirectory, $completedDirectory)
     } finally {
-        $cleanupSucceeded = Remove-TemporaryDatabaseDumps -BackendDump $backendTempDump -IsapiDump $isapiTempDump
+        $cleanupSucceeded = $true
+        if (-not $native) { $cleanupSucceeded = Remove-TemporaryDatabaseDumps -BackendDump $backendTempDump -IsapiDump $isapiTempDump }
     }
 
     if (-not (Get-CompletedBackup -Path $completedDirectory -BackupRoot $backupRoot)) {

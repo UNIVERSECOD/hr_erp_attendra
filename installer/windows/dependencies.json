@@ -1,0 +1,7 @@
+[
+  {"file":"postgres.zip","url":"https://sbp.enterprisedb.com/getfile.jsp?fileid=1260630","sha256":"49E0690194D9FE2BB4D7D6587FDDDAA85A3EAAAFE2FD5480E0916FCB25D0143E","version":"15.19"},
+  {"file":"caddy.zip","url":"https://github.com/caddyserver/caddy/releases/download/v2.11.7/caddy_2.11.7_windows_amd64.zip","sha256":"0A1EDC0B799512051C57071CE0E798D3F2CF67DC98171366F1D2B326072E3B06","version":"2.11.7"},
+  {"file":"WinSW.exe","url":"https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW.NET4.exe","sha256":"923111C7142B3DC783A3C722B19B8A21BCB78222D7A136AC33F0CA8A29F4CB66","version":"2.12.0"},
+  {"file":"nsis-final.zip","url":"https://downloads.sourceforge.net/project/nsis/NSIS%203/3.13/nsis-3.13.zip","sha256":"BA63DFFC4410EE89193E1CB5A41989991BD77C61068DA17E3156D136B7B0B3D8","version":"3.13"},
+  {"file":"vc_redist.x64.exe","url":"https://aka.ms/vs/17/release/vc_redist.x64.exe","sha256":"CC0FF0EB1DC3F5188AE6300FAEF32BF5BEEBA4BDD6E8E445A9184072096B713B","version":"14.44"}
+]
