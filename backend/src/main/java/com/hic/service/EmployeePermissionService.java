@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalTime;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,6 +31,7 @@ public class EmployeePermissionService {
     private final PermissionTypeRepository permissionTypeRepository;
     private final AttendanceCalculationService attendanceCalculationService;
     private final AttendanceService attendanceService;
+    private final AttendanceScheduleResolver scheduleResolver;
 
     @Transactional
     public EmployeePermissionDTO grantPermission(Long employeeId,
@@ -47,6 +49,7 @@ public class EmployeePermissionService {
         Employee employee = requireEmployee(employeeId, tenantId);
         PermissionType permissionType = requirePermissionType(permissionTypeId, tenantId);
         validateReason(permissionType, reason);
+        validateSchedule(employee, startDate, endDate, startTime, endTime);
         return savePermission(employee, permissionType, startDate, endDate, startTime, endTime,
                 deductFromWorkHours, reason, status);
     }
@@ -64,6 +67,8 @@ public class EmployeePermissionService {
         validatePeriod(startDate, endDate, startTime, endTime, reason);
 
         EmployeePermission permission = findByIdAndTenant(id, tenantId);
+        validateSchedule(requireEmployee(permission.getEmployeeId(), tenantId),
+                startDate, endDate, startTime, endTime);
         LocalDate previousStart = permission.getStartDate();
         LocalDate previousEnd = permission.getEndDate();
         permission.setStartDate(startDate);
@@ -143,6 +148,9 @@ public class EmployeePermissionService {
         }
 
         List<EmployeePermissionDTO> results = new ArrayList<>();
+        for (Employee employee : employees) {
+            validateSchedule(employee, startDate, endDate, startTime, endTime);
+        }
         for (Employee employee : employees) {
             results.add(savePermission(
                     employee, permissionType, startDate, endDate,
@@ -236,6 +244,33 @@ public class EmployeePermissionService {
         }
         if (startTime != null && (reason == null || reason.isBlank())) {
             throw new BadRequestException("Reason is required for hourly permission");
+        }
+    }
+
+    private void validateSchedule(Employee employee, LocalDate startDate, LocalDate endDate,
+                                  LocalTime startTime, LocalTime endTime) {
+        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+            var schedule = scheduleResolver.resolveForPermission(employee, date);
+            String context = "Əməkdaş " + employee.getEmployeeId() + " — " + date + ": ";
+            if (!schedule.workingDay()) {
+                throw new BadRequestException(context + "İstirahət gününə icazə verilə bilməz.");
+            }
+            if (schedule.startTime() == null || schedule.endTime() == null) {
+                throw new BadRequestException(context + "Qrafikdə iş saatları təyin edilməyib.");
+            }
+            if (startTime == null) continue;
+            LocalDateTime shiftStart = date.atTime(schedule.startTime());
+            LocalDateTime shiftEnd = date.atTime(schedule.endTime());
+            boolean overnight = !shiftEnd.isAfter(shiftStart);
+            if (overnight) shiftEnd = shiftEnd.plusDays(1);
+            LocalDateTime from = date.atTime(startTime);
+            if (overnight && startTime.isBefore(schedule.startTime())) from = from.plusDays(1);
+            LocalDateTime to = from.toLocalDate().atTime(endTime);
+            if (!to.isAfter(from)) to = to.plusDays(1);
+            if (from.isBefore(shiftStart) || to.isAfter(shiftEnd)) {
+                throw new BadRequestException(context + "İcazə yalnız iş saatları daxilində verilə bilər ("
+                        + schedule.startTime() + "–" + schedule.endTime() + ").");
+            }
         }
     }
 

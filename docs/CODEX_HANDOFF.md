@@ -1,5 +1,7 @@
 # Codex Project Handoff
 
+2026-10-11 permission correction: create, bulk grant and edit validate every requested date against the employee's assigned schedule. Rest days and hourly intervals extending outside the shift are rejected; overnight hours use the shift's work date. No assigned schedule means no permission grant (the attendance fallback remains unchanged). Deductible permission is removed only from time already counted as attendance, overlapping deductions are merged, and remaining actual work above the daily norm still produces overtime. Existing permissions on rest days no longer affect live attendance calculation. 407 backend tests, frontend lint/build and 15 isolated API/report checks passed; see the latest task-ledger entry for deployment.
+
 User acceptance (2026-10-11, latest): merge all `codex/combined-entry-exit-devices` work into main and rebuild the main Docker installation, after renaming visible **Əlavə iş** labels to **Overtime** (including Excel). This supersedes the pending-acceptance restrictions below and in the combined-device document. Physical-device roles and employee lists are not changed automatically by this delivery.
 
 Latest report follow-up on the same separate branch: multi-select daily status filter (OR), overtime badge/filter, consolidated permission statuses, shorter labels and colored positive durations/counts. 397 backend tests and 8 isolated API checks pass; frontend and Docker builds pass. Preview updated; main remains untouched. See the latest task-ledger entry.

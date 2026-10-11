@@ -27,7 +27,7 @@ public class AttendancePermissionCalculator {
                 .filter(permission -> appliesOn(permission, date))
                 .toList();
 
-        if (active.isEmpty()) {
+        if (active.isEmpty() || !schedule.workingDay()) {
             return Result.from(base);
         }
 
@@ -56,22 +56,33 @@ public class AttendancePermissionCalculator {
         boolean unresolvedSession = base.status() == AttendanceStatus.OPEN_SESSION
                 || base.status() == AttendanceStatus.MISSING_EXIT;
         List<TimeRange> coveredRanges = attendanceRanges(inference, schedule);
+        List<TimeRange> deductedRanges = merge(active.stream()
+                .filter(permission -> !Boolean.FALSE.equals(permission.getDeductFromWorkHours()))
+                .map(permission -> permissionRange(permission, date, scheduleRange))
+                .filter(java.util.Objects::nonNull)
+                .toList());
+        // Only subtract permission already counted as attendance; an actual exit gap is not deducted twice.
+        int deductedMinutes = deductedRanges.stream()
+                .mapToInt(range -> overlapMinutes(coveredRanges, range)).sum();
+        int actualWorkedMinutes = Math.max(base.workedMinutes() - deductedMinutes, 0);
         List<TimeRange> rangesForCredit = schedule.expectedMinutes() > 0
                 ? creditableRanges
                 : explicitCreditableRanges;
-        int uncoveredCreditableMinutes = uncoveredMinutes(rangesForCredit, coveredRanges);
+        List<TimeRange> excludedFromCredit = new ArrayList<>(coveredRanges);
+        excludedFromCredit.addAll(deductedRanges);
+        int uncoveredCreditableMinutes = uncoveredMinutes(rangesForCredit, merge(excludedFromCredit));
         int creditedMinutes = unresolvedSession ? 0 : uncoveredCreditableMinutes;
         if (schedule.expectedMinutes() > 0) {
             creditedMinutes = Math.min(
                     creditedMinutes,
-                    Math.max(schedule.expectedMinutes() - base.workedMinutes(), 0)
+                    Math.max(schedule.expectedMinutes() - actualWorkedMinutes, 0)
             );
         }
 
-        int workedMinutes = base.workedMinutes() + creditedMinutes;
+        int workedMinutes = actualWorkedMinutes + creditedMinutes;
         int overtimeMinutes = schedule.expectedMinutes() > 0
-                ? Math.max(workedMinutes - schedule.expectedMinutes(), 0)
-                : base.overtimeMinutes();
+                ? Math.max(actualWorkedMinutes - schedule.expectedMinutes(), 0)
+                : Math.max(base.overtimeMinutes() - deductedMinutes, 0);
 
         int lateMinutes = adjustedLateMinutes(date, inference, schedule, base.lateMinutes(), allRanges);
         int earlyLeaveMinutes = adjustedEarlyLeaveMinutes(

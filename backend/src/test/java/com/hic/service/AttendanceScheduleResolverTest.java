@@ -37,6 +37,17 @@ class AttendanceScheduleResolverTest {
     }
 
     @Test
+    void permissionRequiresAssignedScheduleInsteadOfDefaultHours() {
+        var employee = new Employee(); employee.setId(1L); employee.setTenantId(7L);
+        var date = LocalDate.of(2026, 10, 12);
+        when(employeeShiftResolver.resolve(employee, date))
+                .thenReturn(new EmployeeShiftResolver.ResolvedShift(null, "STANDARD"));
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> resolver.resolveForPermission(employee, date))
+                .isInstanceOf(com.hic.exception.BadRequestException.class);
+        assertThat(resolver.resolve(employee, date).startTime()).isEqualTo(LocalTime.of(9, 0));
+    }
+
+    @Test
     void reportCacheUsesHistoricalAssignmentsAndWeeklyRulesWithoutPerDayQueries() {
         var assignmentRepository = org.mockito.Mockito.mock(com.hic.repository.EmployeeShiftAssignmentRepository.class);
         var realShiftResolver = new EmployeeShiftResolver(assignmentRepository, timetableRepository);

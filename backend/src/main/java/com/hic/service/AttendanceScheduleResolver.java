@@ -38,6 +38,14 @@ public class AttendanceScheduleResolver {
     private final WorkScheduleRepository workScheduleRepository;
 
     public DaySchedule resolve(Employee employee, LocalDate date) {
+        return resolve(employee, date, false);
+    }
+
+    public DaySchedule resolveForPermission(Employee employee, LocalDate date) {
+        return resolve(employee, date, true);
+    }
+
+    private DaySchedule resolve(Employee employee, LocalDate date, boolean requireAssignment) {
         EmployeeShiftResolver.ResolvedShift resolvedShift = employeeShiftResolver.resolve(employee, date);
         if (resolvedShift.timetableId() != null) {
             Long tenantId = TenantContext.getTenantId() != null
@@ -60,6 +68,10 @@ public class AttendanceScheduleResolver {
             }
         }
 
+        if (requireAssignment) {
+            throw new com.hic.exception.BadRequestException("Əməkdaş " + employee.getEmployeeId()
+                    + " — " + date + ": İcazə üçün iş qrafiki təyin edilməlidir.");
+        }
         return new DaySchedule(
                 resolvedShift.timetableId(),
                 resolvedShift.shiftType(),

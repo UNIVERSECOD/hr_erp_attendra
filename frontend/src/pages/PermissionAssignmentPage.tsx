@@ -53,6 +53,7 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
   const [status, setStatus] = useState<EmployeePermission['status']>(initial?.status ?? 'APPROVED')
   const [employeeSearch, setEmployeeSearch] = useState('')
   const [error, setError] = useState('')
+  const [scheduleError, setScheduleError] = useState('')
   const [saving, setSaving] = useState(false)
 
   const selectableEmployees = useMemo(() => {
@@ -71,6 +72,7 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
   }
 
   const handleSave = async () => {
+    setScheduleError('')
     if (!selectedEmployeeIds.length) {
       setError('Ən azı bir əməkdaş seçin')
       return
@@ -108,7 +110,9 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
       })
       onClose()
     } catch (requestError: unknown) {
-      setError(getApiErrorMessage(requestError, 'İcazəni yadda saxlamaq mümkün olmadı'))
+      const message = getApiErrorMessage(requestError, 'İcazəni yadda saxlamaq mümkün olmadı')
+      if (/iş saat|[İi]stirahət gün|iş qrafiki/.test(message)) setScheduleError(message)
+      else setError(message)
     } finally {
       setSaving(false)
     }
@@ -161,6 +165,8 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
               </label>
             </>
           )}
+
+          {scheduleError && <p role="alert" className="col-span-2 text-sm text-red-600">{scheduleError}</p>}
 
           <label className="col-span-2 text-sm font-medium text-slate-700">
             Səbəb

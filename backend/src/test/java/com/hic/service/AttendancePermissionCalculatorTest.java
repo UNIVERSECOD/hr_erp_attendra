@@ -18,6 +18,60 @@ class AttendancePermissionCalculatorTest {
     private final LocalDate date = LocalDate.of(2026, 9, 24);
 
     @Test
+    void editingDeductionReducesCountedSpanAndOnlyRemainingOvertimeSurvives() {
+        var inference = inference(date.atTime(8, 0), date.atTime(19, 0));
+        var schedule = standardSchedule(); // 8-hour norm; 10 worked hours after break
+        var base = timeCalculator.calculate(date, inference, schedule);
+        var permission = permission(LocalTime.of(10, 0), LocalTime.of(11, 0), false);
+        var before = permissionCalculator.apply(date, inference, schedule, base, List.of(permission));
+        assertThat(before.overtimeMinutes()).isEqualTo(120);
+        permission.setDeductFromWorkHours(true);
+        var after = permissionCalculator.apply(date, inference, schedule, base, List.of(permission));
+        assertThat(after.workedMinutes()).isEqualTo(540);
+        assertThat(after.overtimeMinutes()).isEqualTo(60);
+        permission.setEndTime(LocalTime.of(12, 0));
+        assertThat(permissionCalculator.apply(date, inference, schedule, base, List.of(permission)).overtimeMinutes()).isZero();
+    }
+
+    @Test
+    void overlappingDeductionsAreCountedOnce() {
+        var inference = inference(date.atTime(8, 0), date.atTime(19, 0));
+        var schedule = standardSchedule();
+        var result = permissionCalculator.apply(date, inference, schedule,
+                timeCalculator.calculate(date, inference, schedule), List.of(
+                        permission(LocalTime.of(10, 0), LocalTime.of(12, 0), true),
+                        permission(LocalTime.of(11, 0), LocalTime.of(13, 0), true)));
+        assertThat(result.workedMinutes()).isEqualTo(420);
+        assertThat(result.overtimeMinutes()).isZero();
+    }
+
+    @Test
+    void flexibleExitGapIsNotDeductedAgain() {
+        var inference = new AttendanceInferenceService.AttendanceInference(date.atTime(8, 0), date.atTime(18, 0),
+                480, false, List.of(new AttendanceInferenceService.SessionSegment(date.atTime(8, 0), date.atTime(10, 0)),
+                new AttendanceInferenceService.SessionSegment(date.atTime(12, 0), date.atTime(18, 0))));
+        var schedule = new AttendanceScheduleResolver.DaySchedule(1L, "FLEXIBLE", true,
+                LocalTime.of(8, 0), LocalTime.of(18, 0), 0, 0, 0);
+        var result = permissionCalculator.apply(date, inference, schedule,
+                timeCalculator.calculate(date, inference, schedule),
+                List.of(permission(LocalTime.of(10, 0), LocalTime.of(12, 0), true)));
+        assertThat(result.workedMinutes()).isEqualTo(480);
+    }
+
+    @Test
+    void existingPermissionOnRestDayDoesNotCreditOrDeductWork() {
+        var inference = inference(date.atTime(8, 0), date.atTime(10, 0));
+        var schedule = new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", false, null, null, 0, 0, 0);
+        var base = timeCalculator.calculate(date, inference, schedule);
+        var result = permissionCalculator.apply(date, inference, schedule, base,
+                List.of(permission(null, null, false), permission(LocalTime.of(8, 0), LocalTime.of(10, 0), true)));
+        assertThat(result.permissionMinutes()).isZero();
+        assertThat(result.workedMinutes()).isEqualTo(120);
+        assertThat(result.overtimeMinutes()).isEqualTo(120);
+        assertThat(result.hasPermission()).isFalse();
+    }
+
+    @Test
     void approvedEarlyExit_notDeducted_completesExpectedHours() {
         var inference = inference(date.atTime(8, 0), date.atTime(15, 0));
         var schedule = standardSchedule();
