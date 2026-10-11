@@ -75,7 +75,7 @@ final class AttendanceReportSort {
 
     private static String statusText(AttendanceOverviewRowDTO row) {
         if (row.getStatuses() != null && !row.getStatuses().isEmpty()) return row.getStatuses().stream()
-                .map(AttendanceOverviewService::statusLabel).collect(Collectors.joining(", "));
+                .map(AttendanceOverviewService::statusLabel).distinct().collect(Collectors.joining(", "));
         return row.getStatus() == null ? null : AttendanceOverviewService.statusLabel(row.getStatus());
     }
 

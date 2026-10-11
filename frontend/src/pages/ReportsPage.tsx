@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import Layout from '../components/Layout.tsx'
 import { attendanceApi } from '../api/attendanceApi.ts'
 import { positionApi } from '../api/positionApi.ts'
@@ -17,13 +17,13 @@ const sections: { value: AttendanceReportView; label: string; description: strin
   { value: 'YEARLY', label: 'İllik', description: 'Hər əməkdaşın il üzrə yekunu. Yalnız seçilmiş tarix aralığındakı günlər toplanır.' },
 ]
 const statusLabels: Record<string, string> = {
-  LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyətdə',
-  DAY_OFF: 'İstirahət günü', OPEN_SESSION: 'Çıxış yoxdur', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
-  ON_PERMISSION: 'İcazədə', PERMITTED_EARLY_LEAVE: 'İcazəli erkən çıxış', PRESENT: 'İşdə',
-  WORKDAY_COMPLETE: 'İş günü tamamlanıb', NOT_STARTED: 'İş vaxtı başlamayıb', CLOSED: 'Bağlanıb', MANUALLY_CORRECTED: 'Manual düzəliş',
+  LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyət',
+  DAY_OFF: 'İstirahət', OPEN_SESSION: 'Çıxış yoxdur', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
+  ON_PERMISSION: 'İcazə', PERMITTED_EARLY_LEAVE: 'İcazə', PRESENT: 'İşdə', OVERTIME: 'Əlavə iş',
+  WORKDAY_COMPLETE: 'Tamamlandı', NOT_STARTED: 'Başlamayıb', CLOSED: 'Tamamlandı', MANUALLY_CORRECTED: 'Düzəliş',
 }
-const statusOptions = ['LATE', 'EARLY_LEAVE', 'LATE_AND_EARLY', 'PRESENT', 'ABSENT', 'MISSING_EXIT',
-  'ON_LEAVE', 'DAY_OFF', 'ON_PERMISSION', 'PERMITTED_EARLY_LEAVE', 'WORKDAY_COMPLETE', 'NOT_STARTED']
+const statusOptions = ['LATE', 'EARLY_LEAVE', 'OVERTIME', 'PRESENT', 'ABSENT', 'MISSING_EXIT',
+  'ON_PERMISSION', 'ON_LEAVE', 'DAY_OFF', 'WORKDAY_COMPLETE']
 const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400'
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
 const sortFields: Partial<Record<string, AttendanceReportSortField>> = {
@@ -37,6 +37,7 @@ function duration(minutes?: number | null) {
   return `${Math.floor(minutes / 60)} saat ${minutes % 60} dəqiqə`
 }
 function statusClass(status: string) {
+  if (status === 'OVERTIME') return 'bg-indigo-50 text-indigo-700'
   if (status === 'LATE') return 'bg-amber-50 text-amber-800'
   if (status === 'EARLY_LEAVE') return 'bg-orange-50 text-orange-800'
   if (status === 'ABSENT' || status === 'MISSING_EXIT' || status === 'OPEN' || status === 'OPEN_SESSION') return 'bg-red-50 text-red-700'
@@ -46,9 +47,54 @@ function statusClass(status: string) {
 }
 function Status({ row }: { row: AttendanceOverviewRow }) {
   const values = row.statuses?.length ? row.statuses : row.status ? [row.status] : []
-  return <div className="flex flex-wrap gap-1 min-w-[120px]">{values.map(status => (
+  const unique = [...new Map(values.map(status => [statusLabels[status] ?? status, status])).values()]
+  return <div className="flex flex-wrap gap-1 min-w-[120px]">{unique.map(status => (
     <span key={status} className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(status)}`}>{statusLabels[status] ?? status}</span>
   ))}</div>
+}
+const metricClasses = {
+  work: 'text-emerald-700', overtime: 'text-indigo-700', late: 'text-amber-700',
+  early: 'text-orange-700', permission: 'text-purple-700', absent: 'text-red-700',
+}
+function Metric({ value, tone, days = false }: { value?: number | null; tone: keyof typeof metricClasses; days?: boolean }) {
+  return <span className={(value ?? 0) > 0 ? `font-semibold ${metricClasses[tone]}` : 'text-gray-400'}>
+    {days ? value ?? '—' : duration(value)}
+  </span>
+}
+function StatusFilter({ value, onChange }: { value?: string; onChange: (value?: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const root = useRef<HTMLDivElement>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
+  const selected = value?.split(',').filter(Boolean) ?? []
+  useEffect(() => {
+    if (!open) return
+    const closeOutside = (event: PointerEvent) => { if (!root.current?.contains(event.target as Node)) setOpen(false) }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [open])
+  const toggle = (status: string) => {
+    const next = selected.includes(status) ? selected.filter(s => s !== status) : [...selected, status]
+    onChange(next.length ? next.join(',') : undefined)
+  }
+  return <div ref={root} className="relative" onKeyDown={e => {
+    if (e.key === 'Escape') { setOpen(false); trigger.current?.focus() }
+  }} onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) setOpen(false) }}>
+    <button ref={trigger} id="report-status" type="button" aria-expanded={open} aria-controls="report-status-options"
+      onClick={() => setOpen(!open)} className={`${inputClass} flex justify-between items-center gap-2 text-left`}>
+      <span className="truncate">{!selected.length ? 'Bütün statuslar' : selected.map(s => statusLabels[s] ?? s).join(', ')}</span>
+      <span aria-hidden="true" className="text-gray-400">{open ? '▴' : '▾'}</span>
+    </button>
+    {open && <div id="report-status-options" role="group" aria-label="Status seçimləri"
+      className="absolute left-0 top-full mt-1 z-30 w-full min-w-[240px] max-h-80 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg p-2">
+      <p className="px-2 py-1 text-xs text-gray-500">Seçilənlərdən ən azı birinə uyğun</p>
+      {statusOptions.map(status => <label key={status} className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-gray-50">
+        <input type="checkbox" className="accent-purple-600 h-4 w-4" checked={selected.includes(status)} onChange={() => toggle(status)} />
+        <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusClass(status)}`}>{statusLabels[status]}</span>
+      </label>)}
+      <button type="button" onClick={() => onChange(undefined)} disabled={!selected.length}
+        className="mt-1 w-full border-t border-gray-100 px-2 pt-2 pb-1 text-left text-xs text-purple-700 disabled:text-gray-400">Seçimi təmizlə</button>
+    </div>}
+  </div>
 }
 function Field({ name, label, children }: { name: string; label: string; children: ReactNode }) {
   return <div className="min-w-0"><label htmlFor={name} className="mb-1 block text-xs font-medium text-gray-600">{label}</label>{children}</div>
@@ -117,20 +163,20 @@ export default function ReportsPage() {
       { label: 'Çıxış', cell: (r: AttendanceOverviewRow) => daily && (!r.checkOutTime || r.checkOutTime.slice(0, 10) === r.date)
         ? formatAttendanceTime(r.checkOutTime) : formatAttendanceDateTime(r.checkOutTime) },
     ] : []),
-    { label: 'İş müddəti', cell: r => <span className="font-semibold text-gray-900">{duration(r.workedMinutes)}</span> },
-    { label: 'Əlavə iş vaxtı', cell: r => <span className={r.overtimeMinutes ? 'font-semibold text-purple-700' : ''}>{duration(r.overtimeMinutes)}</span> },
+    { label: 'İş müddəti', cell: r => <Metric value={r.workedMinutes} tone="work" /> },
+    { label: 'Əlavə iş vaxtı', cell: r => <Metric value={r.overtimeMinutes} tone="overtime" /> },
     ...(!detail ? [
-      { label: 'Gecikmə', cell: (r: AttendanceOverviewRow) => <span className={r.lateMinutes > 0 ? 'font-semibold text-amber-700' : ''}>{duration(r.lateMinutes)}</span> },
-      { label: 'Erkən çıxış', cell: (r: AttendanceOverviewRow) => <span className={r.earlyLeaveMinutes > 0 ? 'font-semibold text-orange-700' : ''}>{duration(r.earlyLeaveMinutes)}</span> },
-      { label: 'İcazə', cell: (r: AttendanceOverviewRow) => duration(r.permissionMinutes) },
+      { label: 'Gecikmə', cell: (r: AttendanceOverviewRow) => <Metric value={r.lateMinutes} tone="late" /> },
+      { label: 'Erkən çıxış', cell: (r: AttendanceOverviewRow) => <Metric value={r.earlyLeaveMinutes} tone="early" /> },
+      { label: 'İcazə', cell: (r: AttendanceOverviewRow) => <Metric value={r.permissionMinutes} tone="permission" /> },
     ] : [{ label: 'Tanıma metodu', cell: (r: AttendanceOverviewRow) => r.verificationMethod ?? '—' }]),
     ...(aggregate ? [
-      { label: 'Gəldiyi gün', cell: (r: AttendanceOverviewRow) => r.attendedDays },
-      { label: 'Gəlmədiyi gün', cell: (r: AttendanceOverviewRow) => r.absentDays },
-      { label: 'Gecikdiyi gün', cell: (r: AttendanceOverviewRow) => r.lateDays },
-      { label: 'Erkən çıxdığı gün', cell: (r: AttendanceOverviewRow) => r.earlyLeaveDays },
-      { label: 'Məzuniyyət günü', cell: (r: AttendanceOverviewRow) => r.leaveDays },
-      { label: 'Çıxışı olmayan gün', cell: (r: AttendanceOverviewRow) => r.missingExitDays },
+      { label: 'Gəldiyi gün', cell: (r: AttendanceOverviewRow) => <Metric value={r.attendedDays} tone="work" days /> },
+      { label: 'Gəlmədiyi gün', cell: (r: AttendanceOverviewRow) => <Metric value={r.absentDays} tone="absent" days /> },
+      { label: 'Gecikdiyi gün', cell: (r: AttendanceOverviewRow) => <Metric value={r.lateDays} tone="late" days /> },
+      { label: 'Erkən çıxdığı gün', cell: (r: AttendanceOverviewRow) => <Metric value={r.earlyLeaveDays} tone="early" days /> },
+      { label: 'Məzuniyyət günü', cell: (r: AttendanceOverviewRow) => <Metric value={r.leaveDays} tone="permission" days /> },
+      { label: 'Çıxışı olmayan gün', cell: (r: AttendanceOverviewRow) => <Metric value={r.missingExitDays} tone="absent" days /> },
     ] : []),
     { label: 'ID', cell: r => r.employeeId },
     { label: 'FIN', cell: r => r.fin ?? '—' },
@@ -195,10 +241,8 @@ export default function ReportsPage() {
             onChange={e => update({ positionId: numeric(e.target.value) })} className={inputClass}>
             <option value="">Bütün vəzifələr</option>{visiblePositions.map(p => <option key={p.id} value={p.id}>{p.positionName}</option>)}
           </select></Field>
-          {daily && <Field name="report-status" label="Status"><select id="report-status" value={filters.status ?? ''}
-            onChange={e => update({ status: e.target.value || undefined })} className={inputClass}>
-            <option value="">Bütün statuslar</option>{statusOptions.map(s => <option key={s} value={s}>{s === 'LATE_AND_EARLY' ? 'Həm gecikib, həm erkən çıxıb' : statusLabels[s]}</option>)}
-          </select></Field>}
+          {daily && <Field name="report-status" label="Status"><StatusFilter value={filters.status}
+            onChange={status => update({ status })} /></Field>}
         </div>
       </div>
       {!detail && <p className="text-xs text-gray-500">Gecikmə və erkən çıxış qrafikin güzəşt müddəti və təsdiqlənmiş icazələr nəzərə alınaraq hesablanır. Gələcək günlər yekuna daxil edilmir.

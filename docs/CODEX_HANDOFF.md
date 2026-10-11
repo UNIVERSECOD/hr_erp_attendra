@@ -1,5 +1,7 @@
 # Codex Project Handoff
 
+Latest report follow-up on the same separate branch: multi-select daily status filter (OR), overtime badge/filter, consolidated permission statuses, shorter labels and colored positive durations/counts. 397 backend tests and 8 isolated API checks pass; frontend and Docker builds pass. Preview updated; main remains untouched. See the latest task-ledger entry.
+
 2026-10-11 latest branch work: `codex/combined-entry-exit-devices` adds **Giriş və çıxış** devices with tenant/employee/area/day first-last aggregation, excludes flexible schedules, and preserves manual corrections and existing directional pairing. See [COMBINED_DEVICE_ATTENDANCE.md](COMBINED_DEVICE_ATTENDANCE.md). V042 is applied only to the isolated preview. **Do not merge/deploy this feature into main until the user accepts it.** 393 backend tests and 22 isolated API/DB checks pass; frontend and separate Docker builds pass.
 
 Last reviewed: 2026-10-09

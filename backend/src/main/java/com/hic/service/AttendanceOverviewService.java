@@ -105,6 +105,10 @@ public class AttendanceOverviewService {
                     if (daily != null) row.setOvertimeMinutes(overtime(daily, schedules.apply(employee, detail.getDate())));
                 }
                 setTimetable(row, timetableId, timetableMap);
+                var detailStatuses = new ArrayList<String>();
+                if (row.getStatus() != null) detailStatuses.add(row.getStatus());
+                if (zero(row.getOvertimeMinutes()) > 0) detailStatuses.add("OVERTIME");
+                row.setStatuses(detailStatuses);
                 result.add(row);
             }
             return result;
@@ -158,6 +162,8 @@ public class AttendanceOverviewService {
                 statuses.add(status);
                 if (row.getLateMinutes() > 0) statuses.add("LATE");
                 if (row.getEarlyLeaveMinutes() > 0) statuses.add("EARLY_LEAVE");
+                if (row.getPermissionMinutes() > 0) statuses.add("ON_PERMISSION");
+                if (zero(row.getOvertimeMinutes()) > 0) statuses.add("OVERTIME");
                 row.setStatuses(List.copyOf(statuses));
                 row.setAttendedDays(daily.getCheckInTime() != null ? 1 : 0);
                 row.setAbsentDays(status.equals("ABSENT") ? 1 : 0);
@@ -215,6 +221,13 @@ public class AttendanceOverviewService {
 
     static boolean matchesStatus(AttendanceOverviewRowDTO row, String status) {
         if (status == null || status.isBlank()) return true;
+        return Arrays.stream(status.split(",")).map(String::trim).anyMatch(value -> matchesSingleStatus(row, value));
+    }
+
+    private static boolean matchesSingleStatus(AttendanceOverviewRowDTO row, String status) {
+        if ("OVERTIME".equals(status)) return zero(row.getOvertimeMinutes()) > 0;
+        if ("ON_PERMISSION".equals(status)) return row.getPermissionMinutes() > 0
+                || row.getStatuses().contains("ON_PERMISSION") || row.getStatuses().contains("PERMITTED_EARLY_LEAVE");
         if ("MISSING_EXIT".equals(status)) return row.getStatuses().stream()
                 .anyMatch(s -> Set.of("OPEN", "OPEN_SESSION", "MISSING_EXIT").contains(s));
         if ("LATE_AND_EARLY".equals(status)) return row.getLateMinutes() > 0 && row.getEarlyLeaveMinutes() > 0;
@@ -261,9 +274,11 @@ public class AttendanceOverviewService {
             throw new BadRequestException("Hesabat bölməsini və səhifə ölçüsünü düzgün seçin (1–200).");
         }
         if (q.getStatus() != null && !q.getStatus().isBlank()) {
-            if (q.getView() != AttendanceReportQuery.View.DAILY || (!q.getStatus().equals("LATE_AND_EARLY")
-                    && !q.getStatus().equals("NOT_STARTED") && Arrays.stream(DailyAttendanceSummary.AttendanceStatus.values())
-                    .noneMatch(s -> s.name().equals(q.getStatus())))) {
+            Set<String> allowed = Arrays.stream(DailyAttendanceSummary.AttendanceStatus.values())
+                    .map(Enum::name).collect(Collectors.toSet());
+            allowed.addAll(Set.of("LATE_AND_EARLY", "NOT_STARTED", "OVERTIME"));
+            if (q.getView() != AttendanceReportQuery.View.DAILY || Arrays.stream(q.getStatus().split(",", -1))
+                    .map(String::trim).anyMatch(s -> !allowed.contains(s))) {
                 throw new BadRequestException("Status filtri yalnız gündəlik hesabat üçün düzgün seçilməlidir.");
             }
         }
@@ -288,8 +303,8 @@ public class AttendanceOverviewService {
                 List<Object> values = new ArrayList<>(Arrays.asList(detail ? dto.getDate() : dto.getPeriod(), dto.getEmployeeId(),
                         dto.getFullName(), dto.getFin(), dto.getTimetableName(), dto.getArea(), dto.getDepartment(), dto.getPosition()));
                 if (detail || daily) values.addAll(Arrays.asList(dateTime(dto.getCheckInTime()), dateTime(dto.getCheckOutTime()),
-                        duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()), detail ? statusLabel(dto.getStatus())
-                                : dto.getStatuses().stream().map(AttendanceOverviewService::statusLabel).collect(Collectors.joining(", "))));
+                        duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()),
+                        dto.getStatuses().stream().map(AttendanceOverviewService::statusLabel).distinct().collect(Collectors.joining(", "))));
                 else values.addAll(List.of(duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()), dto.getAttendedDays(), dto.getAbsentDays(),
                         dto.getLateDays(), dto.getEarlyLeaveDays(), dto.getLeaveDays(), dto.getMissingExitDays()));
                 if (!detail) values.addAll(List.of(duration(dto.getLateMinutes()), duration(dto.getEarlyLeaveMinutes()), duration(dto.getPermissionMinutes())));
@@ -310,12 +325,13 @@ public class AttendanceOverviewService {
         if (value == null) return "";
         return switch (value) {
             case "LATE" -> "Gecikib"; case "EARLY_LEAVE" -> "Erkən çıxıb";
-            case "ABSENT" -> "Gəlməyib"; case "ON_LEAVE" -> "Məzuniyyətdə";
-            case "DAY_OFF" -> "İstirahət günü";
-            case "OPEN", "OPEN_SESSION", "MISSING_EXIT" -> "Çıxış yoxdur"; case "ON_PERMISSION" -> "İcazədə";
-            case "PERMITTED_EARLY_LEAVE" -> "İcazəli erkən çıxış"; case "NOT_STARTED" -> "İş vaxtı başlamayıb";
-            case "MANUALLY_CORRECTED" -> "Manual düzəliş"; case "CLOSED" -> "Bağlanıb";
-            case "WORKDAY_COMPLETE" -> "İş günü tamamlanıb"; default -> "İşdə";
+            case "ABSENT" -> "Gəlməyib"; case "ON_LEAVE" -> "Məzuniyyət";
+            case "DAY_OFF" -> "İstirahət";
+            case "OPEN", "OPEN_SESSION", "MISSING_EXIT" -> "Çıxış yoxdur";
+            case "ON_PERMISSION", "PERMITTED_EARLY_LEAVE" -> "İcazə";
+            case "NOT_STARTED" -> "Başlamayıb"; case "OVERTIME" -> "Əlavə iş";
+            case "MANUALLY_CORRECTED" -> "Düzəliş";
+            case "CLOSED", "WORKDAY_COMPLETE" -> "Tamamlandı"; default -> "İşdə";
         };
     }
     private static String dateTime(OffsetDateTime value) { return value == null ? "" : value.atZoneSameInstant(AppTimeZone.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")); }

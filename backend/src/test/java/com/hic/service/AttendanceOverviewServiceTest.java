@@ -293,6 +293,54 @@ class AttendanceOverviewServiceTest {
         }
     }
 
+    @Test void multipleStatusesUseUnionBeforePaginationAndExportWithoutDuplicates() throws Exception {
+        query.setStatus("LATE,EARLY_LEAVE"); query.setSize(1);
+        assertThat(service.report(query).getTotalElements()).isEqualTo(2);
+        query.setPage(1);
+        assertThat(service.report(query).getContent().get(0).getDate()).isEqualTo(start.plusDays(1));
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            assertThat(workbook.getSheetAt(0).getLastRowNum()).isEqualTo(2);
+        }
+        query.setStatus(" LATE, LATE,ABSENT ");
+        assertThat(service.report(query).getTotalElements()).isEqualTo(3);
+        query.setStatus(null);
+        assertThat(service.report(query).getTotalElements()).isEqualTo(3);
+    }
+
+    @Test void overtimeFilterAndBadgeRequirePositiveKnownOvertime() {
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
+                .thenReturn(List.of(day(start, 10, 0, 0, "PRESENT"), day(start.plusDays(1), 8, 0, 0, "PRESENT")));
+        query.setStatus("OVERTIME");
+        assertThat(service.report(query).getContent()).singleElement().satisfies(row -> {
+            assertThat(row.getOvertimeMinutes()).isEqualTo(60);
+            assertThat(row.getStatuses()).contains("OVERTIME");
+        });
+        when(scheduleResolver.forReport(eq(7L), anyList(), any(), any())).thenReturn((e, d) ->
+                new AttendanceScheduleResolver.DaySchedule(40L, "FLEXIBLE", true, null, null, 0, 0, 0));
+        assertThat(service.report(query).getTotalElements()).isZero();
+    }
+
+    @Test void permissionFilterIncludesMinutesAndLegacyPermittedExitAndExportDeduplicatesLabels() throws Exception {
+        var permitted = day(start, 8, 0, 0, "PERMITTED_EARLY_LEAVE"); permitted.setPermissionMinutes(60);
+        var partial = day(start.plusDays(1), 8, 0, 0, "PRESENT"); partial.setPermissionMinutes(30);
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
+                .thenReturn(List.of(permitted, partial, day(start.plusDays(2), 8, 0, 0, "PRESENT")));
+        query.setStatus("ON_PERMISSION");
+        assertThat(service.report(query).getTotalElements()).isEqualTo(2);
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue()).isEqualTo("İcazə");
+        }
+    }
+
+    @Test void everySelectedStatusIsValidatedAndAggregateViewsStillRejectStatusFilters() {
+        for (String value : List.of("LATE,INVALID", "LATE,", ",OVERTIME")) {
+            query.setStatus(value);
+            assertThatThrownBy(() -> service.report(query)).isInstanceOf(BadRequestException.class);
+        }
+        query.setStatus("LATE,OVERTIME"); query.setView(AttendanceReportQuery.View.MONTHLY);
+        assertThatThrownBy(() -> service.report(query)).isInstanceOf(BadRequestException.class);
+    }
+
     private AttendanceReportRowDTO visit(Long id, int entry, Integer exit) {
         var row = new AttendanceReportRowDTO(); row.setAttendanceLogId(id); row.setEmployeePk(1L); row.setDate(start);
         row.setCheckInTime(start.atTime(entry, 0).atOffset(ZoneOffset.ofHours(4)));

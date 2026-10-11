@@ -18,6 +18,7 @@ public class AttendanceReportQuery {
     private Long areaId;
     private Long departmentId;
     private Long positionId;
+    /** Comma-separated daily statuses, matched with OR; a single legacy value remains supported. */
     private String status;
     private String sortBy;
     private String sortDirection = "asc";
