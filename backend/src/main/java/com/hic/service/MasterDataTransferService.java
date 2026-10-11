@@ -45,7 +45,7 @@ import java.util.stream.Collectors;
 public class MasterDataTransferService {
 
     private static final List<String> DEPARTMENT_HEADERS = List.of(
-            "Departament adı", "Təsvir", "Ərazi", "Valideyn departament");
+            "Departament adı", "Təsvir", "Ərazi", "Valideyn departament", "Bütün ərazilər");
     private static final List<String> POSITION_HEADERS = List.of(
             "Vəzifə adı", "Təsvir", "Ərazi", "Departament");
     private static final List<String> EMPLOYEE_HEADERS = List.of(
@@ -94,7 +94,7 @@ public class MasterDataTransferService {
                 .filter(branch -> branchScope == null || branchScope.equals(branch.getId()))
                 .collect(Collectors.toMap(Branch::getId, Function.identity()));
         Map<Long, Department> departments = departmentRepository.findByTenantId(tenantId).stream()
-                .filter(department -> branches.containsKey(department.getBranchId()))
+                .filter(department -> Boolean.TRUE.equals(department.getAllAreas()) || branches.containsKey(department.getBranchId()))
                 .collect(Collectors.toMap(Department::getId, Function.identity()));
         List<Position> positions = entity == DataEntity.EMPLOYEES
                 ? positionRepository.findByTenantId(tenantId).stream()
@@ -105,6 +105,7 @@ public class MasterDataTransferService {
                 choiceNames(branches.values().stream().map(Branch::getName).toList()));
         choices.put(entity == DataEntity.DEPARTMENTS ? "Valideyn departament" : "Departament",
                 choiceNames(departments.values().stream().map(Department::getDepartmentName).toList()));
+        if (entity == DataEntity.DEPARTMENTS) choices.put("Bütün ərazilər", List.of("Bəli", "Xeyr"));
         if (entity == DataEntity.EMPLOYEES) {
             choices.put("Vəzifə", choiceNames(positions.stream().map(Position::getPositionName).toList()));
             choices.put("Qrafik", choiceNames(timetableRepository.findByTenantId(tenantId).stream()
@@ -119,7 +120,7 @@ public class MasterDataTransferService {
                             .filter(position -> department.getId().equals(position.getDepartmentId()))
                             .sorted(Comparator.comparing(Position::getPositionName, String.CASE_INSENSITIVE_ORDER))
                             .toList();
-                    String area = branchName(branches, department.getBranchId());
+                    String area = Boolean.TRUE.equals(department.getAllAreas()) ? "Bütün ərazilər" : branchName(branches, department.getBranchId());
                     if (departmentPositions.isEmpty()) {
                         references.add(List.of(area, department.getDepartmentName(), ""));
                     } else {
@@ -166,7 +167,7 @@ public class MasterDataTransferService {
         Map<Long, Department> departmentsById = departmentRepository.findByTenantId(tenantId).stream()
                 .collect(Collectors.toMap(Department::getId, Function.identity()));
         return departmentsById.values().stream()
-                .filter(department -> branchScope == null || branchScope.equals(department.getBranchId()))
+                .filter(department -> branchScope == null || Boolean.TRUE.equals(department.getAllAreas()) || branchScope.equals(department.getBranchId()))
                 .sorted(Comparator.comparing(Department::getDepartmentName, String.CASE_INSENSITIVE_ORDER))
                 .map(department -> List.of(
                         value(department.getDepartmentName()),
@@ -176,7 +177,8 @@ public class MasterDataTransferService {
                                 ? value(departmentsById.get(department.getParentDepartmentId()) != null
                                 ? departmentsById.get(department.getParentDepartmentId()).getDepartmentName()
                                 : null)
-                                : ""))
+                                : "",
+                        Boolean.TRUE.equals(department.getAllAreas()) ? "Bəli" : "Xeyr"))
                 .toList();
     }
 
@@ -190,7 +192,7 @@ public class MasterDataTransferService {
                 .filter(position -> {
                     Department department = departments.get(position.getDepartmentId());
                     return department != null
-                            && (branchScope == null || branchScope.equals(department.getBranchId()));
+                            && (branchScope == null || Boolean.TRUE.equals(department.getAllAreas()) || branchScope.equals(department.getBranchId()));
                 })
                 .sorted(Comparator.comparing(Position::getPositionName, String.CASE_INSENSITIVE_ORDER))
                 .map(position -> {
@@ -279,6 +281,12 @@ public class MasterDataTransferService {
             String name = required(row, "Departament adı", result);
             String description = row.get("Təsvir");
             String parentName = row.get("Valideyn departament").trim();
+            String allAreasValue = row.get("Bütün ərazilər").trim();
+            boolean allAreas = allAreasValue.equalsIgnoreCase("Bəli") || allAreasValue.equalsIgnoreCase("true");
+            if (!allAreasValue.isBlank() && !allAreas && !allAreasValue.equalsIgnoreCase("Xeyr")
+                    && !allAreasValue.equalsIgnoreCase("false")) {
+                addError(result, row.rowNumber(), "Bütün ərazilər", "Bəli və ya Xeyr seçin");
+            }
             validateLength(row.rowNumber(), "Departament adı", name, 255, result);
             validateLength(row.rowNumber(), "Təsvir", description, 255, result);
             validateLength(row.rowNumber(), "Valideyn departament", parentName, 255, result);
@@ -294,7 +302,7 @@ public class MasterDataTransferService {
                 addError(result, row.rowNumber(), "Departament adı", "Bu departament həmin ərazidə artıq mövcuddur");
             }
             rows.add(new DepartmentImportRow(
-                    row.rowNumber(), name.trim(), description, branch, parentName, key));
+                    row.rowNumber(), name.trim(), description, branch, parentName, key, allAreas));
         }
 
         for (DepartmentImportRow row : rows) {
@@ -323,6 +331,7 @@ public class MasterDataTransferService {
             department.setDepartmentName(row.name());
             department.setDescription(blankToNull(row.description()));
             department.setBranchId(row.branch().getId());
+            department.setAllAreas(row.allAreas());
             department.setCalculateOvertime(false);
             department.setFlexShift(false);
             if (!row.parentName().isBlank()) {
@@ -348,9 +357,7 @@ public class MasterDataTransferService {
         Long tenantId = requireTenant();
         Long branchScope = userScopeService.resolveBranchScope(null);
         Map<String, List<Branch>> branches = branchLookup(branchRepository.findByTenantId(tenantId));
-        Map<String, List<Department>> departments = groupByKey(
-                departmentRepository.findByTenantId(tenantId),
-                department -> departmentKey(department.getBranchId(), department.getDepartmentName()));
+        Map<String, List<Department>> departments = departmentLookup(tenantId);
         Map<String, List<Position>> existingPositions = groupByKey(
                 positionRepository.findByTenantId(tenantId),
                 position -> positionKey(position.getDepartmentId(), position.getPositionName()));
@@ -404,9 +411,7 @@ public class MasterDataTransferService {
         Long tenantId = requireTenant();
         Long branchScope = userScopeService.resolveBranchScope(null);
         Map<String, List<Branch>> branches = branchLookup(branchRepository.findByTenantId(tenantId));
-        Map<String, List<Department>> departments = groupByKey(
-                departmentRepository.findByTenantId(tenantId),
-                department -> departmentKey(department.getBranchId(), department.getDepartmentName()));
+        Map<String, List<Department>> departments = departmentLookup(tenantId);
         Map<String, List<Position>> positions = groupByKey(
                 positionRepository.findByTenantId(tenantId),
                 position -> positionKey(position.getDepartmentId(), position.getPositionName()));
@@ -596,6 +601,20 @@ public class MasterDataTransferService {
             return null;
         }
         return branch;
+    }
+
+    private Map<String, List<Department>> departmentLookup(Long tenantId) {
+        List<Branch> areas = branchRepository.findByTenantId(tenantId);
+        Map<String, List<Department>> lookup = new LinkedHashMap<>();
+        for (Department department : departmentRepository.findByTenantId(tenantId)) {
+            List<Long> areaIds = Boolean.TRUE.equals(department.getAllAreas())
+                    ? areas.stream().map(Branch::getId).toList() : List.of(department.getBranchId());
+            for (Long areaId : areaIds) {
+                lookup.computeIfAbsent(departmentKey(areaId, department.getDepartmentName()), key -> new ArrayList<>())
+                        .add(department);
+            }
+        }
+        return lookup;
     }
 
     private Department resolveDepartment(
@@ -842,7 +861,8 @@ public class MasterDataTransferService {
             String description,
             Branch branch,
             String parentName,
-            String key) {
+            String key,
+            boolean allAreas) {
     }
 
     private record PositionImportRow(String name, String description, Department department) {

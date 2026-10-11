@@ -193,6 +193,8 @@ public class AttendanceOverviewService {
 
     static boolean matchesStatus(AttendanceOverviewRowDTO row, String status) {
         if (status == null || status.isBlank()) return true;
+        if ("MISSING_EXIT".equals(status)) return row.getStatuses().stream()
+                .anyMatch(s -> Set.of("OPEN", "OPEN_SESSION", "MISSING_EXIT").contains(s));
         if ("LATE_AND_EARLY".equals(status)) return row.getLateMinutes() > 0 && row.getEarlyLeaveMinutes() > 0;
         return row.getStatuses().contains(status);
     }
@@ -286,8 +288,8 @@ public class AttendanceOverviewService {
         return switch (value) {
             case "LATE" -> "Gecikib"; case "EARLY_LEAVE" -> "Erkən çıxıb";
             case "ABSENT" -> "Gəlməyib"; case "ON_LEAVE" -> "Məzuniyyətdə";
-            case "DAY_OFF" -> "İstirahət günü"; case "OPEN", "OPEN_SESSION" -> "Açıq sessiya";
-            case "MISSING_EXIT" -> "Çıxış yoxdur"; case "ON_PERMISSION" -> "İcazədə";
+            case "DAY_OFF" -> "İstirahət günü";
+            case "OPEN", "OPEN_SESSION", "MISSING_EXIT" -> "Çıxış yoxdur"; case "ON_PERMISSION" -> "İcazədə";
             case "PERMITTED_EARLY_LEAVE" -> "İcazəli erkən çıxış"; case "NOT_STARTED" -> "İş vaxtı başlamayıb";
             case "MANUALLY_CORRECTED" -> "Manual düzəliş"; case "CLOSED" -> "Bağlanıb";
             case "WORKDAY_COMPLETE" -> "İş günü tamamlanıb"; default -> "İşdə";

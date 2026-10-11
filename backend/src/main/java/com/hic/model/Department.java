@@ -26,6 +26,9 @@ public class Department {
     @Column(name = "branch_id", nullable = false)
     private Long branchId;
 
+    @Column(name = "all_areas", nullable = false)
+    private Boolean allAreas = false;
+
     @Column(name = "parent_department_id")
     private Long parentDepartmentId;
 

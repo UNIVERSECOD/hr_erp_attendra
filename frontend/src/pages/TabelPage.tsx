@@ -52,7 +52,7 @@ export default function TabelPage() {
     positionId: positionId === '' ? undefined : positionId,
     search: debouncedSearch || undefined,
   }), [year, month, branchId, departmentId, positionId, debouncedSearch])
-  const visibleDepartments = departments.filter((department) => branchId === '' || department.branchId === branchId)
+  const visibleDepartments = departments.filter((department) => branchId === '' || department.allAreas || department.branchId === branchId)
   const visiblePositions = positions.filter((position) => departmentId !== ''
     ? position.departmentId === departmentId
     : branchId === '' || visibleDepartments.some((department) => department.id === position.departmentId))

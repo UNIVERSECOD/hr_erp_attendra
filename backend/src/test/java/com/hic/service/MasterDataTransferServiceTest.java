@@ -215,4 +215,30 @@ class MasterDataTransferServiceTest {
         return new MockMultipartFile(
                 "file", "import.csv", "text/csv", content.getBytes(StandardCharsets.UTF_8));
     }
+
+    @Test void sharedDepartmentIsAvailableForPositionImportInAnotherArea() {
+        department.setAllAreas(true);
+        Branch other = new Branch(); other.setId(9L); other.setTenantId(7L); other.setName("Digər ərazi");
+        when(branchRepository.findByTenantId(7L)).thenReturn(List.of(branch, other));
+        when(departmentRepository.findByTenantId(7L)).thenReturn(List.of(department));
+        when(positionRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        var result = service.importData("positions", csv("Vəzifə adı,Ərazi,Departament\nOperator,Digər ərazi,İnsan Resursları\n"));
+        assertThat(result.isSuccessful()).isTrue();
+        assertThat(result.getImportedRows()).isEqualTo(1);
+    }
+
+    @Test void departmentExportAndImportPreserveAllAreasFlag() {
+        department.setAllAreas(true);
+        when(branchRepository.findByTenantId(7L)).thenReturn(List.of(branch));
+        when(departmentRepository.findByTenantId(7L)).thenReturn(List.of(department));
+        byte[] exported = service.exportData("departments", "csv", false).content();
+        when(departmentRepository.findByTenantId(7L)).thenReturn(List.of());
+        when(departmentRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        var result = service.importData("departments", new MockMultipartFile("file", "departments.csv", "text/csv", exported));
+        assertThat(result.isSuccessful()).isTrue();
+        ArgumentCaptor<Department> captor = ArgumentCaptor.forClass(Department.class);
+        verify(departmentRepository).save(captor.capture());
+        assertThat(captor.getValue().getAllAreas()).isTrue();
+        assertThat(captor.getValue().getBranchId()).isEqualTo(1L);
+    }
 }

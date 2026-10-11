@@ -56,6 +56,21 @@ class AttendanceOverviewServiceTest {
     }
     @AfterEach void cleanup() { TenantContext.clear(); }
 
+    @Test void missingExitFilterAndExcelIncludeOpenSessions() throws Exception {
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
+                .thenReturn(List.of(day(start, 0, 10, 0, "OPEN_SESSION"),
+                        day(start.plusDays(1), 0, 0, 0, "MISSING_EXIT"), day(start.plusDays(2), 8, 0, 0, "PRESENT")));
+        query.setStatus("MISSING_EXIT");
+        assertThat(service.report(query).getTotalElements()).isEqualTo(2);
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            var sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getLastRowNum()).isEqualTo(2);
+            assertThat(sheet.getRow(1).toString()).doesNotContain("Açıq sessiya");
+        }
+        assertThat(AttendanceOverviewService.statusLabel("OPEN")).isEqualTo("Çıxış yoxdur");
+        assertThat(AttendanceOverviewService.statusLabel("OPEN_SESSION")).isEqualTo("Çıxış yoxdur");
+    }
+
     @Test void lateAndEarlyRemainIndependentlyVisibleAndFilterable() {
         query.setStatus("LATE");
         var late = service.report(query);

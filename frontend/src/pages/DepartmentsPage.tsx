@@ -11,6 +11,7 @@ import { toast } from '../store/toastStore.ts'
 interface DepartmentFormData {
   departmentName: string
   description: string
+  allAreas: boolean
   branchId: number | ''
   parentDepartmentId: number | ''
 }
@@ -18,6 +19,7 @@ interface DepartmentFormData {
 const defaultForm: DepartmentFormData = {
   departmentName: '',
   description: '',
+  allAreas: false,
   branchId: '',
   parentDepartmentId: '',
 }
@@ -82,6 +84,7 @@ export default function DepartmentsPage() {
       departmentName: dept.departmentName,
       description: dept.description || '',
       branchId: dept.branchId || '',
+      allAreas: dept.allAreas ?? false,
       parentDepartmentId: dept.parentDepartmentId || '',
     })
     setParentSearch(dept.parentDepartmentName || '')
@@ -94,7 +97,7 @@ export default function DepartmentsPage() {
       setFormError('Departament adı mütləqdir.')
       return
     }
-    if (!form.branchId) {
+    if (!form.allAreas && !form.branchId) {
       setFormError('Ərazi seçilməsi mütləqdir.')
       return
     }
@@ -104,7 +107,8 @@ export default function DepartmentsPage() {
       const payload = {
         departmentName: form.departmentName,
         description: form.description,
-        branchId: Number(form.branchId),
+        branchId: form.branchId ? Number(form.branchId) : undefined,
+        allAreas: form.allAreas,
         parentDepartmentId: form.parentDepartmentId ? Number(form.parentDepartmentId) : undefined,
       }
       if (editingDept) {
@@ -328,7 +332,7 @@ export default function DepartmentsPage() {
                 </div>
 
                 {/* Area */}
-                <div className="w-24 text-center text-xs text-gray-500">0 devices</div>
+                <div className="w-24 text-center text-xs text-gray-500">{dept.allAreas ? 'Bütün ərazilər' : branches.find(b => b.id === dept.branchId)?.name || '—'}</div>
 
                 {/* Edit + Delete */}
                 <div className="w-20 flex items-center justify-end gap-1">
@@ -382,11 +386,12 @@ export default function DepartmentsPage() {
               <div>
                 <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1">Ərazi *</label>
                 <select
-                  value={form.branchId}
-                  onChange={(e) => setForm({ ...form, branchId: e.target.value ? Number(e.target.value) : '' })}
+                  value={form.allAreas ? 'all' : form.branchId}
+                  onChange={(e) => setForm({ ...form, allAreas: e.target.value === 'all', branchId: e.target.value === 'all' ? form.branchId : e.target.value ? Number(e.target.value) : '' })}
                   className="w-full border border-gray-200 rounded-lg px-3 py-2.5 focus:outline-none focus:ring-2 text-sm"
                 >
                   <option value="">Seçin...</option>
+                  <option value="all">Bütün ərazilər</option>
                   {branches.map(b => (
                     <option key={b.id} value={b.id}>{b.name}</option>
                   ))}

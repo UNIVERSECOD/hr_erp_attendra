@@ -17,6 +17,8 @@ public class DepartmentDTO {
 
     private Long branchId;
 
+    private Boolean allAreas;
+
     private Long parentDepartmentId;
 
     private String parentDepartmentName;

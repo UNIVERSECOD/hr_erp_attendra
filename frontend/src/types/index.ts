@@ -24,6 +24,7 @@ export interface Department {
   departmentName: string
   description?: string
   branchId?: number
+  allAreas?: boolean
   parentDepartmentId?: number
   parentDepartmentName?: string
   employeeCount?: number

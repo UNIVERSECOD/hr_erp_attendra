@@ -14,6 +14,13 @@ Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user 
 
 ## Calculation and history
 
+### Review follow-up: shared departments and missing exits (2026-10-11)
+
+- Reports and their Excel exports label OPEN/OPEN_SESSION/MISSING_EXIT uniformly as `Çıxış yoxdur`; the one daily missing-exit filter includes both open and missing-exit records. Stored lifecycle statuses and time calculations remain unchanged.
+- Department create/edit offers `Bütün ərazilər`. V041 adds `all_areas` default false; the original branch ID remains as a compatibility anchor. This is one shared department, including its positions, not copies per area. Employee validation and employee/position/report/Tabel selectors accept it in any area within the tenant, including areas created later. Omitted flags in legacy updates preserve the setting; omitted schedule fields no longer erase the department's schedule settings.
+- Department Excel/CSV adds optional `Bütün ərazilər` (`Bəli`/`Xeyr`, blank means false). The existing `Ərazi` column retains the anchor; employee and position imports resolve shared departments in every area. Duplicate names still require unambiguous import lookup.
+- Verification: 355 backend tests/package, frontend lint/build, separate backend/frontend Docker builds, Compose config, 13 isolated API checks and Excel content validation; V041 on populated preview and all 41 migrations on fresh isolated DB. Employee, schedule-assignment and attendance-log hashes remained identical after upgrade and department conversion. Browser edit/save, another-area listing and missing-exit filtering passed. Main installation and physical devices were not changed.
+
 `AttendanceOverviewService` reuses `AttendanceService`'s read-only day inference, shared time/permission calculators and historical schedule resolution. `AttendanceScheduleResolver.forReport` preloads schedule assignments, timetable weekday rules and legacy schedules per request to avoid employee-day SQL queries in annual views. No schema migration is required.
 
 Existing STANDARD first-entry/last-exit daily calculation, flexible closed-interval totals, breaks, tolerances and approved permission handling are unchanged. Midnight allocation and delayed-event reconstruction remain deferred. An overnight interval still belongs to its entry date.

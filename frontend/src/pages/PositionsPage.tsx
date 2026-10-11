@@ -71,7 +71,7 @@ export default function PositionsPage() {
     })
     // Pre-select branch based on department's branch
     const dept = departments.find(d => d.id === pos.departmentId)
-    setModalBranchId(dept?.branchId || '')
+    setModalBranchId(dept?.allAreas ? '' : dept?.branchId || '')
     setFormError(null)
     setShowModal(true)
   }
@@ -292,7 +292,7 @@ export default function PositionsPage() {
                 >
                   <option value="">Seçin...</option>
                   {departments
-                    .filter(d => !modalBranchId || d.branchId === Number(modalBranchId))
+                    .filter(d => !modalBranchId || d.allAreas || d.branchId === Number(modalBranchId))
                     .map(d => <option key={d.id} value={d.id}>{d.departmentName}</option>)}
                 </select>
               </div>

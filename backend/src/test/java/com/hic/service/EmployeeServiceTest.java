@@ -195,6 +195,29 @@ class EmployeeServiceTest {
     }
 
     @Test
+    void sharedDepartmentAllowsEmployeeFromAnotherAreaButLocalDepartmentDoesNot() {
+        TenantContext.setTenantId(7L);
+        try {
+            testDepartment.setTenantId(7L);
+            testEmployeeDTO.setBranchId(2L);
+            testEmployeeDTO.setFinNumber("SHARED1");
+            testDepartment.setAllAreas(false);
+            assertThatThrownBy(() -> employeeService.createForImport(testEmployeeDTO, "SHARED1"))
+                    .isInstanceOf(BadRequestException.class).hasMessageContaining("əsas əraziyə");
+            testDepartment.setAllAreas(true);
+            when(employeeRepository.save(any(Employee.class))).thenAnswer(i -> {
+                Employee employee = i.getArgument(0); employee.setId(1L); return employee;
+            });
+            employeeService.createForImport(testEmployeeDTO, "SHARED1");
+            ArgumentCaptor<Employee> saved = ArgumentCaptor.forClass(Employee.class);
+            verify(employeeRepository).save(saved.capture());
+            assertThat(saved.getValue().getDepartmentId()).isEqualTo(1L);
+            assertThat(saved.getValue().getBranchId()).isEqualTo(2L);
+            verifyNoInteractions(isapiEmployeeUserSyncService);
+        } finally { TenantContext.clear(); }
+    }
+
+    @Test
     void create_selectedPositionAndTimetable_areReturnedImmediately() {
         Position position = new Position();
         position.setId(5L);

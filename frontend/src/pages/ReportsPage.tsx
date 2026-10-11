@@ -18,11 +18,11 @@ const sections: { value: AttendanceReportView; label: string; description: strin
 ]
 const statusLabels: Record<string, string> = {
   LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyətdə',
-  DAY_OFF: 'İstirahət günü', OPEN_SESSION: 'Açıq sessiya', OPEN: 'Açıq sessiya', MISSING_EXIT: 'Çıxış yoxdur',
+  DAY_OFF: 'İstirahət günü', OPEN_SESSION: 'Çıxış yoxdur', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
   ON_PERMISSION: 'İcazədə', PERMITTED_EARLY_LEAVE: 'İcazəli erkən çıxış', PRESENT: 'İşdə',
   WORKDAY_COMPLETE: 'İş günü tamamlanıb', NOT_STARTED: 'İş vaxtı başlamayıb', CLOSED: 'Bağlanıb', MANUALLY_CORRECTED: 'Manual düzəliş',
 }
-const statusOptions = ['LATE', 'EARLY_LEAVE', 'LATE_AND_EARLY', 'PRESENT', 'ABSENT', 'OPEN_SESSION', 'MISSING_EXIT',
+const statusOptions = ['LATE', 'EARLY_LEAVE', 'LATE_AND_EARLY', 'PRESENT', 'ABSENT', 'MISSING_EXIT',
   'ON_LEAVE', 'DAY_OFF', 'ON_PERMISSION', 'PERMITTED_EARLY_LEAVE', 'WORKDAY_COMPLETE', 'NOT_STARTED']
 const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400'
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
@@ -34,8 +34,7 @@ function duration(minutes?: number) {
 function statusClass(status: string) {
   if (status === 'LATE') return 'bg-amber-50 text-amber-800'
   if (status === 'EARLY_LEAVE') return 'bg-orange-50 text-orange-800'
-  if (status === 'ABSENT' || status === 'MISSING_EXIT') return 'bg-red-50 text-red-700'
-  if (status === 'OPEN' || status === 'OPEN_SESSION') return 'bg-blue-50 text-blue-700'
+  if (status === 'ABSENT' || status === 'MISSING_EXIT' || status === 'OPEN' || status === 'OPEN_SESSION') return 'bg-red-50 text-red-700'
   if (status.includes('PERMISSION') || status === 'ON_LEAVE' || status === 'PERMITTED_EARLY_LEAVE') return 'bg-purple-50 text-purple-700'
   if (status === 'DAY_OFF' || status === 'NOT_STARTED') return 'bg-gray-100 text-gray-600'
   return 'bg-emerald-50 text-emerald-700'
@@ -80,7 +79,7 @@ export default function ReportsPage() {
 
   const update = (patch: Partial<AttendanceOverviewFilters>) =>
     setFilters({ ...useAttendanceReportStore.getState().filters, ...patch })
-  const visibleDepartments = departments.filter(d => !filters.areaId || d.branchId === filters.areaId)
+  const visibleDepartments = departments.filter(d => !filters.areaId || d.allAreas || d.branchId === filters.areaId)
   const visiblePositions = positions.filter(p => filters.departmentId ? p.departmentId === filters.departmentId
     : !filters.areaId || visibleDepartments.some(d => d.id === p.departmentId))
   const numeric = (value: string) => value ? Number(value) : undefined

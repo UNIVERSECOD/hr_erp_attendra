@@ -1311,7 +1311,7 @@ export default function EmployeesPage() {
                   >
                     <option value="">Seçin...</option>
                     {departments
-                      .filter((d) => !form.branchId || d.branchId === Number(form.branchId))
+                      .filter((d) => !form.branchId || d.allAreas || d.branchId === Number(form.branchId))
                       .map((d) => (
                         <option key={d.id} value={d.id}>{d.departmentName}</option>
                       ))}

@@ -570,7 +570,7 @@ public class EmployeeService {
         if (tenantId != null && !tenantId.equals(department.getTenantId())) {
             throw new BadRequestException("Seçilmiş departament cari şirkətə aid deyil.");
         }
-        if (tenantId != null && primaryAreaId != null
+        if (tenantId != null && primaryAreaId != null && !Boolean.TRUE.equals(department.getAllAreas())
                 && !primaryAreaId.equals(department.getBranchId())) {
             throw new BadRequestException("Seçilmiş departament əsas əraziyə aid deyil.");
         }
