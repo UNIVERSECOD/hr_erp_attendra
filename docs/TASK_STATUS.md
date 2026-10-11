@@ -1,5 +1,7 @@
 # Attendra task ledger / AI handoff
 
+- 2026-10-12 follow-up: user explicitly authorized sending the second backed-up photo to the same entry terminal. Reverified retention enabled, device/person identity and source hash. Upload HTTP 200; downloaded photo decoded successfully (27,252 bytes). Both missing entry-terminal photos are now recovered; no other terminal writes or local-profile restoration. Evidence: ignored `runtime/audit/approved-ismayil-face-recovery.log`.
+
 ## 2026-10-12 — Single-photo recovery succeeded; user confirmed
 
 - User enabled terminal picture retention and authorized the same original-photo re-upload. Read-only AcsCfg confirmed `saveFacePic=true`; device/employee identities and the backup photo hash were reverified. Updated production client uploaded successfully (HTTP 200); exact-person FDLib photo then downloaded and decoded successfully (29,651 bytes). User confirmed success.
