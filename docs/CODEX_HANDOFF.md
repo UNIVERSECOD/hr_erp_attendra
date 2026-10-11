@@ -10,6 +10,8 @@ Read [TASK_STATUS.md](TASK_STATUS.md) for the latest completed tasks, remaining 
 
 Attendance reports (2026-10-11 correction) display separate completed visits for every shift type. Consecutive automatic entries without an exit share one visible row with the latest entry time. This is a report/Excel projection: the existing daily/Tabel first-entry calculation is preserved. V040 adds `last_entry_time` for debounced repeated entries without overwriting their original check-in. See the task ledger for verification and the separately deferred delayed-event and midnight-allocation work.
 
+Follow-up (2026-10-11): daily presence follows the latest valid entry/exit transition, so older unmatched entries cannot override a later confirmed exit. Genuine re-entry still requires an exit. Source logs remain intact; STANDARD/NIGHT use first-in/last-out when the latest transition is an exit, while FLEXIBLE sums recorded completed intervals. See `ATTENDANCE_REPORT_SECTIONS.md` and the latest task-ledger entry for tests and persisted-summary limits.
+
 This document transfers project context to a new computer or Codex session. Read `AGENTS.md` first, then verify this document against the current source and `git log` before changing code.
 
 User acceptance (2026-10-11): merge `codex/attendance-report-sections` through `6ac1a7c` into `main` and build/deploy with Docker. This includes report sections, shared departments (V041), dashboard metrics and simplified labels. See [ATTENDANCE_REPORT_SECTIONS.md](ATTENDANCE_REPORT_SECTIONS.md) and the latest task-ledger delivery entry. Earlier separate-branch restrictions are superseded by this acceptance.

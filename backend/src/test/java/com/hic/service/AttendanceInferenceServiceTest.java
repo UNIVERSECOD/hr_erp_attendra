@@ -89,17 +89,75 @@ class AttendanceInferenceServiceTest {
     }
 
     @Test
-    void openSession_neverInflatesStandardWorkedTime() {
+    void olderUnmatchedEntryDoesNotOverrideLaterConfirmedExit() {
         LocalDate day = LocalDate.of(2026, 4, 26);
         AttendanceLog missingExit = session(day.atTime(9, 0), null);
         AttendanceLog closed = session(day.atTime(12, 0), day.atTime(17, 0));
 
         var inference = service.inferDay(List.of(missingExit, closed), day);
 
-        assertThat(inference.currentlyInside()).isTrue();
+        assertThat(inference.currentlyInside()).isFalse();
         assertThat(inference.spanWorkedMinutes()).isEqualTo(8 * 60);
-        assertThat(inference.workedMinutesForShift("STANDARD")).isEqualTo(5 * 60);
+        assertThat(inference.workedMinutesForShift("STANDARD")).isEqualTo(8 * 60);
         assertThat(inference.workedMinutesForShift("FLEXIBLE")).isEqualTo(5 * 60);
+    }
+
+    @Test
+    void repeatedEntriesAcrossDevicesAndLaterExitProduceClosedDayWithoutChangingSource() {
+        LocalDate date = LocalDate.of(2026, 4, 26);
+        var first = session(date.atTime(13, 21, 38), date.atTime(13, 21, 44));
+        var repeated = session(date.atTime(13, 21, 43), null);
+        var stale = session(date.atTime(13, 35, 22), null);
+        var closed = session(date.atTime(13, 44, 35), date.atTime(17, 41, 22));
+        first.setDeviceId("entry-terminal"); stale.setDeviceId("entry-terminal"); closed.setDeviceId("exit-terminal");
+        var inference = service.inferDay(List.of(stale, closed, first, repeated), date);
+        assertThat(inference.currentlyInside()).isFalse();
+        assertThat(inference.workedMinutesForShift("STANDARD")).isEqualTo(259);
+        assertThat(inference.workedMinutesForShift("FLEXIBLE")).isEqualTo(236);
+        var schedule = new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", true,
+                java.time.LocalTime.of(9, 0), java.time.LocalTime.of(18, 0), 0, 10, 0);
+        var result = new AttendanceTimeCalculator().calculate(date, inference, schedule);
+        assertThat(result.status()).isEqualTo(com.hic.model.DailyAttendanceSummary.AttendanceStatus.EARLY_LEAVE);
+        assertThat(result.lateMinutes()).isEqualTo(251);
+        assertThat(result.earlyLeaveMinutes()).isEqualTo(18);
+        assertThat(stale.getCheckOutTime()).isNull();
+        assertThat(repeated.getCheckOutTime()).isNull();
+    }
+
+    @Test
+    void actualReentryAfterExitKeepsMissingExitEvenInsideDuplicateWindow() {
+        LocalDate date = LocalDate.of(2026, 4, 26);
+        var closed = session(date.atTime(9, 0), date.atTime(9, 0, 20));
+        var reentry = session(date.atTime(9, 0, 30), null);
+        assertThat(service.inferDay(List.of(closed, reentry), date).currentlyInside()).isTrue();
+        var earlier = session(date.atTime(8, 0), date.atTime(8, 30));
+        var inference = service.inferDay(List.of(earlier, closed, reentry), date);
+        assertThat(inference.workedMinutesForShift("STANDARD")).isEqualTo(30);
+    }
+
+    @Test
+    void repeatedEntryTimestampWinsButManualCorrectionIgnoresOldRepeatMetadata() {
+        LocalDate date = LocalDate.of(2026, 4, 26);
+        var closed = session(date.atTime(9, 0), date.atTime(17, 0));
+        var open = session(date.atTime(10, 0), null);
+        open.setLastEntryTime(date.atTime(17, 10));
+        assertThat(service.inferDay(List.of(open, closed), date).currentlyInside()).isTrue();
+        open.setManualOverride(true);
+        assertThat(service.inferDay(List.of(open, closed), date).currentlyInside()).isFalse();
+        open.setManualOverride(false); open.setLastEntryTime(date.atTime(17, 0));
+        assertThat(service.inferDay(List.of(open, closed), date).currentlyInside()).isFalse();
+    }
+
+    @Test
+    void overnightExitClosesOnlyItsWorkDateAndInvalidExitDoesNotCloseIt() {
+        LocalDate date = LocalDate.of(2026, 4, 26);
+        var open = session(date.atTime(20, 0), null);
+        var closed = session(date.atTime(21, 0), date.plusDays(1).atTime(2, 0));
+        var nextDayOpen = session(date.plusDays(1).atTime(9, 0), null);
+        assertThat(service.inferDay(List.of(open, closed, nextDayOpen), date).currentlyInside()).isFalse();
+        assertThat(service.inferDay(List.of(open, closed, nextDayOpen), date.plusDays(1)).currentlyInside()).isTrue();
+        closed.setCheckOutTime(date.atTime(19, 0));
+        assertThat(service.inferDay(List.of(open, closed), date).currentlyInside()).isTrue();
     }
 
     private static AttendanceLog session(LocalDateTime in, LocalDateTime out) {

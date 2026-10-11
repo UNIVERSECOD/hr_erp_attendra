@@ -14,6 +14,12 @@ Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user 
 
 ## Calculation and history
 
+### Stale open entries and a later exit (2026-10-11)
+
+Daily inference determines presence from the latest valid source entry/exit timestamp for the work date, including automatic `last_entry_time`; a confirmed exit wins ties. An older unmatched entry no longer makes the day `OPEN_SESSION`/`MISSING_EXIT` after a later exit. A genuine later re-entry still requires an exit, even within the duration deduplication window. Manual entry corrections ignore stale automatic repeat metadata; invalid exit-before-entry records do not close a day.
+
+Once the latest transition is an exit, STANDARD/NIGHT daily work uses the original first entry through the last exit, with existing break/permission rules. FLEXIBLE continues to sum only recorded completed intervals. Raw logs and historical open rows are preserved; no exit times are fabricated and no bulk recalculation is run. Daily/monthly/yearly reports and employee-day/dashboard calculations consume the fix immediately. Previously persisted Tabel summaries update through the existing summary/recalculation flow.
+
 ### Duration and overtime display (2026-10-11)
 
 - Reports and matching Excel exports display work, overtime, lateness, early departure and permission durations as `8 saat 30 dəqiqə`; totals above 24 hours do not wrap. API values remain numeric minutes.

@@ -54,7 +54,6 @@ public class AttendanceInferenceService {
         LocalDateTime firstEntry = null;
         LocalDateTime lastExit = null;
         int workedMinutes = 0;
-        boolean currentlyInside = false;
 
         List<AttendanceLog> ordered = dedupeSessions(logs);
 
@@ -69,7 +68,6 @@ public class AttendanceInferenceService {
                 if (firstEntry == null || entry.isBefore(firstEntry)) {
                     firstEntry = entry;
                 }
-                currentlyInside = true;
                 segments.add(new SessionSegment(entry, null));
                 continue;
             }
@@ -88,7 +86,31 @@ public class AttendanceInferenceService {
             segments.add(new SessionSegment(entry, exit));
         }
 
+        // Old unmatched entry rows can coexist with a later confirmed exit from another
+        // terminal. Presence follows event time, not whether any historical row is open.
+        // Use source rows here: duration deduplication must not hide a quick re-entry.
+        boolean currentlyInside = latestPunchIsEntry(logs, day);
         return new AttendanceInference(firstEntry, lastExit, workedMinutes, currentlyInside, List.copyOf(segments));
+    }
+
+    private boolean latestPunchIsEntry(List<AttendanceLog> logs, LocalDate day) {
+        LocalDateTime latestEntry = null;
+        LocalDateTime latestExit = null;
+        for (AttendanceLog log : logs) {
+            if (!belongsToWorkDate(log, day)) continue;
+            LocalDateTime entry = log.getCheckInTime();
+            LocalDateTime exit = log.getCheckOutTime();
+            if (exit != null && !exit.isAfter(entry)) continue;
+            LocalDateTime repeated = log.getLastEntryTime();
+            if (!Boolean.TRUE.equals(log.getManualOverride()) && repeated != null
+                    && repeated.isAfter(entry) && (exit == null || repeated.isBefore(exit))) {
+                entry = repeated;
+            }
+            if (latestEntry == null || entry.isAfter(latestEntry)) latestEntry = entry;
+            if (exit != null && (latestExit == null || exit.isAfter(latestExit))) latestExit = exit;
+        }
+        // When timestamps tie, the confirmed exit wins (same policy as dashboard presence).
+        return latestEntry != null && (latestExit == null || latestEntry.isAfter(latestExit));
     }
 
     /**
@@ -170,7 +192,7 @@ public class AttendanceInferenceService {
 
         /**
          * Flexible shifts sum each interval; standard/night use first-in to last-out span.
-         * When any session is still open, only closed intervals are countable; using the
+         * When the latest transition is an entry, only closed intervals are countable; using the
          * full span would invent worked time for the missing exit.
          */
         public int workedMinutesForShift(String shiftType) {
