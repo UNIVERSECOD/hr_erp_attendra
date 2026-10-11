@@ -431,8 +431,8 @@ export const az = {
     area: 'Ərazi',
     topLevel: 'Ən üst səviyyə',
     members: 'nəfər',
-    overtimeOn: 'Əlavə iş aktiv',
-    overtimeOff: 'Əlavə iş deaktiv',
+    overtimeOn: 'Overtime aktiv',
+    overtimeOff: 'Overtime deaktiv',
     flexShift: 'Sərbəst Növbə',
     officeStandard: 'Standart Növbə',
     assignEmployees: 'Əməkdaşları təyin et',
@@ -455,7 +455,7 @@ export const az = {
     inactive: 'Deaktiv',
   },
   positions: {
-    overtimeOff: 'Əlavə iş deaktiv',
+    overtimeOff: 'Overtime deaktiv',
     officeStandard: 'Standart Növbə',
   },
   leaves: {

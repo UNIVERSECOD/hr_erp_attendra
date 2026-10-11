@@ -189,7 +189,7 @@ class AttendanceOverviewServiceTest {
             assertThat(row.getOvertimeMinutes()).isEqualTo(150);
             try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
                 var sheet = workbook.getSheetAt(0);
-                assertThat(sheet.getRow(0).getCell(9).getStringCellValue()).isEqualTo("Əlavə iş vaxtı");
+                assertThat(sheet.getRow(0).getCell(9).getStringCellValue()).isEqualTo("Overtime");
                 assertThat(sheet.getRow(1).getCell(8).getStringCellValue()).isEqualTo("24 saat 30 dəqiqə");
                 assertThat(sheet.getRow(1).getCell(9).getStringCellValue()).isEqualTo("2 saat 30 dəqiqə");
             }

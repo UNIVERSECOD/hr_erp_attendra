@@ -289,8 +289,8 @@ public class AttendanceOverviewService {
         boolean detail = query.getView() == AttendanceReportQuery.View.DETAILS;
         boolean daily = query.getView() == AttendanceReportQuery.View.DAILY;
         List<String> headers = new ArrayList<>(List.of("Dövr", "ID", "Ad soyad", "FIN", "Qrafik", "Ərazi", "Departament", "Vəzifə"));
-        headers.addAll(detail || daily ? List.of("Giriş", "Çıxış", "İş müddəti", "Əlavə iş vaxtı", "Status")
-                : List.of("İş müddəti", "Əlavə iş vaxtı", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
+        headers.addAll(detail || daily ? List.of("Giriş", "Çıxış", "İş müddəti", "Overtime", "Status")
+                : List.of("İş müddəti", "Overtime", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
         if (!detail) headers.addAll(List.of("Gecikmə", "Erkən çıxış", "İcazə"));
         try (Workbook workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Davamiyyət");
@@ -329,7 +329,7 @@ public class AttendanceOverviewService {
             case "DAY_OFF" -> "İstirahət";
             case "OPEN", "OPEN_SESSION", "MISSING_EXIT" -> "Çıxış yoxdur";
             case "ON_PERMISSION", "PERMITTED_EARLY_LEAVE" -> "İcazə";
-            case "NOT_STARTED" -> "Başlamayıb"; case "OVERTIME" -> "Əlavə iş";
+            case "NOT_STARTED" -> "Başlamayıb"; case "OVERTIME" -> "Overtime";
             case "MANUALLY_CORRECTED" -> "Düzəliş";
             case "CLOSED", "WORKDAY_COMPLETE" -> "Tamamlandı"; default -> "İşdə";
         };

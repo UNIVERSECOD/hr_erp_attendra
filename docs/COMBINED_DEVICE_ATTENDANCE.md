@@ -1,6 +1,6 @@
 # Combined entry/exit devices
 
-Implemented on `codex/combined-entry-exit-devices` (2026-10-11). Pending user acceptance; do not merge into main or deploy into the customer stack without acceptance.
+Implemented on `codex/combined-entry-exit-devices` (2026-10-11). User accepted merging the complete branch into main and rebuilding the main Docker installation on 2026-10-11, together with the status-filter follow-up and renaming visible overtime labels to **Overtime**. This supersedes the original separate-preview-only restriction. See the task ledger for delivery verification.
 
 ## Behavior
 

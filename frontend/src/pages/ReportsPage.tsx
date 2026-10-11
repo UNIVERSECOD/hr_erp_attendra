@@ -19,7 +19,7 @@ const sections: { value: AttendanceReportView; label: string; description: strin
 const statusLabels: Record<string, string> = {
   LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyət',
   DAY_OFF: 'İstirahət', OPEN_SESSION: 'Çıxış yoxdur', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
-  ON_PERMISSION: 'İcazə', PERMITTED_EARLY_LEAVE: 'İcazə', PRESENT: 'İşdə', OVERTIME: 'Əlavə iş',
+  ON_PERMISSION: 'İcazə', PERMITTED_EARLY_LEAVE: 'İcazə', PRESENT: 'İşdə', OVERTIME: 'Overtime',
   WORKDAY_COMPLETE: 'Tamamlandı', NOT_STARTED: 'Başlamayıb', CLOSED: 'Tamamlandı', MANUALLY_CORRECTED: 'Düzəliş',
 }
 const statusOptions = ['LATE', 'EARLY_LEAVE', 'OVERTIME', 'PRESENT', 'ABSENT', 'MISSING_EXIT',
@@ -28,7 +28,7 @@ const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 t
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
 const sortFields: Partial<Record<string, AttendanceReportSortField>> = {
   'Ad soyad': 'fullName', 'Status': 'status', 'Giriş': 'checkInTime', 'Çıxış': 'checkOutTime',
-  'İş müddəti': 'workedMinutes', 'Əlavə iş vaxtı': 'overtimeMinutes', 'ID': 'employeeId', 'FIN': 'fin',
+  'İş müddəti': 'workedMinutes', 'Overtime': 'overtimeMinutes', 'ID': 'employeeId', 'FIN': 'fin',
 }
 const descendingFirst = new Set<AttendanceReportSortField>(['checkInTime', 'checkOutTime', 'workedMinutes', 'overtimeMinutes'])
 
@@ -164,7 +164,7 @@ export default function ReportsPage() {
         ? formatAttendanceTime(r.checkOutTime) : formatAttendanceDateTime(r.checkOutTime) },
     ] : []),
     { label: 'İş müddəti', cell: r => <Metric value={r.workedMinutes} tone="work" /> },
-    { label: 'Əlavə iş vaxtı', cell: r => <Metric value={r.overtimeMinutes} tone="overtime" /> },
+    { label: 'Overtime', cell: r => <Metric value={r.overtimeMinutes} tone="overtime" /> },
     ...(!detail ? [
       { label: 'Gecikmə', cell: (r: AttendanceOverviewRow) => <Metric value={r.lateMinutes} tone="late" /> },
       { label: 'Erkən çıxış', cell: (r: AttendanceOverviewRow) => <Metric value={r.earlyLeaveMinutes} tone="early" /> },
@@ -191,8 +191,8 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-gray-900">Davamiyyət hesabatları</h1>
           <p className="mt-1 text-sm text-gray-500 max-w-3xl">{sections.find(s => s.value === filters.view)?.description}</p>
-          <p className="mt-1 text-xs text-gray-500 max-w-3xl">Əlavə iş vaxtı gündəlik qrafik normasından artıq işlənən müddətdir. Sərbəst qrafikdə norma olmadığı üçün hesablanmır.
-            {detail && ' Günlük əlavə iş vaxtı yalnız günün son tamamlanmış giriş–çıxış sətrində göstərilir.'}</p></div>
+          <p className="mt-1 text-xs text-gray-500 max-w-3xl">Overtime gündəlik qrafik normasından artıq işlənən müddətdir. Sərbəst qrafikdə norma olmadığı üçün hesablanmır.
+            {detail && ' Günlük overtime yalnız günün son tamamlanmış giriş–çıxış sətrində göstərilir.'}</p></div>
         <div className="flex gap-2">
           <button className={actionClass} onClick={() => void fetchReport()} disabled={loading || !!dateError}>Yenilə</button>
           <button onClick={() => void exportExcel()} disabled={exporting || loading || !!dateError || !!error}
