@@ -1,5 +1,12 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Authorized one-photo hardware check: terminal retention disabled
+
+- User explicitly approved one-photo recovery on the entry terminal. Reverified bridge identity, IP/name, live employee identity and source-photo hash before a single FDLib write. Updated production client/normalizer accepted the original photo with `saveFacePic: true` (HTTP 200); subsequent exact-person photo download still returned 404, including a delayed read. Recognition after re-upload needs user confirmation at the terminal.
+- Read-only host configuration `GET /ISAPI/AccessControl/AcsCfg?format=json` reports `AcsCfg.saveFacePic=false`. This explains why request-level retention was insufficient. No host settings were changed. Other picture flags were also false; do not change those as part of source-photo retention.
+- Complete original AcsCfg JSON backed up under protected `C:\ProgramData\Attendra\recovery\photo-retention-*\device-1-AcsCfg.json`; no secrets or customer images committed. Await explicit approval for the minimal `AcsCfg.saveFacePic=true` setting on this terminal and the same approved-person re-upload. This device-wide change governs future picture storage for all enrollments; do not silently enable it on other devices or upload other people.
+- Evidence: ignored `runtime/audit/approved-face-recovery.log`. No application changes beyond the already tested/pushed request flag; current native runtime/Setup remains unchanged. Photo recovery is not yet complete.
+
 ## 2026-10-12 — Recoverable local photos / terminal picture retention
 
 - Read-only diagnosis: the terminal's own web view and photo URL downloads fail while face recognition works. Native and prior Docker client classes are identical; direct Windows and isolated Docker requests both returned 404. Both configured device credentials matched the old installation. The separate exit-device authentication lock is not resolved by this photo change.
