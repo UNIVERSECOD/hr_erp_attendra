@@ -272,7 +272,7 @@ class AttendanceOverviewServiceTest {
         assertThat(service.report(query).getContent().get(0).getWorkedMinutes()).isEqualTo(240);
     }
 
-    @Test void missingExitSortLeadsFirstPageAndExcelInBothDirectionsAndViews() throws Exception {
+    @Test void missingExitSortFollowsDirectionOnFirstPageAndExcelInBothViews() throws Exception {
         var closed = visit(1L, 9, 18); var open = visit(2L, 19, null);
         lenient().when(details.getReport(start, query.getEnd(), null, null, null, null, null, null, null, 0, Integer.MAX_VALUE))
                 .thenReturn(PaginatedResponse.of(List.of(closed, open), 2, 1, 0, Integer.MAX_VALUE));
@@ -281,12 +281,13 @@ class AttendanceOverviewServiceTest {
             query.setView(view);
             for (String direction : List.of("asc", "desc")) {
                 query.setSortDirection(direction);
+                boolean missingFirst = direction.equals("desc");
                 assertThat(service.report(query).getContent()).singleElement()
-                        .satisfies(row -> assertThat(row.getCheckOutTime()).isNull());
+                        .satisfies(row -> assertThat(row.getCheckOutTime() == null).isEqualTo(missingFirst));
                 try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
                     var sheet = workbook.getSheetAt(0);
-                    assertThat(sheet.getRow(1).getCell(9).getStringCellValue()).isEmpty();
-                    assertThat(sheet.getRow(sheet.getLastRowNum()).getCell(9).getStringCellValue()).isNotEmpty();
+                    assertThat(sheet.getRow(1).getCell(9).getStringCellValue().isEmpty()).isEqualTo(missingFirst);
+                    assertThat(sheet.getRow(sheet.getLastRowNum()).getCell(9).getStringCellValue().isEmpty()).isEqualTo(!missingFirst);
                 }
             }
         }

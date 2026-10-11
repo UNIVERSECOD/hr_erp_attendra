@@ -28,7 +28,7 @@ class AttendanceReportSortTest {
         }
     }
 
-    @Test void timestampsIncludeDateAndOvernightExitWithMissingExitsFirstInBothDirections() {
+    @Test void timestampsIncludeDateAndOvernightExitWithMissingExitsFollowingDirection() {
         var early = row(1L, 0); var late = row(2L, 0); var open = row(3L, 0);
         early.setCheckInTime(OffsetDateTime.parse("2026-10-09T20:00:00+04:00"));
         late.setCheckInTime(OffsetDateTime.parse("2026-10-10T01:00:00+04:00"));
@@ -36,7 +36,7 @@ class AttendanceReportSortTest {
         late.setCheckOutTime(OffsetDateTime.parse("2026-10-10T05:00:00+04:00"));
         assertThat(sort(List.of(open, late, early), "checkInTime", "asc")).containsExactly(early, late, open);
         assertThat(sort(List.of(open, early, late), "checkInTime", "desc")).containsExactly(late, early, open);
-        assertThat(sort(List.of(late, open, early), "checkOutTime", "asc")).containsExactly(open, early, late);
+        assertThat(sort(List.of(late, open, early), "checkOutTime", "asc")).containsExactly(early, late, open);
         assertThat(sort(List.of(early, open, late), "checkOutTime", "desc")).containsExactly(open, late, early);
     }
 
