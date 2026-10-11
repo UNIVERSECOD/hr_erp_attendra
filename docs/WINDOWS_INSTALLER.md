@@ -37,11 +37,13 @@ Build kompüterində Node/npm, Maven, Java 21 JDK və PowerShell lazımdır. Mü
 
 1.0.1-də səhv WinSW XML sahəsi xidmətlərin LocalSystem hesabına yazılmasına və PostgreSQL-in başlamamasına səbəb olmuşdu. 1.0.2 bunu düzəldir, mövcud xidmət hesabını yoxlayır və təmir edir. Yarımçıq quraşdırmanın yolu avtomatik tapılır; ilk quraşdırma tamamlanmayıbsa, dayandırılmış baza və konfiqurasiyanın surəti `ProgramData\Attendra\recovery` altında saxlanır. Bu kompüterdə administrator təsdiqi ilə təmir yoxlanıb: dörd xidmət LocalService ilə işləyir, web/API HTTP 200 qaytarır. `Test-ServiceAccount.ps1` təmir, təkrar icra və başqa quraşdırmaya müdaxilənin bloklanmasını yoxlayır.
 
+1.0.2 Setup-un bu kompüterdə təkrar işə salınması uğurla tamamlandı (exit 0). Məcburi backup, bütün quraşdırılmış faylların hash-ləri, versiya qeydiyyatı, qısayollar və uninstaller yoxlanıldı; konfiqurasiya və foto hash-ləri dəyişmədi.
+
 Paket sınaq buraxılışıdır. Aşağıdakılar təmiz Windows VM-də hələ yoxlanmalıdır:
 
 1. Offline Setup ilə SCM xidmət qeydiyyatı və LocalService hüquqları.
 2. Windows hesabına daxil olmadan reboot sonrası avtomatik açılış.
-3. Setup-un ikinci dəfə çalışdırılması, daha yeni versiyaya keçid və uninstall zamanı məlumatların qalması.
+3. Daha yeni tətbiq/baza versiyasına keçid və uninstall zamanı məlumatların qalması (eyni versiyanın təkrar Setup-u bu kompüterdə yoxlanılıb).
 4. Yalnız OS və paketdəki VC++ runtime olan kompüterdə açılış.
 
 Paket hələ code-signing sertifikatı ilə imzalanmayıb. Cari Docker məlumatlarının native quraşdırmaya avtomatik köçürülməsi bu paketə daxil deyil. Mövcud real cihazlarla yoxlama aparılmayıb. LAN üzərindən kamera üçün brauzerin HTTPS tələbi ayrıca sertifikat/deployment sazlaması tələb edir.
