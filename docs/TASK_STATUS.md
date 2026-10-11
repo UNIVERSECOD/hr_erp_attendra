@@ -1,5 +1,13 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Recoverable local photos / terminal picture retention
+
+- Read-only diagnosis: the terminal's own web view and photo URL downloads fail while face recognition works. Native and prior Docker client classes are identical; direct Windows and isolated Docker requests both returned 404. Both configured device credentials matched the old installation. The separate exit-device authentication lock is not resolved by this photo change.
+- Two original photos still exist in the original Docker face volume and `C:\AttendraBackups\daily\20261011-215601\faces`; both decode as 352x432 JPEGs and backup hashes match the volume. Do not infer employee database IDs are identical between installations; source associations were checked in the original tenant's database. No customer photo bytes or secrets are stored in Git.
+- FDLib upload metadata now uses JSON serialization and explicitly includes boolean `saveFacePic: true`. Manufacturer reference: https://open.hikvision.com/hardware/v2/08%E5%8D%8F%E8%AE%AE%E9%80%8F%E4%BC%A0/%E6%98%8E%E7%9C%B8%E9%97%A8%E7%A6%81.html (FDSetUp). Missing this optional setting is a plausible cause, not yet confirmed on the physical firmware. No fallback silently drops picture retention.
+- Verification: 6 focused tests, all 34 ISAPI tests/package, Compose configuration and ISAPI Docker build passed. Regression test captures the actual multipart request through a mocked transport and checks picture-retention metadata, escaped identity, photo bytes and boundaries. Backend/frontend unchanged; those suites were not rerun. Native installation and Setup 1.0.2 have not been updated.
+- Next: obtain explicit approval for one original-photo re-upload to the verified entry terminal, then verify both face recognition and actual picture download before restoring other photos/deploying a new Setup. Physical read verified bridge ID 1, entry terminal and target identity. No physical writes or database/photo restoration performed yet.
+
 ## 2026-10-12 — Windows service startup repair (1.0.2)
 
 - Corrected WinSW 2.12 service account XML from unsupported `username` to `domain`/`user`; the previous version silently registered LocalSystem, which PostgreSQL refuses. Existing matching service registrations are repaired while stopped and their actual SCM accounts are verified. Foreign installation paths are rejected.

@@ -676,8 +676,10 @@ public class IsapiClient {
 
         String boundary = "----HikIsapiBoundary" + UUID.randomUUID().toString().replace("-", "");
 
-        // FDLib üçün JSON strukturu adətən belədir
-        String jsonPart = "{\"faceLibType\":\"blackFD\",\"FDID\":\"1\",\"FPID\":\"" + employeeNo + "\"}";
+        // Keep the source picture as well as the recognition template on the terminal.
+        String jsonPart = OM.writeValueAsString(Map.of(
+                "faceLibType", "blackFD", "FDID", "1", "FPID", employeeNo,
+                "saveFacePic", true));
 
         java.io.ByteArrayOutputStream baos = new java.io.ByteArrayOutputStream();
 
