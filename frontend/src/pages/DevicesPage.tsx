@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import Layout from '../components/Layout.tsx'
+import DeviceReconciliationModal from '../components/DeviceReconciliationModal'
+import { useAuthStore } from '../store/authStore'
 import { useDeviceStore } from '../store/deviceStore.ts'
 import { DeviceConfig, Branch, Door, DeviceEmployeeAssignmentView } from '../types'
 import { branchApi } from '../api/branchApi.ts'
@@ -55,6 +57,8 @@ export default function DevicesPage() {
   const [managerLoading, setManagerLoading] = useState(false)
   const [doorDeleteConfirm, setDoorDeleteConfirm] = useState<Door | null>(null)
   const [assignmentDevice, setAssignmentDevice] = useState<DeviceConfig | null>(null)
+  const [reconciliationDevice, setReconciliationDevice] = useState<DeviceConfig | null>(null)
+  const canReconcile = useAuthStore(s => s.user?.userType === 'HEAD_OFFICE_HR')
   const [assignmentView, setAssignmentView] = useState<DeviceEmployeeAssignmentView | null>(null)
   const [manualEmployeeIds, setManualEmployeeIds] = useState<number[]>([])
   const [assignmentLoading, setAssignmentLoading] = useState(false)
@@ -553,6 +557,10 @@ export default function DevicesPage() {
                   >
                     Əməkdaşlar
                   </button>
+                  {canReconcile && <button onClick={() => setReconciliationDevice(device)}
+                    className="px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors">
+                    Əməkdaşları uyğunlaşdır
+                  </button>}
                   <button
                     onClick={() => handleEmployeeSync(device)}
                     disabled={employeeSyncingId === device.id}
@@ -981,6 +989,7 @@ export default function DevicesPage() {
           </div>
         </div>
       )}
+      {reconciliationDevice && <DeviceReconciliationModal device={reconciliationDevice} onClose={() => setReconciliationDevice(null)} />}
     </Layout>
   )
 }

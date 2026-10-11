@@ -587,6 +587,18 @@ public class IsapiClient {
         return result;
     }
 
+    public List<DevicePersonInfo> searchDeviceUsersSnapshot(DeviceEntity device) throws IOException, InterruptedException {
+        String searchId = "reconcile-" + UUID.randomUUID();
+        return DeviceUserSnapshotReader.read(position -> {
+            String body = OM.writeValueAsString(Map.of("UserInfoSearchCond", Map.of(
+                    "searchID", searchId, "searchResultPosition", position, "maxResults", 30)));
+            HttpResponse<String> response = clientFor(device).post(
+                    "/ISAPI/AccessControl/UserInfo/Search?format=json", "application/json", body);
+            if (response.statusCode() != 200) throw new IOException("User snapshot unavailable");
+            return OM.readTree(response.body());
+        });
+    }
+
     private static JsonNode extractUserInfoList(JsonNode root) {
         JsonNode nested = root.path("UserInfoSearch").path("UserInfo");
         if (nested.isArray()) {

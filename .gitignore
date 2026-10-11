@@ -35,3 +35,5 @@ logs/
 # Runtime backup configuration and status (host-specific, may contain local paths)
 runtime/backup-settings.json
 runtime/backup-status.json
+# Local verification output may contain customer data; never deliver it in Git.
+runtime/audit/

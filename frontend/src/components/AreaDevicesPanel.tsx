@@ -5,9 +5,13 @@ import { deviceApi } from '../api/deviceApi'
 import { toast } from '../store/toastStore'
 import { getApiErrorMessage } from '../utils/apiError'
 import { formatAttendanceDateTime } from '../utils/dateTime'
+import DeviceReconciliationModal from './DeviceReconciliationModal'
+import { useAuthStore } from '../store/authStore'
 
 export default function AreaDevicesPanel({ area, branches, onClose }: { area: Branch; branches: Branch[]; onClose: () => void }) {
   const [devices, setDevices] = useState<DeviceConfig[]>([])
+  const [reconciliationDevice, setReconciliationDevice] = useState<DeviceConfig | null>(null)
+  const canReconcile = useAuthStore(s => s.user?.userType === 'HEAD_OFFICE_HR')
   const [available, setAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -36,7 +40,7 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
     try {
       await deviceApi.assignArea(deviceId, areaId)
       setSelected(''); setMove(null); setRevision(n => n + 1)
-      toast.success('Cihazın ərazisi yeniləndi', 'Yerli əməkdaş təyinatları yeniləndi. Terminaldakı şəxsləri ayrıca sinxronizasiya edin.')
+      toast.success('Cihazın ərazisi yeniləndi', 'Terminaldakı siyahını yeniləmək üçün “Əməkdaşları uyğunlaşdır” düyməsindən istifadə edin.')
     } catch (e) { setError(getApiErrorMessage(e, 'Ərazi dəyişdirilmədi.')) }
     finally { setSaving(false) }
   }
@@ -100,6 +104,7 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
                 </label>
                 <div className="flex flex-wrap gap-2">
                   <button disabled={saving} onClick={() => setMove({ device: d, areaId: '' })} className={secondaryClass}>Ərazini dəyiş</button>
+                  {canReconcile && <button disabled={saving} onClick={() => setReconciliationDevice(d)} className="px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100">Əməkdaşları uyğunlaşdır</button>}
                   <Link className="px-3 py-2 text-xs font-medium text-purple-700 bg-purple-50 rounded-lg hover:bg-purple-100 transition-colors" to={`/devices?device=${d.id}`}>Cihazı idarə et</Link>
                 </div>
               </div>
@@ -110,7 +115,7 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
           {move && (
             <div className="rounded-xl bg-white shadow-sm border border-purple-200 p-4 space-y-3">
               <h3 className="text-sm font-semibold text-gray-900">{move.device.deviceName} — ərazini dəyiş</h3>
-              <p className="text-sm text-gray-500">Ərazi üzrə əməkdaş təyinatları yenilənəcək, fərdi təyinatlar və əvvəlki hesabatlar saxlanılacaq. Terminaldakı şəxsləri ayrıca sinxronizasiya edin.</p>
+              <p className="text-sm text-gray-500">Ərazi üzrə əməkdaş təyinatları yenilənəcək, fərdi təyinatlar və əvvəlki hesabatlar saxlanılacaq. Sonra “Əməkdaşları uyğunlaşdır” düyməsi ilə terminaldakı siyahını yeniləyin.</p>
               <label className="block text-xs font-medium text-gray-500">Yeni ərazi
                 <select autoFocus className={`${inputClass} mt-1`} value={move.areaId} onChange={e => setMove({ ...move, areaId: e.target.value })} disabled={saving}>
                   <option value="">Ərazidən ayır</option>{branches.filter(b => b.id !== area.id).map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
@@ -135,6 +140,7 @@ export default function AreaDevicesPanel({ area, branches, onClose }: { area: Br
           <Link className="inline-block text-sm font-medium text-purple-600 hover:text-purple-700" to={`/devices?area=${area.id}`}>+ Yeni cihaz əlavə et</Link>
         </footer>
       </section>
+      {reconciliationDevice && <DeviceReconciliationModal device={reconciliationDevice} onClose={() => setReconciliationDevice(null)} />}
     </div>
   )
 }

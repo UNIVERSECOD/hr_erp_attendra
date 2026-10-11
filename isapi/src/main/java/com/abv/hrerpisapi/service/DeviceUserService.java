@@ -170,6 +170,14 @@ public class DeviceUserService {
     }
 
     public void deleteDeviceUserByEmployeeNo(Long deviceId, String employeeNo) {
+        deleteDeviceUserByEmployeeNo(deviceId, employeeNo, true);
+    }
+
+    public void removeReconciledUser(Long deviceId, String employeeNo) {
+        deleteDeviceUserByEmployeeNo(deviceId, employeeNo, false);
+    }
+
+    private void deleteDeviceUserByEmployeeNo(Long deviceId, String employeeNo, boolean deleteCache) {
         if (!StringUtils.hasText(employeeNo)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "employeeNo is required");
         }
@@ -195,7 +203,8 @@ public class DeviceUserService {
                     "Delete error for device " + deviceId + ": " + e.getMessage());
         }
 
-        deviceUserRepository.findByEmployeeNo(normalizedEmployeeNo)
+        // This cache is shared by devices. Area reconciliation must preserve it and its photos.
+        if (deleteCache) deviceUserRepository.findByEmployeeNo(normalizedEmployeeNo)
                 .ifPresent(deviceUserRepository::delete);
         log.info("ActionLog.deviceUser.deleteByEmployeeNo.ended deviceId={} employeeNo={}",
                 deviceId, normalizedEmployeeNo);
@@ -228,6 +237,15 @@ public class DeviceUserService {
             log.error("ActionLog.deviceUser.fetchFromDevice.failed deviceId={} error={}", deviceId, e.getMessage());
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Failed to fetch users from device: " + e.getMessage());
+        }
+    }
+
+    public List<IsapiClient.DevicePersonInfo> reconciliationSnapshot(Long deviceId) {
+        try {
+            return isapiClient.searchDeviceUsersSnapshot(requireDevice(deviceId));
+        } catch (IOException | InterruptedException ex) {
+            if (ex instanceof InterruptedException) Thread.currentThread().interrupt();
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Complete device user list unavailable");
         }
     }
 

@@ -8,6 +8,10 @@ type DeviceWritePayload = Partial<DeviceConfig> & {
   status?: string
 }
 
+export type ReconciliationRow = { employeeId: number | null; employeeNo: string; name: string | null; action: string; reason: string }
+export type ReconciliationPreview = { token: string; expiresAt: string; deviceName: string; deviceIp: string; areaId: number | null; rows: ReconciliationRow[]; operations: number }
+export type ReconciliationProgress = { nextStep: number; finished: boolean; outcomes: { row: ReconciliationRow; status: string; message: string }[] }
+
 const toIsapiUpsertPayload = (data: DeviceWritePayload) => ({
   ip: data.deviceIp,
   username: data.username,
@@ -18,6 +22,8 @@ const toIsapiUpsertPayload = (data: DeviceWritePayload) => ({
 })
 
 export const deviceApi = {
+  previewReconciliation: (id: number) => client.post<{ data: ReconciliationPreview }>(`/devices/${id}/employees/reconciliation/preview`),
+  applyReconciliation: (id: number, token: string, step: number) => client.post<{ data: ReconciliationProgress }>(`/devices/${id}/employees/reconciliation/apply`, { token, step, confirmed: true }),
   getHealth: () => client.get<{ data: { available: boolean; devices: DeviceConfig[] } }>('/devices/health-overview'),
   assignArea: (id: number, branchId: number | null) => client.put<{ data: DeviceConfig }>(`/devices/${id}/area`, { branchId }),
   getAll: () => client.get<{ data: DeviceConfig[] }>('/devices'),

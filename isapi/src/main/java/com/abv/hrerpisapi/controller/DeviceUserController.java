@@ -44,6 +44,11 @@ public class DeviceUserController {
         return deviceUserService.fetchUsersFromDevice(deviceId);
     }
 
+    @GetMapping("/reconciliation-snapshot")
+    public List<com.abv.hrerpisapi.device.client.IsapiClient.DevicePersonInfo> reconciliationSnapshot(@PathVariable Long deviceId) {
+        return deviceUserService.reconciliationSnapshot(deviceId);
+    }
+
     @GetMapping("/{userId}")
     public DeviceUserResponse getUser(@PathVariable Long deviceId,
                                       @PathVariable Long userId) {
@@ -69,6 +74,12 @@ public class DeviceUserController {
     public void deleteUserByEmployeeNo(@PathVariable Long deviceId,
                                        @PathVariable String employeeNo) {
         deviceUserService.deleteDeviceUserByEmployeeNo(deviceId, employeeNo);
+    }
+
+    @DeleteMapping("/reconciliation/by-employee-no/{employeeNo}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeReconciledUser(@PathVariable Long deviceId, @PathVariable String employeeNo) {
+        deviceUserService.removeReconciledUser(deviceId, employeeNo);
     }
 
     @PostMapping("/{userId}/sync")

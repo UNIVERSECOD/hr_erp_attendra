@@ -49,6 +49,8 @@ Resolve both device IDs and all employee identities before changing sync code.
 
 ## 3. Completed Work
 
+- Manual, preview-first device employee reconciliation is implemented and deployed. Read [DEVICE_EMPLOYEE_RECONCILIATION.md](DEVICE_EMPLOYEE_RECONCILIATION.md) for confirmation rules, preservation guarantees, partial results, process-local token limits and verification.
+
 The following behavior is implemented in the current `main` history:
 
 - Employee face uploads have a 5 MB input limit; the ISAPI bridge normalizes device-bound images to JPEG under 190,000 bytes with a maximum dimension of 1024 pixels. Physical firmware compatibility still needs controlled verification.

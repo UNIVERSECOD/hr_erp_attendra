@@ -74,6 +74,16 @@ class DeviceUserServiceTest {
     }
 
     @Test
+    void reconciliationOnlyDeletesTargetTerminalAndPreservesSharedCache() throws Exception {
+        DeviceEntity device = device(900L);
+        when(deviceRepository.findById(900L)).thenReturn(Optional.of(device));
+        when(isapiClient.deleteDeviceUser(device, "1234")).thenReturn(new UserOperationResult(true, 200, "ok"));
+        service.removeReconciledUser(900L, "1234");
+        verify(isapiClient).deleteDeviceUser(device, "1234");
+        org.mockito.Mockito.verifyNoInteractions(deviceUserRepository);
+    }
+
+    @Test
     void deleteByEmployeeNo_acceptsAlreadyMissingUser() throws Exception {
         DeviceEntity device = device(1L);
         when(deviceRepository.findById(1L)).thenReturn(Optional.of(device));
