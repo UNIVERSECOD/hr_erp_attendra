@@ -1,6 +1,6 @@
-# Area devices and operation journal — review branch
+# Area devices and operation journal
 
-Implemented on `codex/area-device-audit` at the user's request. Do not merge into `main` or migrate the live installation without acceptance. Tests used separate temporary databases and a bridge simulator.
+Implemented and reviewed on `codex/area-device-audit`. The user accepted the features and revised design on 2026-10-11 and requested merging into `main`. Git delivery does not rebuild or migrate the running customer installation. Tests used separate temporary databases and a bridge simulator.
 
 ## Area management
 
@@ -32,7 +32,7 @@ This is a change journal, not retroactive history, request/access logging or pro
 
 ## Verification
 
-Design follow-up (feature branch only): area device cards now follow the existing Devices page, with matching purple actions, icons, rounded status badges and compact rows. The scrollable dialog keeps its header and assignment footer visible. The journal follows Access Logs styling and uses the existing PaginationBar; the sidebar uses a matching SVG icon. No backend, migration or device protocol behavior changed. Frontend lint/build and the separate review Docker build passed; browser checks covered 390px layout, desktop dialog bounds, move-form cancellation, journal filtering, expanded values and next-page navigation.
+Accepted design follow-up: area device cards now follow the existing Devices page, with matching purple actions, icons, rounded status badges and compact rows. The scrollable dialog keeps its header and assignment footer visible. The journal follows Access Logs styling and uses the existing PaginationBar; the sidebar uses a matching SVG icon. No backend, migration or device protocol behavior changed. Frontend lint/build and the separate review Docker build passed; browser checks covered 390px layout, desktop dialog bounds, move-form cancellation, journal filtering, expanded values and next-page navigation.
 
 - Backend: 313 tests passed; Maven package passed.
 - Frontend: lint/build passed; `node --test tests/deviceAlerts.test.cjs` passed four timer/transition tests.
