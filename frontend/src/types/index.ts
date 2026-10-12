@@ -465,6 +465,7 @@ export interface AttendanceOverviewRow extends Omit<AttendanceReportRow, 'status
 }
 
 export interface TabelFilters {
+  mode?: 'STANDARD' | 'MCG'
   year: number
   month: number
   branchId?: number
@@ -482,9 +483,25 @@ export interface TabelRow {
   daily: Record<string, number | string | null>
   workingDays: number
   totalHours: number
+  mcgDaily?: Record<string, McgTabelDay>
+  fullDays?: number
+  partialHours?: number
+  overtimeHours?: number
+}
+
+export interface McgTabelDay {
+  fullDay: boolean
+  workedMinutes: number
+  regularMinutes: number
+  overtimeMinutes: number
+  permissionMinutes: number
+  creditedPermissionMinutes: number
+  status: string
+  sourceVerified: boolean
 }
 
 export interface TabelMonthlyData {
+  calculationMode: 'STANDARD' | 'MCG'
   year: number
   month: number
   daysInMonth: number

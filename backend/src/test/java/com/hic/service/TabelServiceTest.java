@@ -56,6 +56,8 @@ class TabelServiceTest {
     private HolidayPermissionRepository holidayPermissionRepository;
     @Mock
     private AttendanceScheduleResolver attendanceScheduleResolver;
+    @Mock
+    private McgTabelProjectionService mcgProjectionService;
 
     @InjectMocks
     private TabelService tabelService;
@@ -163,6 +165,43 @@ class TabelServiceTest {
         assertNull(row.getDaily().get(11));
         assertEquals(2, row.getWorkingDays());
         assertEquals(17.5, row.getTotalHours());
+        assertEquals(TabelMonthlyDTO.CalculationMode.STANDARD, result.getCalculationMode());
+        org.mockito.Mockito.verifyNoInteractions(mcgProjectionService);
+    }
+
+    @Test
+    void mcgTotalsAndExcelSeparateDayMarkersHoursAndOvertime() throws Exception {
+        TenantContext.setTenantId(7L);
+        var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
+        employee.setFirstName("Test"); employee.setLastName("MCG");
+        employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
+        when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) -> switch (date.getDayOfMonth()) {
+            case 1 -> new TabelMonthlyDTO.McgDayDTO(true, 600, 480, 120, 0, 0, "PRESENT", true);
+            case 2 -> new TabelMonthlyDTO.McgDayDTO(false, 360, 360, 0, 0, 0, "LATE", true);
+            case 3 -> new TabelMonthlyDTO.McgDayDTO(false, 480, 480, 0, 0, 0, "SUMMARY_ONLY", false);
+            default -> new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true);
+        });
+        var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
+        var row = data.getRows().get(0);
+        assertEquals(1, row.getFullDays()); assertEquals(14.0, row.getPartialHours());
+        assertEquals(2.0, row.getOvertimeHours()); assertEquals(24.0, row.getTotalHours());
+        assertEquals(3, row.getWorkingDays()); assertEquals(10.0, row.getDaily().get(1));
+        byte[] excel = tabelService.exportMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
+        try (var book = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
+            var sheet = book.getSheet("Tabel");
+            assertEquals(39, sheet.getRow(1).getLastCellNum());
+            assertEquals(6 * 256, sheet.getColumnWidth(0));
+            assertEquals(20 * 256, sheet.getColumnWidth(35));
+            assertEquals(true, sheet.getRow(1).getCell(35).getCellStyle().getWrapText());
+            assertEquals("1\n+2.00 s OT", sheet.getRow(2).getCell(4).getStringCellValue());
+            assertEquals("6.00 s", sheet.getRow(2).getCell(5).getStringCellValue());
+            assertEquals("8.00 s *", sheet.getRow(2).getCell(6).getStringCellValue());
+            assertEquals(1.0, sheet.getRow(2).getCell(34).getNumericCellValue());
+            assertEquals(24.0, sheet.getRow(2).getCell(38).getNumericCellValue());
+            assertEquals(IndexedColors.RED.getIndex(), book.getFontAt(sheet.getRow(2).getCell(2).getCellStyle().getFontIndex()).getColor());
+            org.assertj.core.api.Assertions.assertThat(sheet.getRow(sheet.getLastRowNum()).getCell(0).getStringCellValue()).contains("işdən azad");
+        }
     }
 
     @Test

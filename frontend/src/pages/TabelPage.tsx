@@ -45,6 +45,7 @@ export default function TabelPage() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const debouncedSearch = useDebounce(search, 300)
   const filters = useMemo(() => ({
+    mode: 'MCG' as const,
     year,
     month,
     branchId: branchId === '' ? undefined : branchId,
@@ -87,7 +88,16 @@ export default function TabelPage() {
       setLoading(true)
       try {
         const res = await tabelApi.getMonthly(filters)
-        if (active) setData(res.data.data)
+        if (!active) return
+        if (res.data.data.calculationMode !== 'MCG') {
+          setData(null)
+          toast.error('MCG hesablaması aktiv deyil', 'Backend və frontend eyni MCG versiyası ilə yenilənməlidir.')
+          return
+        }
+        setData(res.data.data)
+        if (res.data.data.rows.some((row) => Object.values(row.mcgDaily ?? {}).some((day) => !day.sourceVerified))) {
+          toast.warning('Bəzi günlər yalnız arxiv saatı ilə göstərilir', '* işarəli günlərin giriş–çıxış qeydləri yoxdur; tam gün və overtime təsdiqlənmir.')
+        }
       } catch {
         if (active) {
           setData(null)
@@ -110,10 +120,10 @@ export default function TabelPage() {
       const href = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = href
-      anchor.download = `tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
+      anchor.download = `attendra-mcg-tabel-${year}-${String(month).padStart(2, '0')}.xlsx`
       anchor.click()
       URL.revokeObjectURL(href)
-      toast.success('Tabel Excel faylı hazırlandı')
+      toast.success('MCG Tabel Excel faylı hazırlandı')
     } catch {
       toast.error('Excel faylı hazırlanmadı', 'Bir qədər sonra təkrar yoxlayın.')
     } finally {
@@ -188,10 +198,10 @@ export default function TabelPage() {
           <section className="flex-1 min-w-0 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
-                <p className="mt-1 text-sm text-slate-500">FIN kodu, günlük iş saatları və aylıq tabel arxivi</p>
+                <h1 className="text-2xl font-bold text-slate-900">Tabel · MCG</h1>
+                <p className="mt-1 text-sm text-slate-500">Tam günlər, natamam iş saatları və overtime</p>
               </div>
-              <button onClick={handleExport} disabled={exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
+              <button onClick={handleExport} disabled={!data || exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                 {t('reports.excelExport')}
               </button>
             </div>
@@ -230,6 +240,13 @@ export default function TabelPage() {
               </select>
             </div>
 
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs leading-relaxed text-indigo-900">
+              <p><strong>1</strong> = həmin günün qrafiki tam yerinə yetirilib; giriş–çıxış toleransı və iş saatından çıxılmayan təsdiqli icazə nəzərə alınır.</p>
+              <p><strong>s</strong> = saat · <strong>OT</strong> = overtime. Günlük saatlar OT xaricdir. Cəmi saata icazə krediti və OT daxildir; çevik qrafik saatla qalır.</p>
+              <p><strong>*</strong> = yalnız arxiv saatı, tam gün və OT təsdiqlənmir · <strong>?</strong> = çıxış qeydi çatışmır.</p>
+              <p className="text-red-700">Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.</p>
+            </div>
+
             <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
               <table className="min-w-max border-collapse text-sm">
                 <thead>
@@ -239,17 +256,20 @@ export default function TabelPage() {
                     <th className="sticky left-[160px] z-30 min-w-[200px] max-w-[200px] border-b bg-slate-50 px-3 py-3 text-left truncate">Soyadı, adı</th>
                     <th className="sticky left-[360px] z-30 min-w-[140px] max-w-[140px] border-b bg-slate-50 px-3 py-3 text-left truncate">Vəzifəsi</th>
                     {Array.from({ length: data?.daysInMonth ?? 0 }, (_, day) => (
-                      <th key={day + 1} className="sticky top-0 min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
+                      <th key={day + 1} className="sticky top-0 min-w-[84px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
                     ))}
+                    <th className="min-w-[90px] border-b px-3 py-3 text-center">Tam gün</th>
+                    <th className="min-w-[140px] border-b px-3 py-3 text-center" title="Tam gün kimi hesablanmayan günlərin saatları; overtime xaric">Natamam saat</th>
+                    <th className="min-w-[120px] border-b px-3 py-3 text-center">Overtime (s)</th>
                     <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş günü</th>
                     <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">Cəmi saat</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 6} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 9} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
                   ) : (data?.rows.length ?? 0) === 0 ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 6} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 9} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
                   ) : data?.rows.map((row, index) => (
                     <tr key={row.employeePk} className="border-b border-slate-100 text-slate-700">
                       <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
@@ -266,13 +286,24 @@ export default function TabelPage() {
                         const isAbsent = value === 0
                         const isCode = value === 'Q/I'
                         const isEmpty = value === null || value === undefined
+                        const mcgDay = row.mcgDaily?.[String(day + 1)]
+                        const unresolved = mcgDay?.status === 'OPEN_SESSION' || mcgDay?.status === 'MISSING_EXIT'
+                        const detail = mcgDay && !isEmpty && !isCode
 
                         return (
-                          <td key={day + 1} className={`px-2 py-2 text-center ${isAbsent ? 'font-semibold text-red-600' : isCode ? 'font-medium text-amber-700' : isEmpty ? 'text-slate-300' : ''}`}>
-                            {typeof value === 'number' ? value.toFixed(2) : isEmpty ? '' : value}
+                          <td key={day + 1}
+                            title={detail ? `Hesablanan: ${(mcgDay.workedMinutes / 60).toFixed(2)} s; icazə krediti: ${(mcgDay.creditedPermissionMinutes / 60).toFixed(2)} s${unresolved ? '; çıxış qeydi çatışmır' : ''}${!mcgDay.sourceVerified ? '; giriş–çıxış qeydləri yoxdur' : ''}` : undefined}
+                            className={`px-2 py-2 text-center ${mcgDay?.fullDay ? 'font-semibold text-emerald-700' : isAbsent ? 'font-semibold text-red-600' : isCode ? 'font-medium text-amber-700' : isEmpty ? 'text-slate-300' : ''}`}>
+                            {detail ? <>
+                              <span>{mcgDay.fullDay ? '1' : `${(mcgDay.regularMinutes / 60).toFixed(2)} s`}{!mcgDay.sourceVerified ? ' *' : ''}{unresolved ? ' ?' : ''}</span>
+                              {mcgDay.overtimeMinutes > 0 && <span className="mt-1 block whitespace-nowrap text-xs font-medium text-indigo-600">+{(mcgDay.overtimeMinutes / 60).toFixed(2)} s OT</span>}
+                            </> : typeof value === 'number' ? value.toFixed(2) : isEmpty ? '' : value}
                           </td>
                         )
                       })}
+                      <td className="px-3 py-2 text-center font-semibold text-emerald-700">{row.fullDays ?? 0}</td>
+                      <td className="px-3 py-2 text-center font-medium">{(row.partialHours ?? 0).toFixed(2)}</td>
+                      <td className="px-3 py-2 text-center font-medium text-indigo-600">{(row.overtimeHours ?? 0).toFixed(2)}</td>
                       <td className="px-3 py-2 text-center font-medium">{row.workingDays}</td>
                       <td className="px-3 py-2 text-center font-medium">{row.totalHours.toFixed(2)}</td>
                     </tr>

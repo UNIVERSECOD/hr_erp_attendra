@@ -1,5 +1,23 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — MCG Tabel in the current workspace, standard copy preserved
+
+User authorized a copy of the standard project, then MCG functionality in the existing folder; explicitly deferred separate Setup. Follow-up confirmed that `1` follows each date's assigned schedule and entry/exit tolerances, including approved permission marked not to deduct work hours.
+
+- Independent standard clone: `D:\Attendra-Standard-before-MCG-20261012`, `main` at `526b4e2`; Git connectivity and local configuration hashes/ACLs checked. This is a **source/configuration copy, not a database/photo backup**. MCG work remains in `D:\hr-erp-back-front` on `codex/mcg`; general main is unchanged.
+- Added a read-only MCG day projection from raw sessions, date-specific assignments, permission rules and existing minute calculators. Full days, partial hours and OT are distinct units. Late/early arrival outside tolerances or deducted permission cannot be offset by outside-shift hours to create `1`.
+- Tabel UI and Excel share `mode=MCG`, show explanatory legends, numeric monthly totals and red terminated names without unwanted status/date Excel columns. Existing exports/filter/error/session toasts remain; summary-only history produces a warning, and an old backend is detected explicitly.
+- Standard API/service defaults and ordinary attendance calculations are preserved. No migration, live database write, physical-device call, mass recalculation, Setup build or production/native restart.
+- Details and future-AI instructions: [MCG_TABEL.md](MCG_TABEL.md).
+
+Verification:
+
+- Final backend `mvn clean package`: **461 tests, zero failures/errors/skips**. Frontend lint and TypeScript/Vite build passed; both backend/frontend Docker builds and Compose config passed.
+- Final disposable PostgreSQL/backend/frontend on an internal Docker network: **15 checks passed**, covering MCG mode, full/late/tolerated/paid/deducted/missing-exit days, six-hour norm, flexible month carry-in, summary-only history, totals, standard compatibility, search filtering, frontend-proxied Excel content/layout metadata and unchanged source fingerprints. Excel headers/units, red terminated names and absence of status/date columns also have POI tests.
+- Existing sync scheduler independently changed the synthetic expired open session to missing-exit and created its zero-hour summary. After that normal background transition, raw-event and summary fingerprints were equal before/after the final API/export checks (8 source logs, 2 summaries, 0 devices). No customer records were involved.
+- Browser automation failed to initialize twice (`windows sandbox ... setup refresh had errors`), and the internal-network preview was not reachable from the Windows host. **Visual UI acceptance was not performed.** API/proxy tests ran inside the isolated network. ISAPI source unchanged; its separate suite/hardware tests were not rerun.
+- Local evidence/fixtures are ignored under `build/audit/mcg/`. Temporary test containers/network were used without customer volumes. Native Windows services/Setup and the running main Docker installation remain unchanged; deployment requires the existing backup-preserving update workflow.
+
 ## 2026-10-12 — Delayed events, flexible midnight allocation and confirmed removal
 
 User explicitly authorized implementation ("düzəlt"). This supersedes the older deferred/unimplemented notes for these items. Base: `d67a56d`; main/origin were equal before edits and rechecked before delivery.

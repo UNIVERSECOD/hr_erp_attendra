@@ -80,7 +80,8 @@ public class AttendanceScheduleResolver {
                 DEFAULT_SHIFT_END,
                 0,
                 DEFAULT_ALLOWED_LATE_MINUTES,
-                0
+                0,
+                false
         );
     }
 
@@ -130,7 +131,8 @@ public class AttendanceScheduleResolver {
                 end,
                 0,
                 nonNegative(schedule.getGracePeriodMinutes()),
-                0
+                0,
+                true
         );
     }
 
@@ -164,7 +166,7 @@ public class AttendanceScheduleResolver {
                     .filter(s -> s.getEndDate() == null || !s.getEndDate().isBefore(date));
             if (old.isPresent()) return fromLegacySchedule(old.get(), date, shift.shiftType());
             return new DaySchedule(shift.timetableId(), shift.shiftType(), true,
-                    DEFAULT_SHIFT_START, DEFAULT_SHIFT_END, 0, DEFAULT_ALLOWED_LATE_MINUTES, 0);
+                    DEFAULT_SHIFT_START, DEFAULT_SHIFT_END, 0, DEFAULT_ALLOWED_LATE_MINUTES, 0, false);
         };
     }
 
@@ -204,8 +206,15 @@ public class AttendanceScheduleResolver {
             LocalTime endTime,
             int breakMinutes,
             int allowedLateMinutes,
-            int allowedEarlyLeaveMinutes
+            int allowedEarlyLeaveMinutes,
+            boolean assigned
     ) {
+        public DaySchedule(Long timetableId, String shiftType, boolean workingDay, LocalTime startTime,
+                LocalTime endTime, int breakMinutes, int allowedLateMinutes, int allowedEarlyLeaveMinutes) {
+            this(timetableId, shiftType, workingDay, startTime, endTime, breakMinutes,
+                    allowedLateMinutes, allowedEarlyLeaveMinutes, timetableId != null);
+        }
+
         public boolean flexible() {
             return ShiftTypes.isFlexible(shiftType);
         }

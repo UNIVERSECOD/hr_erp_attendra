@@ -8,6 +8,9 @@ import java.util.Map;
 
 @Data
 public class TabelMonthlyDTO {
+    public enum CalculationMode { STANDARD, MCG }
+
+    private CalculationMode calculationMode = CalculationMode.STANDARD;
     private int year;
     private int month;
     private int daysInMonth;
@@ -24,5 +27,12 @@ public class TabelMonthlyDTO {
         private Map<Integer, Object> daily;
         private int workingDays;
         private double totalHours;
+        private Map<Integer, McgDayDTO> mcgDaily;
+        private int fullDays;
+        private double partialHours;
+        private double overtimeHours;
     }
+
+    public record McgDayDTO(boolean fullDay, int workedMinutes, int regularMinutes, int overtimeMinutes,
+            int permissionMinutes, int creditedPermissionMinutes, String status, boolean sourceVerified) {}
 }

@@ -45,6 +45,7 @@ class AttendanceScheduleResolverTest {
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> resolver.resolveForPermission(employee, date))
                 .isInstanceOf(com.hic.exception.BadRequestException.class);
         assertThat(resolver.resolve(employee, date).startTime()).isEqualTo(LocalTime.of(9, 0));
+        assertThat(resolver.resolve(employee, date).assigned()).isFalse();
     }
 
     @Test
@@ -100,6 +101,7 @@ class AttendanceScheduleResolverTest {
         AttendanceScheduleResolver.DaySchedule result = resolver.resolve(employee, saturday);
 
         assertThat(result.workingDay()).isTrue();
+        assertThat(result.assigned()).isTrue();
         assertThat(result.startTime()).isEqualTo(LocalTime.of(8, 0));
         assertThat(result.endTime()).isEqualTo(LocalTime.of(16, 0));
         assertThat(result.breakMinutes()).isEqualTo(30);

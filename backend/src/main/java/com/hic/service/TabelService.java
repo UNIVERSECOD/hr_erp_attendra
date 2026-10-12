@@ -1,6 +1,8 @@
 package com.hic.service;
 
 import com.hic.dto.TabelMonthlyDTO;
+import com.hic.dto.TabelMonthlyDTO.CalculationMode;
+import com.hic.dto.TabelMonthlyDTO.McgDayDTO;
 import com.hic.exception.BadRequestException;
 import com.hic.model.DailyAttendanceSummary;
 import com.hic.model.Employee;
@@ -56,6 +58,7 @@ public class TabelService {
     private final EmployeePermissionRepository employeePermissionRepository;
     private final HolidayPermissionRepository holidayPermissionRepository;
     private final AttendanceScheduleResolver attendanceScheduleResolver;
+    private final McgTabelProjectionService mcgProjectionService;
 
     public TabelMonthlyDTO getMonthlyTabel(int year,
                                            int month,
@@ -63,6 +66,11 @@ public class TabelService {
                                            Long departmentId,
                                            Long positionId,
                                            String search) {
+        return getMonthlyTabel(year, month, branchId, departmentId, positionId, search, CalculationMode.STANDARD);
+    }
+
+    public TabelMonthlyDTO getMonthlyTabel(int year, int month, Long branchId, Long departmentId,
+                                           Long positionId, String search, CalculationMode mode) {
         if (month < 1 || month > 12) {
             throw new BadRequestException("Ay 1 ilə 12 arasında olmalıdır.");
         }
@@ -99,6 +107,8 @@ public class TabelService {
 
         Map<Long, Set<LocalDate>> leaveByEmployee = buildLeaveDaysByEmployee(tenantId, employees, start, end);
         Map<Long, Set<LocalDate>> holidayByEmployee = buildHolidayDaysByEmployee(tenantId, employees, start, end);
+        boolean mcg = mode == CalculationMode.MCG;
+        var projector = mcg ? mcgProjectionService.forMonth(tenantId, employees, start, end) : null;
 
         List<TabelMonthlyDTO.RowDTO> rows = new ArrayList<>();
         for (Employee employee : employees) {
@@ -111,8 +121,13 @@ public class TabelService {
             }
 
             LinkedHashMap<Integer, Object> daily = new LinkedHashMap<>();
+            LinkedHashMap<Integer, McgDayDTO> mcgDaily = new LinkedHashMap<>();
             int workingDays = 0;
             double totalHours = 0.0;
+            int fullDays = 0;
+            int partialMinutes = 0;
+            int overtimeMinutes = 0;
+            int totalMinutes = 0;
 
             Set<LocalDate> leaveDates = leaveByEmployee.getOrDefault(employee.getId(), Set.of());
             Set<LocalDate> holidayDates = holidayByEmployee.getOrDefault(employee.getId(), Set.of());
@@ -126,11 +141,22 @@ public class TabelService {
                 } else {
                     DailyAttendanceSummary summary = summariesByDate.get(date);
                     double hours = summary != null && summary.getHoursWorked() != null ? summary.getHoursWorked() : 0.0;
+                    McgDayDTO mcgDay = mcg ? projector.project(employee, date, summary) : null;
+                    if (mcgDay != null) {
+                        mcgDaily.put(day, mcgDay);
+                        hours = mcgDay.workedMinutes() / 60.0;
+                        totalMinutes += mcgDay.workedMinutes();
+                        overtimeMinutes += mcgDay.overtimeMinutes();
+                        if (mcgDay.fullDay()) fullDays++;
+                        else partialMinutes += mcgDay.regularMinutes();
+                    }
                     if (hours > 0) {
                         double normalized = round2(hours);
                         value = normalized;
                         workingDays++;
                         totalHours += normalized;
+                    } else if (mcgDay != null) {
+                        value = "FUTURE".equals(mcgDay.status()) || "DAY_OFF".equals(mcgDay.status()) ? null : 0;
                     } else if (!isScheduledWorkingDay(employee, date, summary)) {
                         value = null;
                     } else {
@@ -149,11 +175,18 @@ public class TabelService {
             row.setEmploymentStatus(employee.getEmploymentStatus());
             row.setDaily(daily);
             row.setWorkingDays(workingDays);
-            row.setTotalHours(round2(totalHours));
+            row.setTotalHours(round2(mcg ? totalMinutes / 60.0 : totalHours));
+            if (mcg) {
+                row.setMcgDaily(mcgDaily);
+                row.setFullDays(fullDays);
+                row.setPartialHours(round2(partialMinutes / 60.0));
+                row.setOvertimeHours(round2(overtimeMinutes / 60.0));
+            }
             rows.add(row);
         }
 
         TabelMonthlyDTO dto = new TabelMonthlyDTO();
+        dto.setCalculationMode(mcg ? CalculationMode.MCG : CalculationMode.STANDARD);
         dto.setYear(year);
         dto.setMonth(month);
         dto.setDaysInMonth(yearMonth.lengthOfMonth());
@@ -168,7 +201,13 @@ public class TabelService {
                                      Long departmentId,
                                      Long positionId,
                                      String search) {
-        TabelMonthlyDTO tabel = getMonthlyTabel(year, month, branchId, departmentId, positionId, search);
+        return exportMonthlyTabel(year, month, branchId, departmentId, positionId, search, CalculationMode.STANDARD);
+    }
+
+    public byte[] exportMonthlyTabel(int year, int month, Long branchId, Long departmentId,
+                                     Long positionId, String search, CalculationMode mode) {
+        TabelMonthlyDTO tabel = getMonthlyTabel(year, month, branchId, departmentId, positionId, search, mode);
+        boolean mcg = tabel.getCalculationMode() == CalculationMode.MCG;
 
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Tabel");
@@ -178,9 +217,11 @@ public class TabelService {
             terminatedFont.setBold(true);
             CellStyle terminatedNameStyle = workbook.createCellStyle();
             terminatedNameStyle.setFont(terminatedFont);
+            CellStyle dayStyle = workbook.createCellStyle();
+            dayStyle.setWrapText(true);
 
             Row titleRow = sheet.createRow(0);
-            titleRow.createCell(0).setCellValue("Tabel arxivi: "
+            titleRow.createCell(0).setCellValue((mcg ? "Attendra MCG — Tabel: " : "Tabel arxivi: ")
                     + yearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.ENGLISH)
                     + " " + year);
 
@@ -192,6 +233,11 @@ public class TabelService {
             header.createCell(column++).setCellValue("Vəzifəsi");
             for (int day = 1; day <= tabel.getDaysInMonth(); day++) {
                 header.createCell(column++).setCellValue(day);
+            }
+            if (mcg) {
+                header.createCell(column++).setCellValue("Tam gün");
+                header.createCell(column++).setCellValue("Natamam günlərin saatı (OT xaric)");
+                header.createCell(column++).setCellValue("Overtime (saat)");
             }
             header.createCell(column++).setCellValue("İş günlərinin sayı");
             header.createCell(column).setCellValue("İş saatlarının cəmi");
@@ -214,6 +260,10 @@ public class TabelService {
                     Object value = row.getDaily().get(day);
                     if (value == null) {
                         sheetRow.createCell(dataCol++).setCellValue("");
+                    } else if (mcg && value instanceof Number && row.getMcgDaily().containsKey(day)) {
+                        var cell = sheetRow.createCell(dataCol++);
+                        cell.setCellValue(formatMcgDay(row.getMcgDaily().get(day)));
+                        cell.setCellStyle(dayStyle);
                     } else if (value instanceof Number number) {
                         sheetRow.createCell(dataCol++).setCellValue(number.doubleValue());
                     } else {
@@ -221,6 +271,12 @@ public class TabelService {
                     }
                 }
 
+                if (mcg) {
+                    sheetRow.setHeightInPoints(32);
+                    sheetRow.createCell(dataCol++).setCellValue(row.getFullDays());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getPartialHours());
+                    sheetRow.createCell(dataCol++).setCellValue(row.getOvertimeHours());
+                }
                 sheetRow.createCell(dataCol++).setCellValue(row.getWorkingDays());
                 sheetRow.createCell(dataCol).setCellValue(row.getTotalHours());
             }
@@ -228,12 +284,48 @@ public class TabelService {
             for (int i = 0; i <= 5; i++) {
                 sheet.autoSizeColumn(i);
             }
+            if (mcg) {
+                sheet.setColumnWidth(0, 6 * 256);
+                sheet.setColumnWidth(1, 14 * 256);
+                sheet.setColumnWidth(2, 32 * 256);
+                sheet.setColumnWidth(3, 22 * 256);
+                for (int i = 4; i < 4 + tabel.getDaysInMonth(); i++) sheet.setColumnWidth(i, 13 * 256);
+                for (int i = 4 + tabel.getDaysInMonth(); i <= column; i++) sheet.setColumnWidth(i, 20 * 256);
+                Font headerFont = workbook.createFont();
+                headerFont.setBold(true);
+                CellStyle headerStyle = workbook.createCellStyle();
+                headerStyle.setFont(headerFont);
+                headerStyle.setWrapText(true);
+                for (var cell : header) cell.setCellStyle(headerStyle);
+                header.setHeightInPoints(45);
+                sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, column));
+                sheet.createFreezePane(4, 2);
+                sheet.createRow(++rowIndex).createCell(0).setCellValue(
+                        "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
+                sheet.createRow(++rowIndex).createCell(0).setCellValue(
+                        "s = saat; OT = overtime. Saatlar OT xaric göstərilir. Cəmi saat icazə kreditini və OT-ni də əhatə edir.");
+                sheet.createRow(++rowIndex).createCell(0).setCellValue(
+                        "* = yalnız arxiv saatı mövcuddur, tam gün və OT təsdiqlənmir. ? = çıxış qeydi çatışmır.");
+                sheet.createRow(++rowIndex).createCell(0).setCellValue(
+                        "Qırmızı adla işarələnən əməkdaşlar işdən azad edilib. Çevik qrafik saatla hesablanır.");
+                for (int i = rowIndex - 3; i <= rowIndex; i++) {
+                    sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(i, i, 0, column));
+                }
+            }
 
             workbook.write(output);
             return output.toByteArray();
         } catch (Exception ex) {
             throw new RuntimeException("Failed to export tabel", ex);
         }
+    }
+
+    private String formatMcgDay(McgDayDTO day) {
+        String value = day.fullDay() ? "1" : String.format(Locale.ROOT, "%.2f s", day.regularMinutes() / 60.0);
+        if (day.overtimeMinutes() > 0) value += String.format(Locale.ROOT, "\n+%.2f s OT", day.overtimeMinutes() / 60.0);
+        if (!day.sourceVerified()) value += " *";
+        if ("OPEN_SESSION".equals(day.status()) || "MISSING_EXIT".equals(day.status())) value += " ?";
+        return value;
     }
 
     private Map<Long, Set<LocalDate>> buildLeaveDaysByEmployee(Long tenantId,
