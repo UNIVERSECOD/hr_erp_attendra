@@ -235,8 +235,6 @@ public class TabelService {
                 header.createCell(column++).setCellValue(day);
             }
             if (mcg) {
-                header.createCell(column++).setCellValue("Tam gün");
-                header.createCell(column++).setCellValue("Natamam günlərin saatı (OT xaric)");
                 header.createCell(column++).setCellValue("Overtime (saat)");
             }
             header.createCell(column++).setCellValue("İş günlərinin sayı");
@@ -276,8 +274,6 @@ public class TabelService {
 
                 if (mcg) {
                     sheetRow.setHeightInPoints(32);
-                    sheetRow.createCell(dataCol++).setCellValue(row.getFullDays());
-                    sheetRow.createCell(dataCol++).setCellValue(row.getPartialHours());
                     sheetRow.createCell(dataCol++).setCellValue(row.getOvertimeHours());
                 }
                 sheetRow.createCell(dataCol++).setCellValue(row.getWorkingDays());
@@ -310,7 +306,7 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "Çıxış və ya mənbə qeydi çatışmayan günlər tam gün kimi təsdiqlənmir. Overtime aylıq yekunda ayrıca verilir.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Natamam saat yekunu OT xaricdir; cəmi saata icazə krediti və OT daxildir. Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.");
+                        "Cəmi saata icazə krediti və OT daxildir. Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.");
                 for (int i = rowIndex - 3; i <= rowIndex; i++) {
                     sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(i, i, 0, column));
                 }

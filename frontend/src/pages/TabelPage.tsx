@@ -202,8 +202,8 @@ export default function TabelPage() {
           <section className="flex-1 min-w-0 space-y-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h1 className="text-2xl font-bold text-slate-900">Tabel · MCG</h1>
-                <p className="mt-1 text-sm text-slate-500">Tam günlər, natamam iş saatları və overtime</p>
+                <h1 className="text-2xl font-bold text-slate-900">Tabel</h1>
+                <p className="mt-1 text-sm text-slate-500">Bütün şərtlər ödənəndə 1, digər günlərdə işlənmiş tam saat, boş günlərdə 0.</p>
               </div>
               <button onClick={handleExport} disabled={!data || exporting || loading || search !== debouncedSearch} className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-700 disabled:opacity-50">
                 {t('reports.excelExport')}
@@ -244,13 +244,6 @@ export default function TabelPage() {
               </select>
             </div>
 
-            <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs leading-relaxed text-indigo-900">
-              <p><strong>1</strong> = həmin günün qrafiki tam yerinə yetirilib; giriş–çıxış toleransı və iş saatından çıxılmayan təsdiqli icazə nəzərə alınır.</p>
-              <p>Şərtlər ödənmirsə, günlük xanada işlənmiş tam saat göstərilir; dəqiqələr atılır (8 saat 16 dəqiqə = 8). Overtime aylıq yekunda ayrıca verilir. Aylıq yekunlar dəqiq hesablanır.</p>
-              <p>Günün üzərinə gəldikdə dəqiq müddət və çatışmayan giriş–çıxış qeydləri göstərilir. Natamam saat yekunu OT xaricdir; cəmi saata icazə krediti və OT daxildir.</p>
-              <p className="text-red-700">Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.</p>
-            </div>
-
             <div className="overflow-x-auto rounded-2xl bg-white shadow-sm">
               <table className="min-w-max border-collapse text-sm">
                 <thead>
@@ -262,18 +255,16 @@ export default function TabelPage() {
                     {Array.from({ length: data?.daysInMonth ?? 0 }, (_, day) => (
                       <th key={day + 1} className="sticky top-0 min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
                     ))}
-                    <th className="min-w-[90px] border-b px-3 py-3 text-center">Tam gün</th>
-                    <th className="min-w-[140px] border-b px-3 py-3 text-center" title="Tam gün kimi hesablanmayan günlərin saatları; overtime xaric">Natamam saat</th>
-                    <th className="min-w-[120px] border-b px-3 py-3 text-center">Overtime (s)</th>
-                    <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş günü</th>
-                    <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">Cəmi saat</th>
+                    <th className="sticky top-0 min-w-[120px] border-b bg-slate-50 px-3 py-3 text-center">Overtime (saat)</th>
+                    <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş günlərinin sayı</th>
+                    <th className="sticky top-0 min-w-[100px] border-b bg-slate-50 px-3 py-3 text-center">İş saatlarının cəmi</th>
                   </tr>
                 </thead>
                 <tbody>
                   {loading ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 9} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 7} className="px-4 py-8 text-center text-slate-500">Yüklənir...</td></tr>
                   ) : (data?.rows.length ?? 0) === 0 ? (
-                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 9} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
+                    <tr><td colSpan={(data?.daysInMonth ?? 0) + 7} className="px-4 py-8 text-center text-slate-400">Məlumat tapılmadı</td></tr>
                   ) : data?.rows.map((row, index) => (
                     <tr key={row.employeePk} className="border-b border-slate-100 text-slate-700">
                       <td className="sticky left-0 z-20 bg-white px-3 py-2 min-w-[50px] max-w-[50px]">{index + 1}</td>
@@ -304,8 +295,6 @@ export default function TabelPage() {
                           </td>
                         )
                       })}
-                      <td className="px-3 py-2 text-center font-semibold text-emerald-700">{row.fullDays ?? 0}</td>
-                      <td className="px-3 py-2 text-center font-medium">{(row.partialHours ?? 0).toFixed(2)}</td>
                       <td className="px-3 py-2 text-center font-medium text-indigo-600">{(row.overtimeHours ?? 0).toFixed(2)}</td>
                       <td className="px-3 py-2 text-center font-medium">{row.workingDays}</td>
                       <td className="px-3 py-2 text-center font-medium">{row.totalHours.toFixed(2)}</td>

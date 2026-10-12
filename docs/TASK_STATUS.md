@@ -1,5 +1,12 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Restore compact MCG Tabel with three monthly columns
+
+- User clarified that the previous table layout should remain: daily cells show `1` only when all assigned schedule/entry/exit conditions hold, otherwise whole worked hours, and empty days show `0`. Monthly UI/Excel now display only `Overtime (saat)`, `İş günlərinin sayı`, and `İş saatlarının cəmi`. Removed the full-day and partial-hour columns and the large on-screen explanation panel; daily rules remain in a short subtitle and tooltips.
+- Daily calculations, underlying attendance and exact monthly totals are unchanged. Existing full-day/partial-hour API fields remain compatible. Updated the existing Excel regression to check the three headers, numeric daily values and unchanged overtime/workday/total values.
+- Verification: focused Tabel/MCG/controller tests passed; clean backend package **462 tests, zero failures/errors/skips**; frontend lint/build and Docker build/config passed. Existing-session UI showed 38 columns (31 days plus four identity and three monthly columns), with no empty or nonnumeric daily cells. Downloaded Excel had the same three monthly columns, numeric daily values, zero empty/future days and unchanged totals/frozen identity columns.
+- Mandatory backup succeeded; only backend/frontend were recreated with the local port override. Frontend and proxied API health returned 200. HR aggregate fingerprints and photo file hashes were unchanged. No migration, customer data mutation, historical recalculation or physical-device write; ISAPI unchanged and its suite was not rerun. Deliver on `codex/mcg`; standard main/copy and native Windows services stay separate.
+
 ## 2026-10-12 — MCG numeric daily display and details without overtime
 
 - User requested MCG on this workstation and a standard project copy. Standard source was cloned independently to `D:\Projects\Attendra-Standard-20261012` at `526b4e2`; current workspace uses `codex/mcg`. This copy contains tracked source/history, not live databases/photos or local secrets. Backups are separate.

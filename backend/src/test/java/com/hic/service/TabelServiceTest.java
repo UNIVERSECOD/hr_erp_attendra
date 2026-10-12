@@ -190,7 +190,10 @@ class TabelServiceTest {
         byte[] excel = tabelService.exportMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
         try (var book = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
             var sheet = book.getSheet("Tabel");
-            assertEquals(39, sheet.getRow(1).getLastCellNum());
+            assertEquals(37, sheet.getRow(1).getLastCellNum());
+            assertEquals("Overtime (saat)", sheet.getRow(1).getCell(34).getStringCellValue());
+            assertEquals("İş günlərinin sayı", sheet.getRow(1).getCell(35).getStringCellValue());
+            assertEquals("İş saatlarının cəmi", sheet.getRow(1).getCell(36).getStringCellValue());
             assertEquals(6 * 256, sheet.getColumnWidth(0));
             assertEquals(20 * 256, sheet.getColumnWidth(35));
             assertEquals(true, sheet.getRow(1).getCell(35).getCellStyle().getWrapText());
@@ -198,8 +201,9 @@ class TabelServiceTest {
             assertEquals(8.0, sheet.getRow(2).getCell(5).getNumericCellValue());
             assertEquals(8.0, sheet.getRow(2).getCell(6).getNumericCellValue());
             assertEquals(0.0, sheet.getRow(2).getCell(7).getNumericCellValue());
-            assertEquals(1.0, sheet.getRow(2).getCell(34).getNumericCellValue());
-            assertEquals(26.27, sheet.getRow(2).getCell(38).getNumericCellValue());
+            assertEquals(3.27, sheet.getRow(2).getCell(34).getNumericCellValue());
+            assertEquals(3.0, sheet.getRow(2).getCell(35).getNumericCellValue());
+            assertEquals(26.27, sheet.getRow(2).getCell(36).getNumericCellValue());
             assertEquals(IndexedColors.RED.getIndex(), book.getFontAt(sheet.getRow(2).getCell(2).getCellStyle().getFontIndex()).getColor());
             org.assertj.core.api.Assertions.assertThat(sheet.getRow(sheet.getLastRowNum()).getCell(0).getStringCellValue()).contains("işdən azad");
         }
