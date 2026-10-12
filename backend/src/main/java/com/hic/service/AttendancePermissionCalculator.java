@@ -27,24 +27,59 @@ public class AttendancePermissionCalculator {
                 .filter(permission -> appliesOn(permission, date))
                 .toList();
 
-        if (active.isEmpty() || !schedule.workingDay()) {
+        TimeRange range = scheduleRange(date, schedule);
+        return applyRanges(date, inference, schedule, base, active.stream()
+                .map(p -> new PermissionSlice(p, permissionRange(p, date, range)))
+                .filter(p -> p.range() != null).toList(), range, false);
+    }
+
+    /** Flexible permission intervals use the same calendar-day clipping as worked intervals. */
+    public Result applyAllocated(LocalDate date, AttendanceInferenceService.AttendanceInference inference,
+            AttendanceScheduleResolver.DaySchedule schedule, AttendanceTimeCalculator.Calculation base,
+            List<EmployeePermission> permissions,
+            java.util.function.Function<LocalDate, AttendanceScheduleResolver.DaySchedule> schedules) {
+        if (!schedule.flexible()) return apply(date, inference, schedule, base, permissions);
+        List<PermissionSlice> slices = new ArrayList<>();
+        var dayRange = new TimeRange(date.atStartOfDay(), date.plusDays(1).atStartOfDay());
+        for (var p : permissions == null ? List.<EmployeePermission>of() : permissions) {
+            for (var anchor : List.of(date.minusDays(1), date)) {
+                if (!appliesOn(p, anchor)) continue;
+                var anchorSchedule = schedules.apply(anchor);
+                if (!anchorSchedule.flexible() || !anchorSchedule.workingDay()) continue;
+                var range = permissionRange(p, anchor, scheduleRange(anchor, anchorSchedule));
+                if (range != null) {
+                    var portion = intersect(range, dayRange);
+                    if (portion != null) slices.add(new PermissionSlice(p, portion));
+                }
+            }
+        }
+        // A working shift's after-midnight permission remains valid even if the next day is a rest day.
+        return applyRanges(date, inference, schedule, base, slices, dayRange, true);
+    }
+
+    private record PermissionSlice(EmployeePermission permission, TimeRange range) {}
+
+    private Result applyRanges(LocalDate date, AttendanceInferenceService.AttendanceInference inference,
+            AttendanceScheduleResolver.DaySchedule schedule, AttendanceTimeCalculator.Calculation base,
+            List<PermissionSlice> active, TimeRange scheduleRange, boolean calendarAllocated) {
+
+        if (active.isEmpty() || (!calendarAllocated && !schedule.workingDay())) {
             return Result.from(base);
         }
 
-        TimeRange scheduleRange = scheduleRange(date, schedule);
         List<TimeRange> allRanges = merge(active.stream()
-                .map(permission -> permissionRange(permission, date, scheduleRange))
+                .map(PermissionSlice::range)
                 .filter(java.util.Objects::nonNull)
                 .toList());
         List<TimeRange> creditableRanges = merge(active.stream()
-                .filter(permission -> Boolean.FALSE.equals(permission.getDeductFromWorkHours()))
-                .map(permission -> permissionRange(permission, date, scheduleRange))
+                .filter(slice -> Boolean.FALSE.equals(slice.permission().getDeductFromWorkHours()))
+                .map(PermissionSlice::range)
                 .filter(java.util.Objects::nonNull)
                 .toList());
         List<TimeRange> explicitCreditableRanges = merge(active.stream()
-                .filter(permission -> Boolean.FALSE.equals(permission.getDeductFromWorkHours()))
-                .filter(permission -> !permission.isFullDay())
-                .map(permission -> permissionRange(permission, date, scheduleRange))
+                .filter(slice -> Boolean.FALSE.equals(slice.permission().getDeductFromWorkHours()))
+                .filter(slice -> !slice.permission().isFullDay())
+                .map(PermissionSlice::range)
                 .filter(java.util.Objects::nonNull)
                 .toList());
 
@@ -57,8 +92,8 @@ public class AttendancePermissionCalculator {
                 || base.status() == AttendanceStatus.MISSING_EXIT;
         List<TimeRange> coveredRanges = attendanceRanges(inference, schedule);
         List<TimeRange> deductedRanges = merge(active.stream()
-                .filter(permission -> !Boolean.FALSE.equals(permission.getDeductFromWorkHours()))
-                .map(permission -> permissionRange(permission, date, scheduleRange))
+                .filter(slice -> !Boolean.FALSE.equals(slice.permission().getDeductFromWorkHours()))
+                .map(PermissionSlice::range)
                 .filter(java.util.Objects::nonNull)
                 .toList());
         // Only subtract permission already counted as attendance; an actual exit gap is not deducted twice.
@@ -88,7 +123,7 @@ public class AttendancePermissionCalculator {
         int earlyLeaveMinutes = adjustedEarlyLeaveMinutes(
                 date, inference, schedule, base.earlyLeaveMinutes(), allRanges);
         boolean permittedEarlyLeave = base.earlyLeaveMinutes() > 0 && earlyLeaveMinutes == 0;
-        boolean fullDayPermission = coversSchedule(active, allRanges, scheduleRange);
+        boolean fullDayPermission = coversSchedule(active.stream().map(PermissionSlice::permission).toList(), allRanges, scheduleRange);
 
         AttendanceStatus status = resolveStatus(
                 base.status(), inference, permittedEarlyLeave, fullDayPermission,

@@ -35,6 +35,7 @@ class AttendanceSessionManagementServiceTest {
     @Mock private AttendanceService attendanceService;
     @Mock private AttendanceSessionPolicy sessionPolicy;
     @Mock private UserScopeService userScopeService;
+    @Mock private AttendanceScheduleResolver scheduleResolver;
 
     private AttendanceSessionManagementService service;
 
@@ -48,7 +49,8 @@ class AttendanceSessionManagementServiceTest {
                 calculationService,
                 attendanceService,
                 sessionPolicy,
-                userScopeService
+                userScopeService,
+                scheduleResolver
         );
     }
 
@@ -64,6 +66,7 @@ class AttendanceSessionManagementServiceTest {
         session.setId(10L);
         session.setTenantId(1L);
         session.setEmployeeId(5L);
+        session.setShiftType("STANDARD");
         session.setCheckInTime(workDate.atTime(20, 0));
 
         Employee employee = new Employee();
@@ -101,5 +104,31 @@ class AttendanceSessionManagementServiceTest {
         verify(attendanceService).generateDailySummary(5L, workDate);
         verify(calculationService, never()).calculateForDay(5L, workDate.plusDays(1));
         verify(attendanceService, never()).generateDailySummary(5L, workDate.plusDays(1));
+    }
+
+    @Test
+    void shorteningFlexibleOvernightSessionRecalculatesRemovedCarryInDay() {
+        var day = LocalDate.of(2026, 9, 30);
+        var session = new AttendanceLog();
+        session.setId(10L);
+        session.setEmployeeId(5L);
+        session.setCheckInTime(day.atTime(20, 0));
+        session.setCheckOutTime(day.plusDays(1).atTime(2, 0));
+        var employee = new Employee();
+        employee.setId(5L);
+        when(scheduleResolver.resolve(employee, day)).thenReturn(new AttendanceScheduleResolver.DaySchedule(
+                1L, "FLEXIBLE", true, null, null, 0, 0, 0));
+        when(attendanceLogRepository.findByTenantIdAndId(1L, 10L)).thenReturn(Optional.of(session));
+        when(employeeRepository.findByTenantIdAndId(1L, 5L)).thenReturn(Optional.of(employee));
+        when(userScopeService.resolveBranchScope(null)).thenReturn(null);
+        when(attendanceLogRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+        var request = new AttendanceCorrectionRequest();
+        request.setCheckInTime(day.atTime(20, 0));
+        request.setCheckOutTime(day.atTime(23, 0));
+        request.setReason("Synthetic correction");
+        service.correctSession(10L, request);
+        verify(calculationService).calculateForDay(5L, day);
+        verify(calculationService).calculateForDay(5L, day.plusDays(1));
+        verify(attendanceService).generateDailySummary(5L, day.plusDays(1));
     }
 }

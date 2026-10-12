@@ -450,4 +450,30 @@ class AttendanceServiceTest {
         assertThat(result.getCheckOutTime()).isNotNull();
         assertThat(result.getCheckOutTime().toLocalTime()).isEqualTo(java.time.LocalTime.of(17, 0));
     }
+
+    @Test
+    void flexibleMonthBoundaryUsesCarryInForSummaryAndReportWithoutSplittingSource() {
+        var first = LocalDate.of(2026, 9, 30);
+        var next = first.plusDays(1);
+        var employee = new Employee();
+        employee.setId(1L);
+        employee.setTenantId(7L);
+        employee.setShiftType("FLEXIBLE");
+        var log = new AttendanceLog();
+        log.setEmployeeId(1L);
+        log.setShiftType("FLEXIBLE");
+        log.setCheckInTime(first.atTime(20, 0));
+        log.setCheckOutTime(next.atTime(2, 0));
+        when(employeeRepository.findById(1L)).thenReturn(Optional.of(employee));
+        when(attendanceLogRepository.findClosedCarryIn(7L, 1L, next.atStartOfDay())).thenReturn(List.of(log));
+        when(summaryRepository.save(any())).thenAnswer(i -> i.getArgument(0));
+
+        assertThat(attendanceService.generateDailySummary(1L, next).getHoursWorked()).isEqualTo(2.0);
+        var rows = attendanceService.getEmployeeAttendance(1L, next, next);
+        assertThat(rows).hasSize(1);
+        assertThat(rows.get(0).getHoursWorked()).isEqualTo(2.0);
+        assertThat(rows.get(0).getSessions()).isEmpty(); // Detail belongs to the original entry date.
+        assertThat(log.getCheckInTime()).isEqualTo(first.atTime(20, 0));
+        assertThat(log.getCheckOutTime()).isEqualTo(next.atTime(2, 0));
+    }
 }

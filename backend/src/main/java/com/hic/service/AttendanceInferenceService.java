@@ -16,7 +16,8 @@ import java.util.Objects;
  * Work-date attendance inference.
  * <p>
  * A session belongs to the local date on which it started. Sessions that cross midnight
- * remain one session and their full duration is credited to that work date.
+ * remain one source session. Daily callers use AttendanceDayAllocation first
+ * to split closed flexible intervals; detail callers retain the original session.
  * <p>
  * Worked minutes depend on shift type:
  * <ul>
@@ -76,7 +77,8 @@ public class AttendanceInferenceService {
                 continue;
             }
 
-            workedMinutes += safeMinutes(Duration.between(entry, exit));
+            workedMinutes += log.getAllocatedWorkedMinutes() != null
+                    ? log.getAllocatedWorkedMinutes() : safeMinutes(Duration.between(entry, exit));
             if (firstEntry == null || entry.isBefore(firstEntry)) {
                 firstEntry = entry;
             }

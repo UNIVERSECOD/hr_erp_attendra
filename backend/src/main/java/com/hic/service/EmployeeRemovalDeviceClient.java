@@ -36,4 +36,18 @@ public class EmployeeRemovalDeviceClient {
                 bridgeId.toString(), "users", "by-employee-no", employeeNo).build().encode().toUri();
         http.delete(uri);
     }
+
+    public boolean absent(Long bridgeId, String employeeNo) {
+        // This endpoint is a strict, complete LIVE terminal snapshot, not the shared bridge cache.
+        var persons = http.getForObject(baseUrl + "/" + bridgeId + "/users/reconciliation-snapshot",
+                com.fasterxml.jackson.databind.JsonNode.class);
+        if (persons == null || !persons.isArray()) throw new IllegalStateException("Silinmə təsdiqi alınmadı");
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (var person : persons) {
+            var number = person.path("employeeNo");
+            if (!number.isTextual() || number.asText().isBlank() || !seen.add(number.asText()))
+                throw new IllegalStateException("Silinmə təsdiqi alınmadı");
+        }
+        return !seen.contains(employeeNo);
+    }
 }

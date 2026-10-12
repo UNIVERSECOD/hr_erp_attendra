@@ -315,7 +315,10 @@ public class EmployeePermissionService {
     }
 
     private void recalculateAttendance(Long employeeId, LocalDate startDate, LocalDate endDate) {
-        LocalDate lastDate = endDate.isAfter(AppTimeZone.today()) ? AppTimeZone.today() : endDate;
+        Employee employee = employeeRepository.findById(employeeId).orElse(null);
+        var lastSchedule = employee == null ? null : scheduleResolver.resolve(employee, endDate);
+        LocalDate through = lastSchedule != null && lastSchedule.flexible() ? endDate.plusDays(1) : endDate;
+        LocalDate lastDate = through.isAfter(AppTimeZone.today()) ? AppTimeZone.today() : through;
         if (startDate.isAfter(lastDate)) {
             return;
         }

@@ -208,7 +208,7 @@ class AttendanceCalculationServiceTest {
     }
 
     @Test
-    void calculateForDay_flexibleOvernightSession_countsFullDurationOnEntryDate() {
+    void calculateForDay_flexibleOvernightSession_splitsAtMidnightAndLoadsCarryIn() {
         LocalDate workDate = LocalDate.of(2026, 9, 23);
         Employee employee = new Employee();
         employee.setId(1L);
@@ -231,8 +231,16 @@ class AttendanceCalculationServiceTest {
         AttendanceRecord record = attendanceCalculationService.calculateForDay(1L, workDate);
 
         assertThat(record.getEntryTime()).isEqualTo(workDate.atTime(20, 0));
-        assertThat(record.getExitTime()).isEqualTo(workDate.plusDays(1).atTime(4, 0));
-        assertThat(record.getWorkedMinutes()).isEqualTo(8 * 60);
+        assertThat(record.getExitTime()).isEqualTo(workDate.plusDays(1).atStartOfDay());
+        assertThat(record.getWorkedMinutes()).isEqualTo(4 * 60);
+        when(attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(eq(1L), any(), any()))
+                .thenReturn(List.of());
+        when(attendanceLogRepository.findClosedCarryIn(any(), eq(1L), eq(workDate.plusDays(1).atStartOfDay())))
+                .thenReturn(List.of(overnight));
+        var next = attendanceCalculationService.calculateForDay(1L, workDate.plusDays(1));
+        assertThat(next.getWorkedMinutes()).isEqualTo(4 * 60);
+        assertThat(next.getEntryTime()).isEqualTo(workDate.plusDays(1).atStartOfDay());
+        assertThat(overnight.getCheckInTime()).isEqualTo(workDate.atTime(20, 0));
     }
 
     @Test

@@ -13,6 +13,19 @@ import java.util.List;
 @Repository
 public interface AttendanceLogRepository extends JpaRepository<AttendanceLog, Long> {
 
+    // Include closed/manual rows as boundaries: never jump over one to close an older open row.
+    @Query(value = "select * from attendance_logs where tenant_id = :tenantId and employee_id = :employeeId "
+            + "and check_in_time <= :time and combined_area_id is null "
+            + "order by check_in_time desc, id desc limit 1", nativeQuery = true)
+    java.util.Optional<AttendanceLog> findDirectionalSessionAt(@Param("tenantId") Long tenantId,
+            @Param("employeeId") Long employeeId, @Param("time") LocalDateTime time);
+
+    @Query("select a from AttendanceLog a where a.tenantId = :tenantId "
+            + "and (:employeeId is null or a.employeeId = :employeeId) "
+            + "and a.checkInTime < :start and a.checkOutTime > :start")
+    List<AttendanceLog> findClosedCarryIn(@Param("tenantId") Long tenantId,
+            @Param("employeeId") Long employeeId, @Param("start") LocalDateTime start);
+
     // Tenant-aware methods
     java.util.Optional<AttendanceLog> findByTenantIdAndEmployeeIdAndCombinedAreaIdAndCombinedWorkDate(
             Long tenantId, Long employeeId, Long areaId, java.time.LocalDate workDate);

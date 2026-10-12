@@ -1,5 +1,29 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Delayed events, flexible midnight allocation and confirmed removal
+
+User explicitly authorized implementation ("düzəlt"). This supersedes the older deferred/unimplemented notes for these items. Base: `d67a56d`; main/origin were equal before edits and rechecked before delivery.
+
+- ENTRY/EXIT pairing selects the latest directional session **at or before the event time**, tenant/employee scoped, instead of the newest open session overall. Closed and manually corrected sessions remain boundaries. Existing duplicate IDs, debounce, expiry and BOTH behavior are preserved.
+- Closed FLEXIBLE/FIRST_ENTRY intervals are projected into Asia/Baku calendar-day portions for daily summaries, attendance records, daily/monthly/yearly reports and Tabel. Example: 30 September 20:00–1 October 02:00 = 4h + 2h. Month-start carry-in is loaded. Source rows and detailed visits remain whole; STANDARD/NIGHT remain entry-date based. Open sessions do not invent after-midnight work. Integer-minute allocation preserves the interval total.
+- Approved flexible permissions are clipped to the same days, including an overnight working shift's carry into a rest day. Manual corrections recalculate old and new affected dates; permission changes include the following flexible day.
+- Removal jobs complete only after DELETE **and** strict live `/users/reconciliation-snapshot` confirms the terminal employee number absent. A still-present person, unavailable readback or malformed snapshot remains pending. Existing warning toasts and pending counts apply without a frontend/API change.
+
+Verification:
+
+- Clean backend `mvn clean package`: **426 tests, zero failures/errors/skips**. Focused regressions cover delayed pair/exit, replay, newer open entry, closed/manual boundaries, month boundary, exact midnight, seconds, permission credit/deduction, rest-day carry and correction clearing a removed carry-in day.
+- Backend Docker image build and Compose config passed. No migration added/modified (V042 remains latest).
+- Disposable internal-network PostgreSQL + backend + mock bridge: offline termination persisted a pending job; an actual backend process restart resumed it automatically. DELETE with person still present stayed pending; absence readback completed it. Completed-job replay issued no extra DELETE. This is **not physical-firmware acceptance**.
+- Same isolated API/DB fixture: delayed 20:00–02:00 recovered while a newer entry remained unclosed; replay created zero new logs. Persisted summaries were 4h + 2h; October employee report, daily overview and Tabel returned 2h; detail report retained one 6h interval. Manually shortening it to 23:00 changed summaries to 3h + 0h.
+- No customer data, photos, credentials, raw events or physical devices changed. Native Windows services/Setup and running main Docker containers were **not deployed/restarted**. Frontend/ISAPI source unchanged; their builds and UI/hardware acceptance were not rerun for this backend-only change.
+
+Remaining:
+
+1. Deploy through the appropriate Docker or native Setup update workflow, preserving existing configuration and data. Source push alone does not update localhost.
+2. Historical persisted totals are **not mass-recalculated automatically**. After backup and explicit scope approval, re-sync affected raw events and use the existing attendance recalculate endpoint for the intended dates/employees. Include both dates for overnight intervals and the preceding entry date when starting mid-interval.
+3. Physical-device offline -> online -> confirmed deletion acceptance still requires a chosen test employee, read-only bridge ID/IP/name verification and explicit approval.
+4. Attendra MCG remains last and unimplemented. This is ordinary Attendra flexible-hour allocation, not the MCG day-marker formula.
+
 - 2026-10-12 follow-up: user explicitly authorized sending the second backed-up photo to the same entry terminal. Reverified retention enabled, device/person identity and source hash. Upload HTTP 200; downloaded photo decoded successfully (27,252 bytes). Both missing entry-terminal photos are now recovered; no other terminal writes or local-profile restoration. Evidence: ignored `runtime/audit/approved-ismayil-face-recovery.log`.
 
 ## 2026-10-12 — Single-photo recovery succeeded; user confirmed

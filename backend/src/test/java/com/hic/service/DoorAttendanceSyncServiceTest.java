@@ -59,6 +59,13 @@ class DoorAttendanceSyncServiceTest {
     void setUp() {
         TenantContext.setTenantId(1L);
         logIdSeq.set(1);
+        // Model the event-time DB lookup using rows saved earlier in this test run.
+        lenient().when(attendanceLogRepository.findDirectionalSessionAt(eq(1L), anyLong(), any()))
+                .thenAnswer(call -> org.mockito.Mockito.mockingDetails(attendanceLogRepository).getInvocations().stream()
+                        .filter(i -> i.getMethod().getName().equals("save"))
+                        .map(i -> (AttendanceLog) i.getArgument(0))
+                        .filter(l -> l.getCheckInTime() != null && !l.getCheckInTime().isAfter(call.getArgument(2)))
+                        .max(java.util.Comparator.comparing(AttendanceLog::getCheckInTime)));
         lenient().when(employeeShiftResolver.resolve(any(), any()))
                 .thenReturn(new EmployeeShiftResolver.ResolvedShift(null, "FLEXIBLE", true));
         lenient().when(attendanceSessionPolicy.isDuplicateEntry(any(), any())).thenAnswer(invocation -> {
@@ -204,7 +211,7 @@ class DoorAttendanceSyncServiceTest {
     }
 
     @Test
-    void syncAllDevices_overnightExit_recalculatesOnlyCheckInWorkDate() {
+    void syncAllDevices_overnightFlexibleExit_recalculatesBothCalendarDays() {
         DeviceConfig entryDevice = device(10L, "101", "ENTRY");
         DeviceConfig exitDevice = device(11L, "102", "EXIT");
         Employee employee = employee(5L, "1001");
@@ -232,8 +239,8 @@ class DoorAttendanceSyncServiceTest {
         assertThat(result.getMatchedSessions()).isEqualTo(1);
         verify(attendanceCalculationService).calculateForDay(5L, day);
         verify(attendanceService).generateDailySummary(5L, day);
-        verify(attendanceCalculationService, never()).calculateForDay(5L, day.plusDays(1));
-        verify(attendanceService, never()).generateDailySummary(5L, day.plusDays(1));
+        verify(attendanceCalculationService).calculateForDay(5L, day.plusDays(1));
+        verify(attendanceService).generateDailySummary(5L, day.plusDays(1));
     }
 
     @Test
@@ -252,7 +259,7 @@ class DoorAttendanceSyncServiceTest {
         oldOpen.setStatus("OPEN");
 
         when(attendanceLogRepository
-                .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(1L, 5L))
+                .findDirectionalSessionAt(eq(1L), eq(5L), any()))
                 .thenReturn(Optional.of(oldOpen));
         when(attendanceSessionPolicy.isExpired(eq(employee), eq(oldOpen), any())).thenReturn(true);
         when(attendanceLogRepository.save(oldOpen)).thenReturn(oldOpen);
@@ -335,8 +342,8 @@ class DoorAttendanceSyncServiceTest {
         open.setCheckInTime(day.atTime(9, 0, 50));
         open.setDeviceId("101");
         when(attendanceLogRepository
-                .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(1L, 5L))
-                .thenReturn(Optional.of(open), Optional.empty());
+                .findDirectionalSessionAt(eq(1L), eq(5L), any()))
+                .thenReturn(Optional.of(open));
         var repeated = punch("1001", 101L, day.atTime(9, 1, 10));
         when(attendanceLogSyncService.getAttendanceLogs(eq(101L), isNull(), any(), any(), eq(0), anyInt()))
                 .thenReturn(List.of(repeated));

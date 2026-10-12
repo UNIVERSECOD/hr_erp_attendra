@@ -38,6 +38,7 @@ public class AttendanceSessionManagementService {
     private final AttendanceService attendanceService;
     private final AttendanceSessionPolicy sessionPolicy;
     private final UserScopeService userScopeService;
+    private final AttendanceScheduleResolver scheduleResolver;
 
     @Transactional
     public List<OpenAttendanceSessionDTO> getOpenSessions() {
@@ -75,8 +76,10 @@ public class AttendanceSessionManagementService {
         }
 
         Set<LocalDate> affectedDates = new LinkedHashSet<>();
-        addDate(affectedDates, session.getCheckInTime());
-        addDate(affectedDates, request.getCheckInTime());
+        affectedDates.addAll(AttendanceDayAllocation.affectedDates(
+                session.getCheckInTime(), session.getCheckOutTime(), shiftFor(session, employee, session.getCheckInTime())));
+        affectedDates.addAll(AttendanceDayAllocation.affectedDates(
+                request.getCheckInTime(), request.getCheckOutTime(), shiftFor(session, employee, request.getCheckInTime())));
 
         AttendanceLogAdjustment adjustment = new AttendanceLogAdjustment();
         adjustment.setTenantId(tenantId);
@@ -142,10 +145,9 @@ public class AttendanceSessionManagementService {
         return branchScope == null || (employee.getBranchId() != null && branchScope.equals(employee.getBranchId()));
     }
 
-    private void addDate(Set<LocalDate> dates, java.time.LocalDateTime value) {
-        if (value != null) {
-            dates.add(value.toLocalDate());
-        }
+    private String shiftFor(AttendanceLog session, Employee employee, java.time.LocalDateTime entry) {
+        if (session.getShiftType() != null && !session.getShiftType().isBlank()) return session.getShiftType();
+        return scheduleResolver.resolve(employee, entry.toLocalDate()).shiftType();
     }
 
     private String currentUsername() {

@@ -67,7 +67,11 @@ public class AttendanceService {
         }
         AttendanceLog saved = attendanceLogRepository.save(log);
         if (dto.getCheckInTime() != null) {
-            generateDailySummary(dto.getEmployeeId(), dto.getCheckInTime().toLocalDate());
+            Employee employee = employeeRepository.findById(dto.getEmployeeId()).orElse(null);
+            String shift = attendanceScheduleResolver.resolve(employee, dto.getCheckInTime().toLocalDate()).shiftType();
+            for (var date : AttendanceDayAllocation.affectedDates(dto.getCheckInTime(), dto.getCheckOutTime(), shift)) {
+                generateDailySummary(dto.getEmployeeId(), date);
+            }
         }
         return toLogDTO(saved);
     }
@@ -97,8 +101,11 @@ public class AttendanceService {
         AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                 date, inference, daySchedule);
         List<EmployeePermission> permissions = findPermissions(employeeId, date, date);
-        AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(
-                date, inference, daySchedule, calculation, permissions);
+        permissions = new ArrayList<>(permissions);
+        if (daySchedule.flexible()) permissions.addAll(findPermissions(employeeId, date.minusDays(1), date.minusDays(1)));
+        AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.applyAllocated(
+                date, inference, daySchedule, calculation, permissions.stream().distinct().toList(),
+                sourceDate -> attendanceScheduleResolver.resolve(employee, sourceDate));
 
         Optional<DailyAttendanceSummary> existing = summaryRepository.findByEmployeeIdAndAttendanceDate(employeeId, date);
         DailyAttendanceSummary summary = existing.orElse(new DailyAttendanceSummary());
@@ -139,12 +146,15 @@ public class AttendanceService {
         Long employeeId = employee.getId();
         Long tenantId = TenantContext.getTenantId();
 
-        // Sessions belong to the date on which they started, even when they end after midnight.
+        // Include closed carry-in sessions so flexible hours survive day/month range boundaries.
         LocalDateTime rangeStart = start.atStartOfDay();
         LocalDateTime rangeEnd = end.atTime(LocalTime.MAX);
         List<AttendanceLog> logs = tenantId != null
                 ? attendanceLogRepository.findByTenantIdAndEmployeeIdAndCheckInTimeBetween(tenantId, employeeId, rangeStart, rangeEnd)
                 : attendanceLogRepository.findByEmployeeIdAndCheckInTimeBetween(employeeId, rangeStart, rangeEnd);
+        logs = new ArrayList<>(logs);
+        logs.addAll(attendanceLogRepository.findClosedCarryIn(
+                tenantId != null ? tenantId : employee.getTenantId(), employeeId, rangeStart));
 
         Map<LocalDate, DailyAttendanceSummary> summariesByDate = summaryRepository
                 .findByEmployeeIdAndAttendanceDateBetween(employeeId, start, end)
@@ -157,24 +167,26 @@ public class AttendanceService {
         List<EmployeePermission> approvedPermissions = tenantId != null
                 ? employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(tenantId, employeeId, start, end)
                 : employeePermissionRepository.findByEmployeeIdAndDateRange(employeeId, start, end);
+        approvedPermissions = new ArrayList<>(approvedPermissions);
+        approvedPermissions.addAll(findPermissions(employeeId, start.minusDays(1), start.minusDays(1)));
         List<EmployeeAttendanceRowDTO> rows = new ArrayList<>();
         for (LocalDate date = start; !date.isAfter(end); date = date.plusDays(1)) {
             final LocalDate currentDate = date;
             DailyAttendanceSummary summary = summariesByDate.get(currentDate);
-            List<AttendanceLog> dayLogs = logs.stream()
-                    .filter(log -> attendanceInferenceService.belongsToWorkDate(log, currentDate))
-                    .toList();
+            List<AttendanceLog> dayLogs = AttendanceDayAllocation.forDay(logs, currentDate,
+                    sourceDate -> schedules.apply(employee, sourceDate).shiftType());
             boolean onLeave = overlapsLeave(approvedLeaves, currentDate);
             AttendanceInferenceService.AttendanceInference inference = attendanceInferenceService.inferDay(dayLogs, currentDate);
 
-            // Prefer live work-date inference. Overnight sessions stay attached to check-in day.
+            // Daily totals use clipped flexible portions; source/detail sessions remain whole.
             LocalDateTime firstCheckIn = inference.firstEntry();
             LocalDateTime lastCheckOut = inference.lastExit();
             AttendanceScheduleResolver.DaySchedule daySchedule = schedules.apply(employee, currentDate);
             AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                     currentDate, inference, daySchedule);
-            AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(
-                    currentDate, inference, daySchedule, calculation, approvedPermissions);
+            AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.applyAllocated(
+                    currentDate, inference, daySchedule, calculation, approvedPermissions.stream().distinct().toList(),
+                    sourceDate -> schedules.apply(employee, sourceDate));
             double hoursWorked = permissionResult.workedMinutes() / 60.0;
             int lateMinutes = permissionResult.lateMinutes();
             int earlyLeaveMinutes = permissionResult.earlyLeaveMinutes();
@@ -210,7 +222,7 @@ public class AttendanceService {
             row.setStatus(onLeave ? AttendanceStatus.ON_LEAVE : attendanceStatus);
             row.setNotes(buildNotes(approvedLeaves, approvedPermissions, currentDate));
             row.setShiftType(daySchedule.shiftType());
-            row.setSessions(toSessionDtos(inference.segments()));
+            row.setSessions(toSessionDtos(attendanceInferenceService.inferDay(logs, currentDate).segments()));
             rows.add(row);
         }
 
@@ -356,9 +368,13 @@ public class AttendanceService {
                 date.atStartOfDay(),
                 date.plusDays(1).atStartOfDay().minusNanos(1)
         );
-        return candidates.stream()
-                .filter(log -> attendanceInferenceService.belongsToWorkDate(log, date))
-                .toList();
+        Employee employee = employeeRepository.findById(employeeId).orElse(null);
+        Long tenant = TenantContext.getTenantId() != null ? TenantContext.getTenantId()
+                : employee != null ? employee.getTenantId() : null;
+        var all = new ArrayList<>(candidates);
+        all.addAll(attendanceLogRepository.findClosedCarryIn(tenant, employeeId, date.atStartOfDay()));
+        return AttendanceDayAllocation.forDay(all, date,
+                sourceDate -> attendanceScheduleResolver.resolve(employee, sourceDate).shiftType());
     }
 
     private List<AttendanceSessionDTO> toSessionDtos(List<AttendanceInferenceService.SessionSegment> segments) {

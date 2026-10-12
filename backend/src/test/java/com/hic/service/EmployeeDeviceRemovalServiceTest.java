@@ -54,6 +54,7 @@ class EmployeeDeviceRemovalServiceTest {
         bridge.setIp(device.getDeviceIp());
         bridge.setName(device.getDeviceName());
         when(client.device(101L)).thenReturn(bridge);
+        when(client.absent(anyLong(), anyString())).thenReturn(true);
         online(false);
     }
 
@@ -133,6 +134,25 @@ class EmployeeDeviceRemovalServiceTest {
         assertThat(result.getFailedDevices()).isEqualTo(1);
         assertThat(stored.get(0).getLastError()).doesNotContain("sensitive");
         assertThat(stored.get(0).getNextAttemptAt()).isAfter(AppTimeZone.now());
+    }
+
+    @Test
+    void acceptedDeleteIsNotCompletionUntilLiveReadbackConfirmsAbsence() {
+        online(true);
+        when(client.absent(101L, "400")).thenReturn(false, true);
+        var first = service.terminate(employee, Set.of(10L));
+        assertThat(first.getFailedDevices()).isEqualTo(1);
+        assertThat(stored.get(0).isCompleted()).isFalse();
+        service.attempt(1L, stored.get(0).getId(), true);
+        assertThat(stored.get(0).isCompleted()).isTrue();
+    }
+
+    @Test
+    void unavailableReadbackKeepsJobPending() {
+        online(true);
+        when(client.absent(101L, "400")).thenThrow(new RuntimeException("transport unavailable"));
+        assertThat(service.terminate(employee, Set.of(10L)).getFailedDevices()).isEqualTo(1);
+        assertThat(stored.get(0).isCompleted()).isFalse();
     }
 
     @Test

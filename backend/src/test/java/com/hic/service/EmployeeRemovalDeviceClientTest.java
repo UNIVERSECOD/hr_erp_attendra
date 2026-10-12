@@ -13,6 +13,22 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 class EmployeeRemovalDeviceClientTest {
     @Test
+    void onlyCompleteValidLiveSnapshotCanConfirmAbsence() {
+        for (String body : java.util.List.of("[]", "[{\"employeeNo\":\"400\"}]", "null", "{}",
+                "[{}]", "[{\"employeeNo\":\"x\"},{\"employeeNo\":\"x\"}]")) {
+            AtomicReference<MockRestServiceServer> server = new AtomicReference<>();
+            var client = new EmployeeRemovalDeviceClient(new RestTemplateBuilder()
+                    .additionalCustomizers(http -> server.set(MockRestServiceServer.bindTo(http).build())),
+                    "http://bridge.test", "test-key");
+            server.get().expect(requestTo("http://bridge.test/api/devices/101/users/reconciliation-snapshot"))
+                    .andExpect(method(HttpMethod.GET)).andRespond(withSuccess(body, MediaType.APPLICATION_JSON));
+            if (body.equals("[]")) assertThat(client.absent(101L, "400")).isTrue();
+            else if (body.equals("[{\"employeeNo\":\"400\"}]")) assertThat(client.absent(101L, "400")).isFalse();
+            else assertThatThrownBy(() -> client.absent(101L, "400")).isInstanceOf(IllegalStateException.class);
+            server.get().verify();
+        }
+    }
+    @Test
     void usesBridgeIdentityApiKeyAndEncodedTerminalNumber() {
         AtomicReference<MockRestServiceServer> server = new AtomicReference<>();
         var client = new EmployeeRemovalDeviceClient(new RestTemplateBuilder()

@@ -65,13 +65,17 @@ public class AttendanceCalculationService {
 
         AttendanceTimeCalculator.Calculation calculation = attendanceTimeCalculator.calculate(
                 workDate, inference, schedule);
-        AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.apply(
+        var permissions = new java.util.ArrayList<>(employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(
+                tenantId, employeeId, workDate, workDate));
+        if (schedule.flexible()) permissions.addAll(employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(
+                tenantId, employeeId, workDate.minusDays(1), workDate.minusDays(1)));
+        AttendancePermissionCalculator.Result permissionResult = attendancePermissionCalculator.applyAllocated(
                 workDate,
                 inference,
                 schedule,
                 calculation,
-                employeePermissionRepository.findByTenantIdAndEmployeeIdAndDateRange(
-                        tenantId, employeeId, workDate, workDate)
+                permissions.stream().distinct().toList(),
+                date -> attendanceScheduleResolver.resolve(employee, date)
         );
         record.setWorkedMinutes(permissionResult.workedMinutes());
         record.setOvertimeMinutes(permissionResult.overtimeMinutes());
@@ -136,8 +140,12 @@ public class AttendanceCalculationService {
                 workDate.atStartOfDay(),
                 workDate.plusDays(1).atStartOfDay().minusNanos(1)
         );
-        return candidates.stream()
-                .filter(log -> attendanceInferenceService.belongsToWorkDate(log, workDate))
-                .toList();
+        Employee employee = employeeRepository.findById(employeeId).orElse(null);
+        Long tenant = TenantContext.getTenantId() != null ? TenantContext.getTenantId()
+                : employee != null ? employee.getTenantId() : null;
+        var all = new java.util.ArrayList<>(candidates);
+        all.addAll(attendanceLogRepository.findClosedCarryIn(tenant, employeeId, workDate.atStartOfDay()));
+        return AttendanceDayAllocation.forDay(all, workDate,
+                date -> attendanceScheduleResolver.resolve(employee, date).shiftType());
     }
 }

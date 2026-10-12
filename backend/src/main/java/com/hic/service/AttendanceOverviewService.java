@@ -68,10 +68,22 @@ public class AttendanceOverviewService {
                 .collect(Collectors.groupingBy(EmployeeArea::getEmployeeId));
         List<AttendanceLog> source = logs.findByTenantIdAndCheckInTimeBetween(tenant,
                 q.getStart().atStartOfDay(), q.getEnd().atTime(LocalTime.MAX));
+        source = new ArrayList<>(source);
+        source.addAll(logs.findClosedCarryIn(tenant, null, q.getStart().atStartOfDay()));
         var sourceById = index(source, AttendanceLog::getId);
-        var sourceByDay = source.stream().filter(l -> l.getCheckInTime() != null)
-                .collect(Collectors.groupingBy(l -> new DayKey(l.getEmployeeId(), l.getCheckInTime().toLocalDate())));
-        var schedules = scheduleResolver.forReport(tenant, selected, q.getStart(), q.getEnd());
+        var earliest = source.stream().map(AttendanceLog::getCheckInTime).filter(Objects::nonNull)
+                .map(LocalDateTime::toLocalDate).min(LocalDate::compareTo).orElse(q.getStart());
+        var schedules = scheduleResolver.forReport(tenant, selected,
+                earliest.isBefore(q.getStart().minusDays(1)) ? earliest : q.getStart().minusDays(1), q.getEnd());
+        Map<DayKey, List<AttendanceLog>> sourceByDay = new HashMap<>();
+        for (var log : source) {
+            if (log.getCheckInTime() == null || !employeeMap.containsKey(log.getEmployeeId())) continue;
+            String shift = log.getShiftType();
+            if (shift == null || shift.isBlank())
+                shift = schedules.apply(employeeMap.get(log.getEmployeeId()), log.getCheckInTime().toLocalDate()).shiftType();
+            for (var day : AttendanceDayAllocation.affectedDates(log.getCheckInTime(), log.getCheckOutTime(), shift))
+                sourceByDay.computeIfAbsent(new DayKey(log.getEmployeeId(), day), ignored -> new ArrayList<>()).add(log);
+        }
         List<AttendanceOverviewRowDTO> result = new ArrayList<>();
         if (q.getView() == AttendanceReportQuery.View.DETAILS) {
             var visits = details.getReport(q.getStart(), q.getEnd(), null, null, null, null,

@@ -168,8 +168,6 @@ public class DoorAttendanceSyncService {
                                     Comparator.nullsLast(Comparator.naturalOrder())))
                     .toList();
 
-            // Resume an already-open session from DB (entry punched earlier, exit comes later).
-            AttendanceLog openLog = findOpenSession(tenantId, employee.getId()).orElse(null);
             for (AttendanceLogSyncDTO.AttendanceLogEntryDTO punch : employeePunches) {
                 LocalDateTime punchTime = toLocalDateTime(punch.getPunchTime());
                 String role = deviceRolesByIsapiId.get(punch.getDeviceId());
@@ -186,6 +184,13 @@ public class DoorAttendanceSyncService {
                     continue;
                 }
 
+                // Event-time lookup, not the newest open row in ingestion order. Closed and
+                // manually corrected sessions are boundaries, never candidates for rewriting.
+                AttendanceLog boundary = attendanceLogRepository.findDirectionalSessionAt(
+                        employee.getTenantId(), employee.getId(), punchTime).orElse(null);
+                AttendanceLog openLog = boundary != null && boundary.getCheckOutTime() == null
+                        && !Boolean.TRUE.equals(boundary.getManualOverride()) ? boundary : null;
+
                 if ("ENTRY".equals(role)) {
                     if (isEntryPunchProcessed(tenantId, punch.getId())) {
                         continue;
@@ -193,6 +198,11 @@ public class DoorAttendanceSyncService {
                     // Debounced scans have no separate entryPunchId. Do not reopen them on replay.
                     if (tenantId != null && attendanceLogRepository.isRepeatedEntryAlreadyClosed(
                             tenantId, employee.getId(), punchTime)) {
+                        continue;
+                    }
+                    if (boundary != null && (Boolean.TRUE.equals(boundary.getManualOverride())
+                            || boundary.getCheckOutTime() != null)
+                            && (boundary.getCheckOutTime() == null || !punchTime.isAfter(boundary.getCheckOutTime()))) {
                         continue;
                     }
                     if (openLog != null) {
@@ -274,6 +284,9 @@ public class DoorAttendanceSyncService {
                             openLog.setDoorId(doorId);
                             openLog.setStatus("CLOSED");
                             attendanceLogRepository.save(openLog);
+                            recalcDatesByEmployee.computeIfAbsent(employee.getId(), ignored -> new HashSet<>())
+                                    .addAll(AttendanceDayAllocation.affectedDates(openLog.getCheckInTime(),
+                                            openLog.getCheckOutTime(), openLog.getShiftType()));
                             createdLogs++;
                             matchedSessions++;
                         }
@@ -314,16 +327,6 @@ public class DoorAttendanceSyncService {
                 recalculatedDays,
                 unresolvedEmployeeNos.stream().sorted().toList()
         );
-    }
-
-    private Optional<AttendanceLog> findOpenSession(Long tenantId, Long employeeId) {
-        if (tenantId != null) {
-            return attendanceLogRepository
-                    .findFirstByTenantIdAndEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(
-                            tenantId, employeeId);
-        }
-        return attendanceLogRepository
-                .findFirstByEmployeeIdAndCheckOutTimeIsNullAndManualOverrideFalseOrderByCheckInTimeDesc(employeeId);
     }
 
     /**

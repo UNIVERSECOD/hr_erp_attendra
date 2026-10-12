@@ -90,6 +90,9 @@ public class EmployeeDeviceRemovalService {
                     throw new IllegalStateException("Cihaz offline-dır; avtomatik təkrar gözlənilir");
                 }
                 client.delete(bridgeId, job.getEmployeeNo());
+                if (!client.absent(bridgeId, job.getEmployeeNo())) {
+                    throw new IllegalStateException("Əməkdaş hələ cihazdadır; silinmə avtomatik təkrar ediləcək");
+                }
                 job.setCompleted(true);
                 job.setCompletedAt(AppTimeZone.now());
                 job.setLastError(null);

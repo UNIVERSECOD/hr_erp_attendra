@@ -237,6 +237,55 @@ class AttendancePermissionCalculatorTest {
         );
     }
 
+    @Test
+    void allocatedOvernightDeductionIsSplitOnceAcrossCalendarDays() {
+        var schedule = new AttendanceScheduleResolver.DaySchedule(4L, "FLEXIBLE", true,
+                LocalTime.of(20, 0), LocalTime.of(4, 0), 0, 0, 0);
+        var permission = permission(LocalTime.of(23, 0), LocalTime.of(1, 0), true);
+        var first = inference(date.atTime(20, 0), date.plusDays(1).atStartOfDay());
+        var second = inference(date.plusDays(1).atStartOfDay(), date.plusDays(1).atTime(2, 0));
+        var a = permissionCalculator.applyAllocated(date, first, schedule,
+                timeCalculator.calculate(date, first, schedule), List.of(permission), ignored -> schedule);
+        var b = permissionCalculator.applyAllocated(date.plusDays(1), second, schedule,
+                timeCalculator.calculate(date.plusDays(1), second, schedule), List.of(permission), ignored -> schedule);
+        assertThat(a.workedMinutes()).isEqualTo(180);
+        assertThat(b.workedMinutes()).isEqualTo(60);
+        assertThat(a.permissionMinutes()).isEqualTo(60);
+        assertThat(b.permissionMinutes()).isEqualTo(60);
+    }
+
+    @Test
+    void allocatedAfterMidnightCreditAppearsOnlyOnFollowingDay() {
+        var schedule = new AttendanceScheduleResolver.DaySchedule(4L, "FLEXIBLE", true,
+                LocalTime.of(20, 0), LocalTime.of(4, 0), 0, 0, 0);
+        var permission = permission(LocalTime.of(2, 0), LocalTime.of(4, 0), false);
+        var first = inference(date.atTime(20, 0), date.plusDays(1).atStartOfDay());
+        var second = inference(date.plusDays(1).atStartOfDay(), date.plusDays(1).atTime(2, 0));
+        var a = permissionCalculator.applyAllocated(date, first, schedule,
+                timeCalculator.calculate(date, first, schedule), List.of(permission), ignored -> schedule);
+        var b = permissionCalculator.applyAllocated(date.plusDays(1), second, schedule,
+                timeCalculator.calculate(date.plusDays(1), second, schedule), List.of(permission), ignored -> schedule);
+        assertThat(a.workedMinutes()).isEqualTo(240);
+        assertThat(a.creditedPermissionMinutes()).isZero();
+        assertThat(b.workedMinutes()).isEqualTo(240);
+        assertThat(b.creditedPermissionMinutes()).isEqualTo(120);
+    }
+
+    @Test
+    void previousWorkingDayPermissionCarryInStillAppliesOnRestDay() {
+        var working = new AttendanceScheduleResolver.DaySchedule(4L, "FLEXIBLE", true,
+                LocalTime.of(20, 0), LocalTime.of(4, 0), 0, 0, 0);
+        var rest = new AttendanceScheduleResolver.DaySchedule(4L, "FLEXIBLE", false, null, null, 0, 0, 0);
+        var next = date.plusDays(1);
+        var portion = inference(next.atStartOfDay(), next.atTime(2, 0));
+        var result = permissionCalculator.applyAllocated(next, portion, rest,
+                timeCalculator.calculate(next, portion, rest),
+                List.of(permission(LocalTime.of(23, 0), LocalTime.of(1, 0), true)),
+                day -> day.equals(date) ? working : rest);
+        assertThat(result.workedMinutes()).isEqualTo(60);
+        assertThat(result.permissionMinutes()).isEqualTo(60);
+    }
+
     private AttendanceScheduleResolver.DaySchedule standardSchedule() {
         return new AttendanceScheduleResolver.DaySchedule(
                 2L, "STANDARD", true,

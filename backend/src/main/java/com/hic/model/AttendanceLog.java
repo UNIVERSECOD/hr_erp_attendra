@@ -10,6 +10,10 @@ import java.time.LocalDateTime;
 @Table(name = "attendance_logs")
 public class AttendanceLog {
 
+    /** Calculation-only share after midnight clipping; never written to the source event table. */
+    @Transient
+    private Integer allocatedWorkedMinutes;
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
