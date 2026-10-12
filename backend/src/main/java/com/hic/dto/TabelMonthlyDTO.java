@@ -34,5 +34,6 @@ public class TabelMonthlyDTO {
     }
 
     public record McgDayDTO(boolean fullDay, int workedMinutes, int regularMinutes, int overtimeMinutes,
-            int permissionMinutes, int creditedPermissionMinutes, String status, boolean sourceVerified) {}
+            int permissionMinutes, int creditedPermissionMinutes, String status, boolean sourceVerified,
+            int expectedMinutes, boolean scheduledDayOff) {}
 }

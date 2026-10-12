@@ -66,6 +66,22 @@ class McgTabelProjectionServiceTest {
         var result = service.forMonth(7L, List.of(employee), future, future.plusDays(20)).project(employee, future, summary);
         assertThat(result.workedMinutes()).isZero();
         assertThat(result.status()).isEqualTo("FUTURE");
+        assertThat(result.expectedMinutes()).isEqualTo(480);
+        assertThat(result.scheduledDayOff()).isFalse();
+    }
+
+    @Test
+    void futureRestDayKeepsScheduleFlagWithoutCountingArchivedHours() {
+        var employee = employee();
+        var rest = new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", false, null, null, 0, 0, 0);
+        when(schedules.forReport(eq(7L), anyList(), any(), any())).thenReturn((e, d) -> rest);
+        var future = AppTimeZone.today().plusMonths(1).withDayOfMonth(1);
+        var summary = new DailyAttendanceSummary(); summary.setHoursWorked(8.0);
+        var result = service.forMonth(7L, List.of(employee), future, future.plusDays(20)).project(employee, future, summary);
+        assertThat(result.scheduledDayOff()).isTrue();
+        assertThat(result.workedMinutes()).isZero();
+        assertThat(result.expectedMinutes()).isZero();
+        assertThat(result.fullDay()).isFalse();
     }
 
     @Test

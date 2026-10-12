@@ -137,7 +137,7 @@ public class TabelService {
                 Object value;
 
                 if (holidayDates.contains(date) || leaveDates.contains(date)) {
-                    value = QI_CODE;
+                    value = mcg ? "Q/İ" : QI_CODE;
                 } else {
                     DailyAttendanceSummary summary = summariesByDate.get(date);
                     double hours = summary != null && summary.getHoursWorked() != null ? summary.getHoursWorked() : 0.0;
@@ -162,6 +162,7 @@ public class TabelService {
                     } else {
                         value = 0;
                     }
+                    if (mcgDay != null && mcgDay.scheduledDayOff()) value = "Q/İ";
                 }
 
                 daily.put(day, value);
@@ -217,8 +218,11 @@ public class TabelService {
             terminatedFont.setBold(true);
             CellStyle terminatedNameStyle = workbook.createCellStyle();
             terminatedNameStyle.setFont(terminatedFont);
-            CellStyle dayStyle = workbook.createCellStyle();
-            dayStyle.setWrapText(true);
+            CellStyle ordinaryDayStyle = mcgDayStyle(workbook, IndexedColors.BLACK, "0");
+            CellStyle ordinaryHoursStyle = mcgDayStyle(workbook, IndexedColors.BLACK, "[hh]:mm");
+            CellStyle fullDayStyle = mcgDayStyle(workbook, IndexedColors.DARK_GREEN, "0");
+            CellStyle overtimeDayStyle = mcgDayStyle(workbook, IndexedColors.BLUE, "[hh]:mm");
+            CellStyle shortDayStyle = mcgDayStyle(workbook, IndexedColors.RED, "[hh]:mm");
 
             Row titleRow = sheet.createRow(0);
             titleRow.createCell(0).setCellValue((mcg ? "Attendra MCG — Tabel: " : "Tabel arxivi: ")
@@ -256,28 +260,39 @@ public class TabelService {
 
                 for (int day = 1; day <= tabel.getDaysInMonth(); day++) {
                     Object value = row.getDaily().get(day);
+                    var cell = sheetRow.createCell(dataCol++);
+                    if (mcg) cell.setCellStyle(ordinaryDayStyle);
                     if (value == null) {
-                        var cell = sheetRow.createCell(dataCol++);
                         if (mcg) cell.setCellValue(0);
                         else cell.setCellValue("");
                     } else if (mcg && value instanceof Number && row.getMcgDaily().containsKey(day)) {
-                        var cell = sheetRow.createCell(dataCol++);
                         var mcgDay = row.getMcgDaily().get(day);
-                        cell.setCellValue(mcgDay.fullDay() ? 1 : mcgDay.workedMinutes() / 60);
-                        cell.setCellStyle(dayStyle);
+                        cell.setCellValue(mcgDay.fullDay() ? 1 : mcgDay.workedMinutes() / 1440.0);
+                        if (mcgDay.workedMinutes() > 0) cell.setCellStyle(ordinaryHoursStyle);
+                        if (mcgDay.overtimeMinutes() > 0) cell.setCellStyle(overtimeDayStyle);
+                        else if (mcgDay.fullDay()) cell.setCellStyle(fullDayStyle);
+                        else if (mcgDay.sourceVerified() && mcgDay.workedMinutes() > 0
+                                && mcgDay.workedMinutes() < mcgDay.expectedMinutes()) {
+                            cell.setCellStyle(shortDayStyle);
+                        }
                     } else if (value instanceof Number number) {
-                        sheetRow.createCell(dataCol++).setCellValue(number.doubleValue());
+                        cell.setCellValue(mcg ? number.doubleValue() / 24.0 : number.doubleValue());
+                        if (mcg && number.doubleValue() > 0) cell.setCellStyle(ordinaryHoursStyle);
                     } else {
-                        sheetRow.createCell(dataCol++).setCellValue(String.valueOf(value));
+                        cell.setCellValue(String.valueOf(value));
                     }
                 }
 
                 if (mcg) {
                     sheetRow.setHeightInPoints(32);
-                    sheetRow.createCell(dataCol++).setCellValue(row.getOvertimeHours());
+                    var overtimeCell = sheetRow.createCell(dataCol++);
+                    overtimeCell.setCellValue(Math.round(row.getOvertimeHours() * 60) / 1440.0);
+                    overtimeCell.setCellStyle(row.getOvertimeHours() > 0 ? overtimeDayStyle : ordinaryHoursStyle);
                 }
                 sheetRow.createCell(dataCol++).setCellValue(row.getWorkingDays());
-                sheetRow.createCell(dataCol).setCellValue(row.getTotalHours());
+                var totalCell = sheetRow.createCell(dataCol);
+                totalCell.setCellValue(mcg ? Math.round(row.getTotalHours() * 60) / 1440.0 : row.getTotalHours());
+                if (mcg) totalCell.setCellStyle(ordinaryHoursStyle);
             }
 
             for (int i = 0; i <= 5; i++) {
@@ -302,11 +317,11 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Şərtlər ödənmirsə, günlük xanada işlənmiş tam saat göstərilir; dəqiqələr atılır (8 saat 16 dəqiqə = 8). Aylıq yekunlar dəqiq hesablanır.");
+                        "Normadan az və ya çox işlənən günlər saat:dəqiqə ilə göstərilir (8 saat 24 dəqiqə = 08:24). İstirahət günü = Q/İ.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Çıxış və ya mənbə qeydi çatışmayan günlər tam gün kimi təsdiqlənmir. Overtime aylıq yekunda ayrıca verilir.");
+                        "Qrafik bitdikdən sonrakı iş 60 dəqiqəyə çatdıqda bütün həmin müddət overtime sayılır. Göy = overtime, qırmızı = az iş, yaşıl 1 = norma, qara = digər.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Cəmi saata icazə krediti və OT daxildir. Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.");
+                        "Müddətlər saat:dəqiqə ilədir. Overtime cəmi iş vaxtının daxilindədir, üstünə yenidən əlavə edilmir. Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.");
                 for (int i = rowIndex - 3; i <= rowIndex; i++) {
                     sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(i, i, 0, column));
                 }
@@ -317,6 +332,16 @@ public class TabelService {
         } catch (Exception ex) {
             throw new RuntimeException("Failed to export tabel", ex);
         }
+    }
+
+    private CellStyle mcgDayStyle(Workbook workbook, IndexedColors color, String numberFormat) {
+        Font font = workbook.createFont();
+        font.setColor(color.getIndex());
+        font.setBold(color != IndexedColors.BLACK);
+        CellStyle style = workbook.createCellStyle();
+        style.setFont(font);
+        style.setDataFormat(workbook.createDataFormat().getFormat(numberFormat));
+        return style;
     }
 
     private Map<Long, Set<LocalDate>> buildLeaveDaysByEmployee(Long tenantId,

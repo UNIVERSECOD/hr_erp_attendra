@@ -46,16 +46,22 @@ public class McgTabelProjectionService {
         var scheduleFor = schedules.forReport(tenantId, employees,
                 earliest.isBefore(start.minusDays(1)) ? earliest : start.minusDays(1), end);
         return (employee, date, summary) -> {
-            if (date.isAfter(AppTimeZone.today())) return new McgDayDTO(false, 0, 0, 0, 0, 0, "FUTURE", true);
+            var schedule = scheduleFor.apply(employee, date);
+            int expectedMinutes = schedule.assigned() ? schedule.expectedMinutes() : 0;
+            boolean scheduledDayOff = schedule.assigned() && !schedule.workingDay();
+            if (date.isAfter(AppTimeZone.today())) {
+                return new McgDayDTO(false, 0, 0, 0, 0, 0, "FUTURE", true, expectedMinutes, scheduledDayOff);
+            }
             var dayLogs = AttendanceDayAllocation.forDay(byEmployee.getOrDefault(employee.getId(), List.of()), date,
                     entryDate -> scheduleFor.apply(employee, entryDate).shiftType());
-            var result = calculator.calculate(date, dayLogs, scheduleFor.apply(employee, date),
+            var result = calculator.calculate(date, dayLogs, schedule,
                     permissionMap.getOrDefault(employee.getId(), List.of()), d -> scheduleFor.apply(employee, d));
             if (dayLogs.isEmpty() && !result.fullDay() && summary != null
                     && summary.getHoursWorked() != null && summary.getHoursWorked() > 0) {
                 // Do not invent a complete day from historical aggregates without source evidence.
                 int minutes = (int) Math.round(summary.getHoursWorked() * 60);
-                return new McgDayDTO(false, minutes, minutes, 0, 0, 0, "SUMMARY_ONLY", false);
+                return new McgDayDTO(false, minutes, minutes, 0, 0, 0, "SUMMARY_ONLY", false,
+                        expectedMinutes, scheduledDayOff);
             }
             return result;
         };

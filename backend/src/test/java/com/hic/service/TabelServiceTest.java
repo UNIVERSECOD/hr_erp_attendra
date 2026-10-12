@@ -31,6 +31,7 @@ import java.time.LocalDate;
 import java.time.LocalTime;
 import java.io.ByteArrayInputStream;
 import java.util.List;
+import java.util.Locale;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -170,23 +171,28 @@ class TabelServiceTest {
     }
 
     @Test
-    void mcgExcelShowsNumericFullDayOrWholeWorkedHoursAndKeepsMonthlyTotals() throws Exception {
+    void mcgExcelShowsPreciseHoursColorsAndRestDaysWithThreeMonthlyTotals() throws Exception {
         TenantContext.setTenantId(7L);
         var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
         employee.setFirstName("Test"); employee.setLastName("MCG");
         employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
         when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
         when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) -> switch (date.getDayOfMonth()) {
-            case 1 -> new TabelMonthlyDTO.McgDayDTO(true, 600, 480, 120, 0, 0, "PRESENT", true);
-            case 2 -> new TabelMonthlyDTO.McgDayDTO(false, 496, 420, 76, 0, 0, "LATE", true);
-            case 3 -> new TabelMonthlyDTO.McgDayDTO(false, 480, 480, 0, 0, 0, "SUMMARY_ONLY", false);
-            default -> new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true);
+            case 1 -> new TabelMonthlyDTO.McgDayDTO(true, 480, 480, 0, 0, 0, "PRESENT", true, 480, false);
+            case 2 -> new TabelMonthlyDTO.McgDayDTO(false, 496, 150, 346, 0, 0, "LATE", true, 420, false);
+            case 3 -> new TabelMonthlyDTO.McgDayDTO(false, 480, 480, 0, 0, 0, "SUMMARY_ONLY", false, 480, false);
+            case 4 -> new TabelMonthlyDTO.McgDayDTO(false, 420, 420, 0, 0, 0, "EARLY_LEAVE", true, 480, false);
+            case 5 -> new TabelMonthlyDTO.McgDayDTO(false, 539, 539, 0, 0, 0, "PRESENT", true, 480, false);
+            case 6 -> new TabelMonthlyDTO.McgDayDTO(false, 120, 120, 0, 0, 0, "PRESENT", true, 0, true);
+            case 7 -> new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "ABSENT", true, 480, false);
+            default -> new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true);
         });
         var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
         var row = data.getRows().get(0);
-        assertEquals(1, row.getFullDays()); assertEquals(15.0, row.getPartialHours());
-        assertEquals(3.27, row.getOvertimeHours()); assertEquals(26.27, row.getTotalHours());
-        assertEquals(3, row.getWorkingDays()); assertEquals(10.0, row.getDaily().get(1));
+        assertEquals(1, row.getFullDays()); assertEquals(28.48, row.getPartialHours());
+        assertEquals(5.77, row.getOvertimeHours()); assertEquals(42.25, row.getTotalHours());
+        assertEquals(6, row.getWorkingDays()); assertEquals(8.0, row.getDaily().get(1));
+        assertEquals("Q/İ", row.getDaily().get(6));
         byte[] excel = tabelService.exportMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
         try (var book = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
             var sheet = book.getSheet("Tabel");
@@ -198,12 +204,28 @@ class TabelServiceTest {
             assertEquals(20 * 256, sheet.getColumnWidth(35));
             assertEquals(true, sheet.getRow(1).getCell(35).getCellStyle().getWrapText());
             assertEquals(1.0, sheet.getRow(2).getCell(4).getNumericCellValue());
-            assertEquals(8.0, sheet.getRow(2).getCell(5).getNumericCellValue());
-            assertEquals(8.0, sheet.getRow(2).getCell(6).getNumericCellValue());
-            assertEquals(0.0, sheet.getRow(2).getCell(7).getNumericCellValue());
-            assertEquals(3.27, sheet.getRow(2).getCell(34).getNumericCellValue());
-            assertEquals(3.0, sheet.getRow(2).getCell(35).getNumericCellValue());
-            assertEquals(26.27, sheet.getRow(2).getCell(36).getNumericCellValue());
+            var formatter = new org.apache.poi.ss.usermodel.DataFormatter(Locale.ROOT);
+            assertEquals(496 / 1440.0, sheet.getRow(2).getCell(5).getNumericCellValue());
+            assertEquals("08:16", formatter.formatCellValue(sheet.getRow(2).getCell(5)));
+            assertEquals("08:00", formatter.formatCellValue(sheet.getRow(2).getCell(6)));
+            assertEquals("07:00", formatter.formatCellValue(sheet.getRow(2).getCell(7)));
+            assertEquals("08:59", formatter.formatCellValue(sheet.getRow(2).getCell(8)));
+            assertEquals("Q/İ", sheet.getRow(2).getCell(9).getStringCellValue());
+            assertEquals(0.0, sheet.getRow(2).getCell(10).getNumericCellValue());
+            short[] dayColors = {IndexedColors.DARK_GREEN.getIndex(), IndexedColors.BLUE.getIndex(),
+                    IndexedColors.BLACK.getIndex(), IndexedColors.RED.getIndex(), IndexedColors.BLACK.getIndex(),
+                    IndexedColors.BLACK.getIndex(), IndexedColors.BLACK.getIndex()};
+            for (int i = 0; i < dayColors.length; i++) {
+                var cell = sheet.getRow(2).getCell(4 + i);
+                assertEquals(dayColors[i], book.getFontAt(cell.getCellStyle().getFontIndex()).getColor());
+            }
+            assertEquals("0", sheet.getRow(2).getCell(4).getCellStyle().getDataFormatString());
+            assertEquals("[hh]:mm", sheet.getRow(2).getCell(5).getCellStyle().getDataFormatString());
+            assertEquals(346 / 1440.0, sheet.getRow(2).getCell(34).getNumericCellValue());
+            assertEquals("05:46", formatter.formatCellValue(sheet.getRow(2).getCell(34)));
+            assertEquals(6.0, sheet.getRow(2).getCell(35).getNumericCellValue());
+            assertEquals(2535 / 1440.0, sheet.getRow(2).getCell(36).getNumericCellValue());
+            assertEquals("42:15", formatter.formatCellValue(sheet.getRow(2).getCell(36)));
             assertEquals(IndexedColors.RED.getIndex(), book.getFontAt(sheet.getRow(2).getCell(2).getCellStyle().getFontIndex()).getColor());
             org.assertj.core.api.Assertions.assertThat(sheet.getRow(sheet.getLastRowNum()).getCell(0).getStringCellValue()).contains("işdən azad");
         }
@@ -215,18 +237,20 @@ class TabelServiceTest {
         var employee = new Employee(); employee.setId(11L); employee.setTenantId(7L);
         when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
         when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) ->
-                new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "FUTURE", true));
+                new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "FUTURE", true, 480, date.getDayOfMonth() == 2));
         var month = java.time.YearMonth.from(com.hic.util.AppTimeZone.today()).plusMonths(1);
         var data = tabelService.getMonthlyTabel(month.getYear(), month.getMonthValue(), null, null, null, null,
                 TabelMonthlyDTO.CalculationMode.MCG);
         var row = data.getRows().get(0);
         assertEquals(0, row.getWorkingDays()); assertEquals(0, row.getFullDays()); assertEquals(0.0, row.getTotalHours());
         assertNull(row.getDaily().get(1));
+        assertEquals("Q/İ", row.getDaily().get(2));
         try (var book = WorkbookFactory.create(new ByteArrayInputStream(tabelService.exportMonthlyTabel(
                 month.getYear(), month.getMonthValue(), null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG)))) {
             var sheet = book.getSheet("Tabel");
             for (int day = 1; day <= month.lengthOfMonth(); day++) {
-                assertEquals(0.0, sheet.getRow(2).getCell(3 + day).getNumericCellValue());
+                if (day == 2) assertEquals("Q/İ", sheet.getRow(2).getCell(3 + day).getStringCellValue());
+                else assertEquals(0.0, sheet.getRow(2).getCell(3 + day).getNumericCellValue());
             }
         }
     }

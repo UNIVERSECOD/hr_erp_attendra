@@ -498,6 +498,8 @@ export interface McgTabelDay {
   creditedPermissionMinutes: number
   status: string
   sourceVerified: boolean
+  expectedMinutes: number
+  scheduledDayOff: boolean
 }
 
 export interface TabelMonthlyData {

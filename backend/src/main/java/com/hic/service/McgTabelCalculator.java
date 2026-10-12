@@ -16,6 +16,7 @@ import java.util.function.Function;
 @Service
 @RequiredArgsConstructor
 public class McgTabelCalculator {
+    private static final int MINIMUM_OVERTIME_MINUTES = 60;
     private final AttendanceInferenceService inferenceService;
     private final AttendanceTimeCalculator timeCalculator;
     private final AttendancePermissionCalculator permissionCalculator;
@@ -26,11 +27,14 @@ public class McgTabelCalculator {
         var inference = inferenceService.inferDay(dayLogs, date);
         var result = permissionCalculator.applyAllocated(date, inference, schedule,
                 timeCalculator.calculate(date, inference, schedule), permissions, schedules);
-        int overtime = schedule.flexible() || !schedule.assigned() ? 0 : result.overtimeMinutes();
+        int overtime = overtimeAfterShift(date, inference, schedule,
+                Math.max(result.workedMinutes() - result.creditedPermissionMinutes(), 0));
         boolean fullDay = false;
         // No guessed default schedule and no conversion of flexible/calendar-day portions into a day.
         if (schedule.assigned() && schedule.workingDay() && !schedule.flexible()
                 && schedule.expectedMinutes() > 0 && !inference.currentlyInside()
+                && result.workedMinutes() <= schedule.expectedMinutes()
+                && overtime == 0
                 && result.lateMinutes() == 0 && result.earlyLeaveMinutes() == 0) {
             var start = date.atTime(schedule.startTime());
             var end = date.atTime(schedule.endTime());
@@ -43,7 +47,36 @@ public class McgTabelCalculator {
         }
         return new McgDayDTO(fullDay, result.workedMinutes(),
                 Math.max(result.workedMinutes() - overtime, 0), overtime,
-                result.permissionMinutes(), result.creditedPermissionMinutes(), result.status().name(), true);
+                result.permissionMinutes(), result.creditedPermissionMinutes(), result.status().name(), true,
+                schedule.assigned() ? schedule.expectedMinutes() : 0, schedule.assigned() && !schedule.workingDay());
+    }
+
+    private int overtimeAfterShift(LocalDate date, AttendanceInferenceService.AttendanceInference inference,
+            AttendanceScheduleResolver.DaySchedule schedule, int actualWorkedMinutes) {
+        if (!schedule.assigned() || schedule.flexible() || !schedule.workingDay()
+                || schedule.startTime() == null || schedule.endTime() == null) return 0;
+        var start = date.atTime(schedule.startTime());
+        var end = date.atTime(schedule.endTime());
+        if (!end.isAfter(start)) end = end.plusDays(1);
+        int afterShift;
+        if (inference.currentlyInside()) {
+            // An open re-entry must not create overtime through its missing exit or an intervening gap.
+            afterShift = 0;
+            for (var segment : inference.segments()) {
+                afterShift += minutesAfter(segment.checkInTime(), segment.checkOutTime(), end);
+            }
+        } else {
+            // Keep the same first-entry/last-exit basis as STANDARD/NIGHT worked time.
+            afterShift = minutesAfter(inference.firstEntry(), inference.lastExit(), end);
+        }
+        int eligible = Math.min(afterShift, actualWorkedMinutes);
+        return eligible >= MINIMUM_OVERTIME_MINUTES ? eligible : 0;
+    }
+
+    private int minutesAfter(LocalDateTime first, LocalDateTime last, LocalDateTime boundary) {
+        if (first == null || last == null) return 0;
+        var from = first.isAfter(boundary) ? first : boundary;
+        return last.isAfter(from) ? Math.toIntExact(Duration.between(from, last).toMinutes()) : 0;
     }
 
     private AttendanceInferenceService.AttendanceInference clipWithTolerance(

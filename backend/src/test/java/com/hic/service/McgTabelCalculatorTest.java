@@ -38,20 +38,82 @@ class McgTabelCalculatorTest {
     }
 
     @Test
-    void fullDayAndOvertimeAreSeparateUnits() {
+    void extraWorkedTimeStaysHoursInsteadOfAFullDayMarker() {
         var result = calculate(standard(), log("09:00", "19:00"));
-        assertThat(result.fullDay()).isTrue();
+        assertThat(result.fullDay()).isFalse();
         assertThat(result.regularMinutes()).isEqualTo(480);
         assertThat(result.overtimeMinutes()).isEqualTo(120);
         assertThat(result.workedMinutes()).isEqualTo(600);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"17:01,481,0", "17:59,539,0", "17:59:59,539,0", "18:00,540,60", "18:01,541,61", "18:24,564,84"})
+    void overtimeStartsAtOneHourAndThenCountsAllExtraMinutes(String exit, int worked, int overtime) {
+        var result = calculate(standard(), log("09:00", exit));
+        assertThat(result.fullDay()).isFalse();
+        assertThat(result.workedMinutes()).isEqualTo(worked);
+        assertThat(result.overtimeMinutes()).isEqualTo(overtime);
+        assertThat(result.expectedMinutes()).isEqualTo(480);
+        assertThat(result.regularMinutes() + result.overtimeMinutes()).isEqualTo(worked);
     }
 
     @Test
     void lateArrivalDoesNotBecomeFullDayThroughOvertime() {
         var result = calculate(standard(), log("10:00", "20:00"));
         assertThat(result.fullDay()).isFalse();
-        assertThat(result.regularMinutes()).isEqualTo(480);
-        assertThat(result.overtimeMinutes()).isEqualTo(120);
+        assertThat(result.regularMinutes()).isEqualTo(420);
+        assertThat(result.overtimeMinutes()).isEqualTo(180);
+    }
+
+    @Test
+    void earlyArrivalDoesNotCountTowardTheAfterShiftOvertimeGate() {
+        var result = calculate(standard(), log("07:00", "17:59"));
+        assertThat(result.workedMinutes()).isEqualTo(659);
+        assertThat(result.overtimeMinutes()).isZero();
+        assertThat(result.fullDay()).isFalse();
+    }
+
+    @Test
+    void lateStartAndDeductedPermissionDoNotSubtractFromWorkAfterShiftEnd() {
+        var result = calculate(schedule("09:00", "16:00", 0, 5, 5), log("13:21", "21:46"),
+                permission("09:00", "13:30", true));
+        assertThat(result.workedMinutes()).isEqualTo(496);
+        assertThat(result.overtimeMinutes()).isEqualTo(346);
+        assertThat(result.regularMinutes()).isEqualTo(150);
+        assertThat(result.fullDay()).isFalse();
+    }
+
+    @Test
+    void arrivalAfterShiftEndCountsOnlyTimeActuallyWorked() {
+        var result = calculate(standard(), log("18:30", "19:00"));
+        assertThat(result.workedMinutes()).isEqualTo(30);
+        assertThat(result.overtimeMinutes()).isZero();
+    }
+
+    @Test
+    void overnightOvertimeStartsAtTheNextDaysScheduledEnd() {
+        var result = calculate(schedule("20:00", "02:00", 0, 5, 5), log("20:00", "03:24"));
+        assertThat(result.workedMinutes()).isEqualTo(444);
+        assertThat(result.overtimeMinutes()).isEqualTo(84);
+        assertThat(result.fullDay()).isFalse();
+    }
+
+    @Test
+    void paidPermissionDoesNotHideActualOvertimeOrCreateAFullDayMarker() {
+        var result = calculate(standard(), log("17:00", "18:00"), permission(null, null, false));
+        assertThat(result.workedMinutes()).isEqualTo(480);
+        assertThat(result.creditedPermissionMinutes()).isEqualTo(420);
+        assertThat(result.overtimeMinutes()).isEqualTo(60);
+        assertThat(result.fullDay()).isFalse();
+    }
+
+    @Test
+    void missingExitCountsOnlyAlreadyClosedAfterShiftIntervals() {
+        var result = calculator.calculate(date, List.of(log("09:00", "18:00"), log("19:00", null)),
+                standard(), List.of(), ignored -> standard());
+        assertThat(result.workedMinutes()).isEqualTo(540);
+        assertThat(result.overtimeMinutes()).isEqualTo(60);
+        assertThat(result.fullDay()).isFalse();
     }
 
     @ParameterizedTest
@@ -93,7 +155,7 @@ class McgTabelCalculatorTest {
         var result = calculate(standard(), log("09:00", "20:00"), permission("12:00", "14:00", true));
         assertThat(result.fullDay()).isFalse();
         assertThat(result.workedMinutes()).isEqualTo(540);
-        assertThat(result.overtimeMinutes()).isEqualTo(60);
+        assertThat(result.overtimeMinutes()).isEqualTo(180);
     }
 
     @Test
@@ -132,7 +194,9 @@ class McgTabelCalculatorTest {
         var rest = new AttendanceScheduleResolver.DaySchedule(1L, "STANDARD", false, null, null, 0, 0, 0);
         var off = calculate(rest, log("09:00", "11:00"));
         assertThat(off.fullDay()).isFalse();
-        assertThat(off.overtimeMinutes()).isEqualTo(120);
+        assertThat(off.overtimeMinutes()).isZero();
+        assertThat(off.scheduledDayOff()).isTrue();
+        assertThat(off.expectedMinutes()).isZero();
     }
 
     @Test
