@@ -182,14 +182,14 @@ class TabelServiceTest {
             case 2 -> new TabelMonthlyDTO.McgDayDTO(false, 496, 150, 346, 0, 0, "LATE", true, 420, false);
             case 3 -> new TabelMonthlyDTO.McgDayDTO(false, 480, 480, 0, 0, 0, "SUMMARY_ONLY", false, 480, false);
             case 4 -> new TabelMonthlyDTO.McgDayDTO(false, 420, 420, 0, 0, 0, "EARLY_LEAVE", true, 480, false);
-            case 5 -> new TabelMonthlyDTO.McgDayDTO(false, 539, 539, 0, 0, 0, "PRESENT", true, 480, false);
+            case 5 -> new TabelMonthlyDTO.McgDayDTO(true, 539, 539, 0, 0, 0, "PRESENT", true, 480, false);
             case 6 -> new TabelMonthlyDTO.McgDayDTO(false, 120, 120, 0, 0, 0, "PRESENT", true, 0, true);
             case 7 -> new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "ABSENT", true, 480, false);
             default -> new TabelMonthlyDTO.McgDayDTO(false, 0, 0, 0, 0, 0, "DAY_OFF", true, 0, true);
         });
         var data = tabelService.getMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
         var row = data.getRows().get(0);
-        assertEquals(1, row.getFullDays()); assertEquals(28.48, row.getPartialHours());
+        assertEquals(2, row.getFullDays()); assertEquals(19.5, row.getPartialHours());
         assertEquals(5.77, row.getOvertimeHours()); assertEquals(42.25, row.getTotalHours());
         assertEquals(6, row.getWorkingDays()); assertEquals(8.0, row.getDaily().get(1));
         assertEquals("Q/İ", row.getDaily().get(6));
@@ -209,11 +209,11 @@ class TabelServiceTest {
             assertEquals("08:16", formatter.formatCellValue(sheet.getRow(2).getCell(5)));
             assertEquals("08:00", formatter.formatCellValue(sheet.getRow(2).getCell(6)));
             assertEquals("07:00", formatter.formatCellValue(sheet.getRow(2).getCell(7)));
-            assertEquals("08:59", formatter.formatCellValue(sheet.getRow(2).getCell(8)));
+            assertEquals("1", formatter.formatCellValue(sheet.getRow(2).getCell(8)));
             assertEquals("Q/İ", sheet.getRow(2).getCell(9).getStringCellValue());
             assertEquals(0.0, sheet.getRow(2).getCell(10).getNumericCellValue());
             short[] dayColors = {IndexedColors.DARK_GREEN.getIndex(), IndexedColors.BLUE.getIndex(),
-                    IndexedColors.BLACK.getIndex(), IndexedColors.RED.getIndex(), IndexedColors.BLACK.getIndex(),
+                    IndexedColors.BLACK.getIndex(), IndexedColors.RED.getIndex(), IndexedColors.DARK_GREEN.getIndex(),
                     IndexedColors.BLACK.getIndex(), IndexedColors.BLACK.getIndex()};
             for (int i = 0; i < dayColors.length; i++) {
                 var cell = sheet.getRow(2).getCell(4 + i);

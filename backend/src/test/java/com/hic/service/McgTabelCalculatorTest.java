@@ -50,11 +50,36 @@ class McgTabelCalculatorTest {
     @CsvSource({"17:01,481,0", "17:59,539,0", "17:59:59,539,0", "18:00,540,60", "18:01,541,61", "18:24,564,84"})
     void overtimeStartsAtOneHourAndThenCountsAllExtraMinutes(String exit, int worked, int overtime) {
         var result = calculate(standard(), log("09:00", exit));
-        assertThat(result.fullDay()).isFalse();
+        assertThat(result.fullDay()).isEqualTo(overtime == 0);
         assertThat(result.workedMinutes()).isEqualTo(worked);
         assertThat(result.overtimeMinutes()).isEqualTo(overtime);
         assertThat(result.expectedMinutes()).isEqualTo(480);
         assertThat(result.regularMinutes() + result.overtimeMinutes()).isEqualTo(worked);
+    }
+
+    @Test
+    void completedEightToSeventeenShiftWithHalfHourExtraRemainsOne() {
+        var result = calculate(schedule("08:00", "17:00", 0, 5, 5), log("08:00", "17:30"));
+        assertThat(result.fullDay()).isTrue();
+        assertThat(result.workedMinutes()).isEqualTo(570);
+        assertThat(result.overtimeMinutes()).isZero();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"16:30,true,510", "16:29:59,false,509", "16:20,false,500"})
+    void earlyExitUsesConfiguredThirtyMinuteTolerance(String exit, boolean fullDay, int minutes) {
+        var result = calculate(schedule("08:00", "17:00", 0, 5, 30), log("08:00", exit));
+        assertThat(result.fullDay()).isEqualTo(fullDay);
+        assertThat(result.workedMinutes()).isEqualTo(minutes);
+        assertThat(result.overtimeMinutes()).isZero();
+    }
+
+    @Test
+    void lessThanOneHourAfterEndCannotCompleteALateArrivalOutsideTolerance() {
+        var result = calculate(schedule("08:00", "17:00", 0, 5, 5), log("08:15", "17:30"));
+        assertThat(result.fullDay()).isFalse();
+        assertThat(result.workedMinutes()).isEqualTo(555);
+        assertThat(result.overtimeMinutes()).isZero();
     }
 
     @Test
@@ -70,7 +95,7 @@ class McgTabelCalculatorTest {
         var result = calculate(standard(), log("07:00", "17:59"));
         assertThat(result.workedMinutes()).isEqualTo(659);
         assertThat(result.overtimeMinutes()).isZero();
-        assertThat(result.fullDay()).isFalse();
+        assertThat(result.fullDay()).isTrue();
     }
 
     @Test
@@ -88,6 +113,37 @@ class McgTabelCalculatorTest {
         var result = calculate(standard(), log("18:30", "19:00"));
         assertThat(result.workedMinutes()).isEqualTo(30);
         assertThat(result.overtimeMinutes()).isZero();
+    }
+
+    @Test
+    void completedVisitsExcludeGapsFromOvertimeWithoutChangingExistingWorkedTime() {
+        var schedule = schedule("09:00", "17:00", 0, 5, 5);
+        var result = calculator.calculate(date,
+                List.of(log("09:00", "17:30"), log("19:00", "19:45")),
+                schedule, List.of(), ignored -> schedule);
+        assertThat(result.overtimeMinutes()).isEqualTo(75);
+        assertThat(result.workedMinutes()).isEqualTo(645);
+        assertThat(result.regularMinutes()).isEqualTo(570);
+        assertThat(result.fullDay()).isFalse();
+    }
+
+    @ParameterizedTest
+    @CsvSource({"19:29,0", "19:30,60", "19:31,61"})
+    void overtimeGateUsesSumOfClosedAfterEndVisitsNotElapsedTime(String exit, int overtime) {
+        var result = calculator.calculate(date,
+                List.of(log("09:00", "17:30"), log("19:00", exit)),
+                standard(), List.of(), ignored -> standard());
+        assertThat(result.overtimeMinutes()).isEqualTo(overtime);
+        assertThat(result.fullDay()).isEqualTo(overtime == 0);
+    }
+
+    @Test
+    void gapAcrossShiftEndDoesNotCountAsWorkAfterEnd() {
+        var result = calculator.calculate(date,
+                List.of(log("09:00", "16:30"), log("18:30", "19:00")),
+                standard(), List.of(), ignored -> standard());
+        assertThat(result.overtimeMinutes()).isZero();
+        assertThat(result.workedMinutes()).isEqualTo(600);
     }
 
     @Test

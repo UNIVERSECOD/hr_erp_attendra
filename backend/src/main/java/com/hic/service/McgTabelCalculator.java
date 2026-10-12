@@ -33,7 +33,6 @@ public class McgTabelCalculator {
         // No guessed default schedule and no conversion of flexible/calendar-day portions into a day.
         if (schedule.assigned() && schedule.workingDay() && !schedule.flexible()
                 && schedule.expectedMinutes() > 0 && !inference.currentlyInside()
-                && result.workedMinutes() <= schedule.expectedMinutes()
                 && overtime == 0
                 && result.lateMinutes() == 0 && result.earlyLeaveMinutes() == 0) {
             var start = date.atTime(schedule.startTime());
@@ -58,16 +57,10 @@ public class McgTabelCalculator {
         var start = date.atTime(schedule.startTime());
         var end = date.atTime(schedule.endTime());
         if (!end.isAfter(start)) end = end.plusDays(1);
-        int afterShift;
-        if (inference.currentlyInside()) {
-            // An open re-entry must not create overtime through its missing exit or an intervening gap.
-            afterShift = 0;
-            for (var segment : inference.segments()) {
-                afterShift += minutesAfter(segment.checkInTime(), segment.checkOutTime(), end);
-            }
-        } else {
-            // Keep the same first-entry/last-exit basis as STANDARD/NIGHT worked time.
-            afterShift = minutesAfter(inference.firstEntry(), inference.lastExit(), end);
+        int afterShift = 0;
+        // Only closed visits contribute: time outside between visits is never overtime.
+        for (var segment : inference.segments()) {
+            afterShift += minutesAfter(segment.checkInTime(), segment.checkOutTime(), end);
         }
         int eligible = Math.min(afterShift, actualWorkedMinutes);
         return eligible >= MINIMUM_OVERTIME_MINUTES ? eligible : 0;

@@ -317,9 +317,9 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Normadan az və ya çox işlənən günlər saat:dəqiqə ilə göstərilir (8 saat 24 dəqiqə = 08:24). İstirahət günü = Q/İ.");
+                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Qrafik bitdikdən sonrakı iş 60 dəqiqəyə çatdıqda bütün həmin müddət overtime sayılır. Göy = overtime, qırmızı = az iş, yaşıl 1 = norma, qara = digər.");
+                        "Qrafik bitdikdən sonrakı faktiki giriş–çıxış müddətləri 60 dəqiqəyə çatdıqda overtime sayılır; aradakı boşluqlar sayılmır. Göy = overtime, qırmızı = az iş, yaşıl 1 = norma, qara = digər.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "Müddətlər saat:dəqiqə ilədir. Overtime cəmi iş vaxtının daxilindədir, üstünə yenidən əlavə edilmir. Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.");
                 for (int i = rowIndex - 3; i <= rowIndex; i++) {
