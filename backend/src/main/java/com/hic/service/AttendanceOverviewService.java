@@ -35,6 +35,7 @@ public class AttendanceOverviewService {
     private final AttendanceService attendance;
     private final AttendanceReportService details;
     private final AttendanceScheduleResolver scheduleResolver;
+    private final AttendanceInferenceService inferenceService;
     private final UserScopeService userScope;
 
     public PaginatedResponse<AttendanceOverviewRowDTO> report(AttendanceReportQuery query) {
@@ -99,6 +100,7 @@ public class AttendanceOverviewService {
                 if (q.getTimetableId() != null && !q.getTimetableId().equals(timetableId)) continue;
                 var row = new AttendanceOverviewRowDTO();
                 BeanUtils.copyProperties(detail, row);
+                row.setStatus(reportStatus(row.getStatus(), row.getDate(), row.getCheckInTime()));
                 setTimetable(row, timetableId, timetableMap);
                 var detailStatuses = new ArrayList<String>();
                 if (row.getStatus() != null) detailStatuses.add(row.getStatus());
@@ -140,19 +142,24 @@ public class AttendanceOverviewService {
                 row.setCheckInTime(daily.getCheckInTime());
                 row.setCheckOutTime(daily.getCheckOutTime());
                 row.setWorkedMinutes((int) Math.round(Optional.ofNullable(daily.getHoursWorked()).orElse(0.0) * 60));
-                row.setOvertimeMinutes(overtime(daily, schedule));
+                row.setOvertimeMinutes(overtime(daily, schedule, dayLogs));
                 row.setLateMinutes(zero(daily.getLateMinutes()));
                 row.setEarlyLeaveMinutes(zero(daily.getEarlyLeaveMinutes()));
                 row.setPermissionMinutes(zero(daily.getPermissionMinutes()));
                 row.setShiftType(daily.getShiftType());
                 setTimetable(row, schedule.timetableId(), timetableMap);
-                String status = daily.getStatus().name();
+                String status = reportStatus(daily.getStatus().name(), daily.getDate(), daily.getCheckInTime());
                 if (status.equals("ABSENT") && daily.getDate().equals(AppTimeZone.today())
                         && schedule.startTime() != null && AppTimeZone.now().toLocalTime().isBefore(schedule.startTime())) {
                     status = "NOT_STARTED";
                 }
                 row.setStatus(status);
                 var statuses = new LinkedHashSet<String>();
+                // Attendance and its exceptions are independent badges; permission must not hide a completed visit.
+                if (row.getCheckInTime() != null && row.getCheckOutTime() != null
+                        && !row.getCheckOutTime().isBefore(row.getCheckInTime())
+                        && !status.equals("OPEN_SESSION") && !status.equals("MISSING_EXIT")
+                        && !status.equals("WORKDAY_COMPLETE")) statuses.add("PRESENT");
                 statuses.add(status);
                 if (row.getLateMinutes() > 0) statuses.add("LATE");
                 if (row.getEarlyLeaveMinutes() > 0) statuses.add("EARLY_LEAVE");
@@ -225,6 +232,8 @@ public class AttendanceOverviewService {
         if ("MISSING_EXIT".equals(status)) return row.getStatuses().stream()
                 .anyMatch(s -> Set.of("OPEN", "OPEN_SESSION", "MISSING_EXIT").contains(s));
         if ("LATE_AND_EARLY".equals(status)) return row.getLateMinutes() > 0 && row.getEarlyLeaveMinutes() > 0;
+        if ("WORKDAY_COMPLETE".equals(status)) return row.getStatuses().contains("WORKDAY_COMPLETE")
+                || row.getStatuses().contains("PRESENT");
         return row.getStatuses().contains(status);
     }
 
@@ -319,27 +328,37 @@ public class AttendanceOverviewService {
         } catch (java.io.IOException e) { throw new IllegalStateException("Excel faylı hazırlanmadı", e); }
     }
 
+    private static String reportStatus(String status, LocalDate date, OffsetDateTime entry) {
+        // Display only: keep expired calendar days out of the live-presence label.
+        if ("OPEN".equals(status) || "OPEN_SESSION".equals(status) || "MISSING_EXIT".equals(status)) {
+            return entry != null && AppTimeZone.today().equals(date) ? "OPEN_SESSION" : "MISSING_EXIT";
+        }
+        return status;
+    }
+
     public static String statusLabel(String value) {
         if (value == null) return "";
         return switch (value) {
             case "LATE" -> "Gecikib"; case "EARLY_LEAVE" -> "Erkən çıxıb";
             case "ABSENT" -> "Gəlməyib"; case "ON_LEAVE" -> "Məzuniyyət";
             case "DAY_OFF" -> "İstirahət";
-            case "OPEN", "OPEN_SESSION", "MISSING_EXIT" -> "Çıxış yoxdur";
+            case "OPEN", "MISSING_EXIT" -> "Çıxış yoxdur";
+            case "OPEN_SESSION" -> "İşdə";
             case "ON_PERMISSION", "PERMITTED_EARLY_LEAVE" -> "İcazə";
             case "NOT_STARTED" -> "Başlamayıb"; case "OVERTIME" -> "Overtime";
             case "MANUALLY_CORRECTED" -> "Düzəliş";
-            case "CLOSED", "WORKDAY_COMPLETE" -> "Tamamlandı"; default -> "İşdə";
+            case "CLOSED", "WORKDAY_COMPLETE", "PRESENT" -> "İşdə olub"; default -> value;
         };
     }
     private static String dateTime(OffsetDateTime value) { return value == null ? "" : value.atZoneSameInstant(AppTimeZone.ZONE).format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")); }
-    // Match the shared calculator's daily threshold, excluding credited permission time.
-    // Flexible/unconfigured schedules have no daily norm; their work is not all overtime.
-    private static Integer overtime(EmployeeAttendanceRowDTO day, AttendanceScheduleResolver.DaySchedule schedule) {
+    // Use the same source-visit overtime as MCG Tabel without changing daily worked time.
+    private Integer overtime(EmployeeAttendanceRowDTO day, AttendanceScheduleResolver.DaySchedule schedule,
+                             List<AttendanceLog> dayLogs) {
         if (schedule.flexible() || schedule.workingDay() && (schedule.startTime() == null || schedule.endTime() == null)) return null;
         int actualMinutes = (int) Math.round(Optional.ofNullable(day.getHoursWorked()).orElse(0.0) * 60)
                 - zero(day.getCreditedPermissionMinutes());
-        return Math.max(actualMinutes - schedule.expectedMinutes(), 0);
+        return McgTabelCalculator.overtimeAfterShift(day.getDate(),
+                inferenceService.inferDay(dayLogs, day.getDate()), schedule, Math.max(actualMinutes, 0));
     }
     private static String duration(Integer value) { return value == null ? "—" : "%d saat %d dəqiqə".formatted(value / 60, value % 60); }
     private static int zero(Integer value) { return value == null ? 0 : value; }

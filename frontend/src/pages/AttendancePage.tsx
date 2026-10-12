@@ -11,7 +11,7 @@ import {
 } from '../types'
 import { useDebounce } from '../hooks/useSearch.ts'
 import { t } from '../i18n/index.ts'
-import { formatAttendanceDateTime, formatAttendanceTime } from '../utils/dateTime.ts'
+import { formatAttendanceDateTime, formatAttendanceTime, todayInAppTimeZone } from '../utils/dateTime.ts'
 
 type PeriodType = 'THIS_MONTH' | 'LAST_MONTH' | 'THIS_YEAR' | 'LAST_YEAR' | 'CUSTOM'
 
@@ -54,17 +54,24 @@ const defaultSummary: EmployeeAttendanceSummary = {
 }
 
 const statusLabels: Record<EmployeeAttendanceRow['status'], string> = {
-  PRESENT: 'İşdə',
+  PRESENT: 'İşdə olub',
   LATE: 'Gecikib',
   ABSENT: 'İşdə deyil',
   ON_LEAVE: 'Məzuniyyətdə',
   EARLY_LEAVE: 'Erkən çıxış',
-  WORKDAY_COMPLETE: 'İş saatı bitib',
+  WORKDAY_COMPLETE: 'İşdə olub',
   DAY_OFF: 'İstirahət günü',
-  OPEN_SESSION: 'Açıq sessiya',
+  OPEN_SESSION: 'İşdə',
   MISSING_EXIT: 'Çıxış yoxdur',
   ON_PERMISSION: 'İcazədə',
   PERMITTED_EARLY_LEAVE: 'İcazəli erkən çıxış',
+}
+
+function displayStatus(row: EmployeeAttendanceRow): EmployeeAttendanceRow['status'] {
+  if (row.status === 'OPEN_SESSION' || row.status === 'MISSING_EXIT') {
+    return row.checkInTime && row.date === todayInAppTimeZone() ? 'OPEN_SESSION' : 'MISSING_EXIT'
+  }
+  return row.status
 }
 
 function formatEmployeeLabel(employee: EmployeeSearchResult) {
@@ -549,8 +556,8 @@ export default function AttendancePage() {
                             {row.earlyLeaveMinutes ? `${row.earlyLeaveMinutes} dəq.` : '—'}
                           </td>
                           <td className="px-5 py-4">
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[row.status]}`}>
-                              {statusLabels[row.status]}
+                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[displayStatus(row)]}`}>
+                              {statusLabels[displayStatus(row)]}
                             </span>
                           </td>
                           <td className="px-5 py-4 text-slate-500">{row.notes || '—'}</td>

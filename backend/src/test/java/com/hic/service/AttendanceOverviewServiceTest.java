@@ -30,6 +30,7 @@ class AttendanceOverviewServiceTest {
     @Mock AttendanceService attendance;
     @Mock AttendanceReportService details;
     @Mock AttendanceScheduleResolver scheduleResolver;
+    @Spy AttendanceInferenceService inferenceService = new AttendanceInferenceService();
     @Mock UserScopeService userScope;
     @InjectMocks AttendanceOverviewService service;
     Employee employee;
@@ -68,7 +69,94 @@ class AttendanceOverviewServiceTest {
             assertThat(sheet.getRow(1).toString()).doesNotContain("Açıq sessiya");
         }
         assertThat(AttendanceOverviewService.statusLabel("OPEN")).isEqualTo("Çıxış yoxdur");
-        assertThat(AttendanceOverviewService.statusLabel("OPEN_SESSION")).isEqualTo("Çıxış yoxdur");
+        assertThat(AttendanceOverviewService.statusLabel("OPEN_SESSION")).isEqualTo("İşdə");
+    }
+
+    @Test void livePresenceFilterExcludesPastOpenAndCompletedDaysWithoutChangingMinutes() throws Exception {
+        var today = com.hic.util.AppTimeZone.today();
+        query.setStart(today.minusDays(2)); query.setEnd(today);
+        var pastOpen = day(today.minusDays(2), 0, 0, 0, "OPEN_SESSION");
+        var completed = day(today.minusDays(1), 9.5, 0, 0, "PRESENT");
+        completed.setCheckOutTime(today.minusDays(1).atTime(19, 0).atOffset(ZoneOffset.ofHours(4)));
+        recordedVisits(source(today.minusDays(1), "09:30", "19:00"));
+        // A later open re-entry can coexist with the earlier visit's checkout on the daily row.
+        var inside = day(today, 4, 5, 0, "OPEN_SESSION");
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
+                .thenReturn(List.of(pastOpen, completed, inside));
+        var rows = service.report(query).getContent();
+        assertThat(rows).extracting(AttendanceOverviewRowDTO::getStatus)
+                .containsExactly("MISSING_EXIT", "PRESENT", "OPEN_SESSION");
+        assertThat(rows).extracting(AttendanceOverviewRowDTO::getWorkedMinutes).containsExactly(0, 570, 240);
+        assertThat(rows).extracting(AttendanceOverviewRowDTO::getOvertimeMinutes).containsExactly(0, 60, 0);
+        assertThat(rows).extracting(AttendanceOverviewRowDTO::getMissingExitDays).containsExactly(1, 0, 1);
+        query.setStatus("OPEN_SESSION");
+        assertThat(service.report(query).getContent()).singleElement().satisfies(row -> {
+            assertThat(row.getDate()).isEqualTo(today);
+            assertThat(row.getStatuses()).contains("OPEN_SESSION", "LATE").doesNotContain("PRESENT", "WORKDAY_COMPLETE");
+            assertThat(row.getCheckOutTime()).isEqualTo(inside.getCheckOutTime());
+        });
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue())
+                    .isEqualTo("İşdə, Gecikib");
+        }
+        query.setStatus("WORKDAY_COMPLETE");
+        assertThat(service.report(query).getContent()).singleElement()
+                .satisfies(row -> assertThat(row.getDate()).isEqualTo(today.minusDays(1)));
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue())
+                    .isEqualTo("İşdə olub, Overtime");
+        }
+        verify(logs, never()).save(any());
+        verify(attendance, never()).generateDailySummary(any(), any());
+    }
+
+    @Test void livePresenceBecomesMissingExitAtBakuCalendarBoundaryOnlyInReport() {
+        var date = LocalDate.of(2026, 10, 12);
+        query.setStart(date); query.setEnd(date.plusDays(1));
+        var open = day(date, 0, 0, 0, "OPEN_SESSION");
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any())).thenReturn(List.of(open));
+        try (var clock = mockStatic(com.hic.util.AppTimeZone.class)) {
+            clock.when(com.hic.util.AppTimeZone::today).thenReturn(date);
+            assertThat(service.report(query).getContent().get(0).getStatus()).isEqualTo("OPEN_SESSION");
+            clock.when(com.hic.util.AppTimeZone::today).thenReturn(date.plusDays(1));
+            assertThat(service.report(query).getContent().get(0).getStatus()).isEqualTo("MISSING_EXIT");
+        }
+        assertThat(open.getStatus()).isEqualTo(DailyAttendanceSummary.AttendanceStatus.OPEN_SESSION);
+    }
+
+    @Test void sameDayUnclosedVisitStaysLiveEvenAfterThePairingWindowExpires() {
+        var today = com.hic.util.AppTimeZone.today();
+        query.setStart(today); query.setEnd(today); query.setStatus("OPEN_SESSION");
+        var open = day(today, 0, 0, 0, "MISSING_EXIT");
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any())).thenReturn(List.of(open));
+        assertThat(service.report(query).getContent()).singleElement()
+                .satisfies(row -> assertThat(row.getStatus()).isEqualTo("OPEN_SESSION"));
+        assertThat(open.getStatus()).isEqualTo(DailyAttendanceSummary.AttendanceStatus.MISSING_EXIT);
+        open.setCheckInTime(null);
+        assertThat(service.report(query).getContent()).isEmpty();
+    }
+
+    @Test void detailStatusAndExcelDistinguishClosedTodayOpenAndPastOpenVisits() throws Exception {
+        var today = com.hic.util.AppTimeZone.today();
+        start = today.minusDays(1);
+        query.setStart(start); query.setEnd(today); query.setView(AttendanceReportQuery.View.DETAILS);
+        var closed = visit(1L, 9, 12); closed.setStatus("CLOSED");
+        var pastOpen = visit(2L, 13, null); pastOpen.setStatus("OPEN");
+        var current = visit(3L, 14, null); current.setDate(today); current.setStatus("OPEN");
+        current.setCheckInTime(today.atTime(14, 0).atOffset(ZoneOffset.ofHours(4)));
+        when(details.getReport(start, today, null, null, null, null, null, null, null, 0, Integer.MAX_VALUE))
+                .thenReturn(PaginatedResponse.of(List.of(closed, pastOpen, current), 3, 1, 0, Integer.MAX_VALUE));
+        assertThat(service.report(query).getContent()).extracting(AttendanceOverviewRowDTO::getStatus)
+                .containsExactlyInAnyOrder("CLOSED", "MISSING_EXIT", "OPEN_SESSION");
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            var sheet = workbook.getSheetAt(0);
+            assertThat(List.of(sheet.getRow(1).getCell(11).getStringCellValue(),
+                    sheet.getRow(2).getCell(11).getStringCellValue(), sheet.getRow(3).getCell(11).getStringCellValue()))
+                    .containsExactlyInAnyOrder("İşdə olub", "Çıxış yoxdur", "İşdə");
+        }
+        assertThat(AttendanceOverviewService.statusLabel("WORKDAY_COMPLETE")).isEqualTo("İşdə olub");
+        assertThat(closed.getStatus()).isEqualTo("CLOSED");
+        assertThat(pastOpen.getStatus()).isEqualTo("OPEN");
     }
 
     @Test void lateAndEarlyRemainIndependentlyVisibleAndFilterable() {
@@ -176,7 +264,9 @@ class AttendanceOverviewServiceTest {
         assertThat(service.report(query).getTotalElements()).isZero();
     }
 
-    @Test void overtimeUsesEachDailyNormAndDoesNotCancelAgainstShortDays() throws Exception {
+    @Test void overtimeUsesScheduledEndAndDoesNotCancelAgainstShortDays() throws Exception {
+        recordedVisits(source(start, "09:00", "19:30"), source(start.plusDays(1), "09:00", "13:00"),
+                source(start.plusDays(2), "09:00", "19:00"));
         when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
                 .thenReturn(List.of(day(start, 10.5, 0, 0, "PRESENT"),
                         day(start.plusDays(1), 4, 0, 0, "EARLY_LEAVE"), day(start.plusDays(2), 10, 0, 0, "PRESENT")));
@@ -197,6 +287,7 @@ class AttendanceOverviewServiceTest {
     }
 
     @Test void flexibleDaysHaveNoOvertimeNormAndMixedPeriodsKeepStandardOvertime() {
+        recordedVisits(source(start, "09:00", "19:00"));
         when(scheduleResolver.forReport(eq(7L), anyList(), any(), any())).thenReturn((e, date) ->
                 new AttendanceScheduleResolver.DaySchedule(40L, date.equals(start) ? "STANDARD" : "FLEXIBLE", true,
                         LocalTime.of(9, 0), LocalTime.of(18, 0), 60, 0, 0));
@@ -212,6 +303,7 @@ class AttendanceOverviewServiceTest {
     }
 
     @Test void nightAndRestDayOvertimeExcludeCreditedPermissionAndMissingExit() {
+        recordedVisits(source(start, "20:00", "03:30"), source(start.plusDays(1), "09:00", "13:00"));
         when(scheduleResolver.forReport(eq(7L), anyList(), any(), any())).thenReturn((e, date) ->
                 new AttendanceScheduleResolver.DaySchedule(40L, "STANDARD", date.equals(start),
                         LocalTime.of(20, 0), LocalTime.of(2, 0), 0, 0, 0));
@@ -223,7 +315,7 @@ class AttendanceOverviewServiceTest {
         when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
                 .thenReturn(List.of(night, rest, day(start.plusDays(2), 0, 0, 0, "MISSING_EXIT")));
         assertThat(service.report(query).getContent()).extracting(AttendanceOverviewRowDTO::getOvertimeMinutes)
-                .containsExactly(90, 180, 0);
+                .containsExactly(90, 0, 0);
     }
 
     @Test void detailsAndExportOmitOvertimeWhilePreservingVisitsAndAreaFiltering() throws Exception {
@@ -316,6 +408,7 @@ class AttendanceOverviewServiceTest {
     }
 
     @Test void overtimeFilterAndBadgeRequirePositiveKnownOvertime() {
+        recordedVisits(source(start, "09:00", "19:00"));
         when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
                 .thenReturn(List.of(day(start, 10, 0, 0, "PRESENT"), day(start.plusDays(1), 8, 0, 0, "PRESENT")));
         query.setStatus("OVERTIME");
@@ -336,8 +429,32 @@ class AttendanceOverviewServiceTest {
         query.setStatus("ON_PERMISSION");
         assertThat(service.report(query).getTotalElements()).isEqualTo(2);
         try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
-            assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue()).isEqualTo("İcazə");
+            assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue()).isEqualTo("İşdə olub, İcazə");
         }
+    }
+
+    @Test void completedPresenceBadgeCoexistsWithExceptionsAndFiltersAndExcel() throws Exception {
+        var permitted = day(start, 10, 0, 0, "ON_PERMISSION"); permitted.setPermissionMinutes(30);
+        var late = day(start.plusDays(1), 8, 15, 20, "EARLY_LEAVE");
+        var permissionOnly = day(start.plusDays(2), 0, 0, 0, "ON_PERMISSION");
+        permissionOnly.setCheckInTime(null); permissionOnly.setPermissionMinutes(540);
+        recordedVisits(source(start, "09:00", "19:00"));
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
+                .thenReturn(List.of(permitted, late, permissionOnly));
+        var rows = service.report(query).getContent();
+        assertThat(rows.get(0).getStatuses()).containsExactly("PRESENT", "ON_PERMISSION", "OVERTIME");
+        assertThat(rows.get(1).getStatuses()).contains("PRESENT", "LATE", "EARLY_LEAVE");
+        assertThat(rows.get(2).getStatuses()).containsExactly("ON_PERMISSION");
+        assertThat(rows).extracting(AttendanceOverviewRowDTO::getWorkedMinutes).containsExactly(600, 480, 0);
+        query.setStatus("WORKDAY_COMPLETE");
+        assertThat(service.report(query).getContent()).extracting(AttendanceOverviewRowDTO::getDate)
+                .containsExactly(start, start.plusDays(1));
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            assertThat(workbook.getSheetAt(0).getLastRowNum()).isEqualTo(2);
+            assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue())
+                    .isEqualTo("İşdə olub, İcazə, Overtime");
+        }
+        assertThat(permitted.getStatus()).isEqualTo(DailyAttendanceSummary.AttendanceStatus.ON_PERMISSION);
     }
 
     @Test void everySelectedStatusIsValidatedAndAggregateViewsStillRejectStatusFilters() {
@@ -347,6 +464,68 @@ class AttendanceOverviewServiceTest {
         }
         query.setStatus("LATE,OVERTIME"); query.setView(AttendanceReportQuery.View.MONTHLY);
         assertThatThrownBy(() -> service.report(query)).isInstanceOf(BadRequestException.class);
+    }
+
+    @Test void dailyMonthlyYearlyAndExcelUseTheSameClosedVisitOvertimeAsMcgTabel() throws Exception {
+        var schedule = new AttendanceScheduleResolver.DaySchedule(40L, "STANDARD", true,
+                LocalTime.of(9, 0), LocalTime.of(16, 0), 0, 5, 5);
+        when(scheduleResolver.forReport(eq(7L), anyList(), any(), any())).thenReturn((e, d) -> schedule);
+        var visits = List.of(source(start, "13:21", "13:21:30"), source(start, "13:44:30", "17:41"),
+                source(start, "20:04:30", "21:17"), source(start, "21:41", "21:46"));
+        recordedVisits(visits.toArray(AttendanceLog[]::new));
+        var permission = new EmployeePermission(); permission.setStartDate(start); permission.setEndDate(start);
+        permission.setStartTime(LocalTime.of(9, 0)); permission.setEndTime(LocalTime.of(13, 30));
+        permission.setStatus(EmployeePermission.Status.APPROVED); permission.setDeductFromWorkHours(true);
+        var mcg = new McgTabelCalculator(inferenceService, new AttendanceTimeCalculator(), new AttendancePermissionCalculator())
+                .calculate(start, visits, schedule, List.of(permission), ignored -> schedule);
+        var daily = day(start, 496 / 60.0, 0, 0, "ON_PERMISSION"); daily.setPermissionMinutes(270);
+        daily.setCheckInTime(start.atTime(13, 21).atOffset(ZoneOffset.ofHours(4)));
+        daily.setCheckOutTime(start.atTime(21, 46).atOffset(ZoneOffset.ofHours(4)));
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any())).thenReturn(List.of(daily));
+        assertThat(mcg.overtimeMinutes()).isEqualTo(178);
+        assertThat(mcg.workedMinutes()).isEqualTo(496);
+        for (var view : List.of(AttendanceReportQuery.View.DAILY, AttendanceReportQuery.View.MONTHLY, AttendanceReportQuery.View.YEARLY)) {
+            query.setView(view);
+            var row = service.report(query).getContent().get(0);
+            assertThat(row.getOvertimeMinutes()).isEqualTo(mcg.overtimeMinutes());
+            assertThat(row.getWorkedMinutes()).isEqualTo(496);
+            assertThat(row.getPermissionMinutes()).isEqualTo(270);
+            try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+                var sheet = workbook.getSheetAt(0);
+                int overtimeColumn = view == AttendanceReportQuery.View.DAILY ? 11 : 9;
+                assertThat(sheet.getRow(1).getCell(overtimeColumn).getStringCellValue()).isEqualTo("2 saat 58 dəqiqə");
+            }
+        }
+        verify(logs, never()).save(any());
+        verify(attendance, never()).generateDailySummary(any(), any());
+    }
+
+    @Test void sourceMissingOrUnassignedDaysCannotInventOvertimeFromSummaryHours() {
+        var daily = day(start, 12, 0, 0, "PRESENT");
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any())).thenReturn(List.of(daily));
+        assertThat(service.report(query).getContent().get(0).getOvertimeMinutes()).isZero();
+        recordedVisits(source(start, "09:00", "21:00"));
+        when(scheduleResolver.forReport(eq(7L), anyList(), any(), any())).thenReturn((e, d) ->
+                new AttendanceScheduleResolver.DaySchedule(null, "STANDARD", true,
+                        LocalTime.of(9, 0), LocalTime.of(17, 0), 0, 5, 0, false));
+        var row = service.report(query).getContent().get(0);
+        assertThat(row.getOvertimeMinutes()).isZero();
+        assertThat(row.getWorkedMinutes()).isEqualTo(720);
+    }
+
+    private void recordedVisits(AttendanceLog... visits) {
+        when(logs.findByTenantIdAndCheckInTimeBetween(eq(7L), any(), any())).thenReturn(List.of(visits));
+    }
+
+    private AttendanceLog source(LocalDate date, String entry, String exit) {
+        var log = new AttendanceLog(); log.setEmployeeId(1L); log.setTenantId(7L);
+        log.setCheckInTime(date.atTime(LocalTime.parse(entry)));
+        log.setId(date.toEpochDay() * 86400 + LocalTime.parse(entry).toSecondOfDay());
+        if (exit != null) {
+            var end = date.atTime(LocalTime.parse(exit));
+            log.setCheckOutTime(end.isAfter(log.getCheckInTime()) ? end : end.plusDays(1));
+        }
+        return log;
     }
 
     private AttendanceReportRowDTO visit(Long id, int entry, Integer exit) {

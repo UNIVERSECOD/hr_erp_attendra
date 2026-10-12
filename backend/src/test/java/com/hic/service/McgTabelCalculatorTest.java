@@ -147,6 +147,48 @@ class McgTabelCalculatorTest {
     }
 
     @Test
+    void overlappingAndNestedVisitsCountEachAfterEndMinuteOnlyOnce() {
+        var result = calculator.calculate(date,
+                List.of(log("18:20", "18:40"), log("09:00", "18:00"), log("17:30", "19:00")),
+                standard(), List.of(), ignored -> standard());
+        assertThat(result.overtimeMinutes()).isEqualTo(120);
+        assertThat(result.workedMinutes()).isEqualTo(600);
+    }
+
+    @ParameterizedTest
+    @CsvSource({"19:29:29,0", "19:29:30,60", "19:30:30,61"})
+    void overtimeThresholdSumsSecondsAcrossVisitsBeforeConvertingToMinutes(String exit, int overtime) {
+        var result = calculator.calculate(date,
+                List.of(log("09:00", "17:30:30"), log("19:00", exit)),
+                standard(), List.of(), ignored -> standard());
+        assertThat(result.overtimeMinutes()).isEqualTo(overtime);
+    }
+
+    @Test
+    void overtimeMatchesIndependentSecondBySecondPresenceAcrossMixedIntervals() {
+        var random = new java.util.Random(20261013L);
+        var end = date.atTime(17, 0);
+        for (int scenario = 0; scenario < 100; scenario++) {
+            var segments = new java.util.ArrayList<AttendanceInferenceService.SessionSegment>();
+            var presence = new java.util.BitSet(10800);
+            for (int visit = 0; visit < 8; visit++) {
+                int entry = random.nextInt(9000) - 1800;
+                int exit = Math.min(entry + random.nextInt(3600) + 1, 10800);
+                boolean open = visit == 7;
+                segments.add(new AttendanceInferenceService.SessionSegment(end.plusSeconds(entry),
+                        open ? null : end.plusSeconds(exit)));
+                if (!open && exit > 0) presence.set(Math.max(entry, 0), exit);
+            }
+            java.util.Collections.shuffle(segments, random);
+            var inference = new AttendanceInferenceService.AttendanceInference(null, null, 0, true, segments);
+            int actualMinutes = 30 + random.nextInt(180);
+            int expected = Math.min(presence.cardinality() / 60, actualMinutes);
+            assertThat(McgTabelCalculator.overtimeAfterShift(date, inference, standard(), actualMinutes))
+                    .as("mixed visit scenario %s", scenario).isEqualTo(expected >= 60 ? expected : 0);
+        }
+    }
+
+    @Test
     void overnightOvertimeStartsAtTheNextDaysScheduledEnd() {
         var result = calculate(schedule("20:00", "02:00", 0, 5, 5), log("20:00", "03:24"));
         assertThat(result.workedMinutes()).isEqualTo(444);

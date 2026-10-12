@@ -18,11 +18,11 @@ const sections: { value: AttendanceReportView; label: string; description: strin
 ]
 const statusLabels: Record<string, string> = {
   LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyət',
-  DAY_OFF: 'İstirahət', OPEN_SESSION: 'Çıxış yoxdur', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
-  ON_PERMISSION: 'İcazə', PERMITTED_EARLY_LEAVE: 'İcazə', PRESENT: 'İşdə', OVERTIME: 'Overtime',
-  WORKDAY_COMPLETE: 'Tamamlandı', NOT_STARTED: 'Başlamayıb', CLOSED: 'Tamamlandı', MANUALLY_CORRECTED: 'Düzəliş',
+  DAY_OFF: 'İstirahət', OPEN_SESSION: 'İşdə', OPEN: 'Çıxış yoxdur', MISSING_EXIT: 'Çıxış yoxdur',
+  ON_PERMISSION: 'İcazə', PERMITTED_EARLY_LEAVE: 'İcazə', PRESENT: 'İşdə olub', OVERTIME: 'Overtime',
+  WORKDAY_COMPLETE: 'İşdə olub', NOT_STARTED: 'Başlamayıb', CLOSED: 'İşdə olub', MANUALLY_CORRECTED: 'Düzəliş',
 }
-const statusOptions = ['LATE', 'EARLY_LEAVE', 'OVERTIME', 'PRESENT', 'ABSENT', 'MISSING_EXIT',
+const statusOptions = ['LATE', 'EARLY_LEAVE', 'OVERTIME', 'OPEN_SESSION', 'ABSENT', 'MISSING_EXIT',
   'ON_PERMISSION', 'ON_LEAVE', 'DAY_OFF', 'WORKDAY_COMPLETE']
 const inputClass = 'w-full min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-purple-400'
 const actionClass = 'px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium hover:bg-gray-50 disabled:opacity-50'
@@ -40,13 +40,14 @@ function statusClass(status: string) {
   if (status === 'OVERTIME') return 'bg-indigo-50 text-indigo-700'
   if (status === 'LATE') return 'bg-amber-50 text-amber-800'
   if (status === 'EARLY_LEAVE') return 'bg-orange-50 text-orange-800'
-  if (status === 'ABSENT' || status === 'MISSING_EXIT' || status === 'OPEN' || status === 'OPEN_SESSION') return 'bg-red-50 text-red-700'
+  if (status === 'ABSENT' || status === 'MISSING_EXIT' || status === 'OPEN') return 'bg-red-50 text-red-700'
   if (status.includes('PERMISSION') || status === 'ON_LEAVE' || status === 'PERMITTED_EARLY_LEAVE') return 'bg-purple-50 text-purple-700'
   if (status === 'DAY_OFF' || status === 'NOT_STARTED') return 'bg-gray-100 text-gray-600'
   return 'bg-emerald-50 text-emerald-700'
 }
 function Status({ row }: { row: AttendanceOverviewRow }) {
-  const values = row.statuses?.length ? row.statuses : row.status ? [row.status] : []
+  const values = (row.statuses?.length ? row.statuses : row.status ? [row.status] : [])
+    .map(status => status === 'OPEN_SESSION' && row.date !== todayInAppTimeZone() ? 'MISSING_EXIT' : status)
   const unique = [...new Map(values.map(status => [statusLabels[status] ?? status, status])).values()]
   return <div className="flex flex-wrap gap-1 min-w-[120px]">{unique.map(status => (
     <span key={status} className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClass(status)}`}>{statusLabels[status] ?? status}</span>
@@ -192,7 +193,7 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-gray-900">Davamiyyət hesabatları</h1>
           <p className="mt-1 text-sm text-gray-500 max-w-3xl">{sections.find(s => s.value === filters.view)?.description}</p>
-          {!detail && <p className="mt-1 text-xs text-gray-500 max-w-3xl">Overtime gündəlik qrafik normasından artıq işlənən müddətdir. Sərbəst qrafikdə norma olmadığı üçün hesablanmır.</p>}</div>
+          {!detail && <p className="mt-1 text-xs text-gray-500 max-w-3xl">Overtime qrafik bitdikdən sonrakı faktiki giriş–çıxış müddətlərinin cəmi 1 saata çatdıqda hesablanır. Aradakı boşluqlar sayılmır; sərbəst qrafikdə hesablanmır.</p>}</div>
         <div className="flex gap-2">
           <button className={actionClass} onClick={() => void fetchReport()} disabled={loading || !!dateError}>Yenilə</button>
           <button onClick={() => void exportExcel()} disabled={exporting || loading || !!dateError || !!error}

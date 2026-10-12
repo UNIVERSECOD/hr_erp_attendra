@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.function.Function;
 
@@ -50,26 +51,39 @@ public class McgTabelCalculator {
                 schedule.assigned() ? schedule.expectedMinutes() : 0, schedule.assigned() && !schedule.workingDay());
     }
 
-    private int overtimeAfterShift(LocalDate date, AttendanceInferenceService.AttendanceInference inference,
+    static int overtimeAfterShift(LocalDate date, AttendanceInferenceService.AttendanceInference inference,
             AttendanceScheduleResolver.DaySchedule schedule, int actualWorkedMinutes) {
         if (!schedule.assigned() || schedule.flexible() || !schedule.workingDay()
                 || schedule.startTime() == null || schedule.endTime() == null) return 0;
         var start = date.atTime(schedule.startTime());
         var end = date.atTime(schedule.endTime());
         if (!end.isAfter(start)) end = end.plusDays(1);
-        int afterShift = 0;
-        // Only closed visits contribute: time outside between visits is never overtime.
-        for (var segment : inference.segments()) {
-            afterShift += minutesAfter(segment.checkInTime(), segment.checkOutTime(), end);
+        long afterShiftSeconds = 0;
+        LocalDateTime rangeStart = null;
+        LocalDateTime rangeEnd = null;
+        // Merge closed visits so overlapping device/area records cannot count the same time twice.
+        var closedVisits = inference.segments().stream()
+                .filter(segment -> segment.checkInTime() != null && segment.checkOutTime() != null)
+                .sorted(Comparator.comparing(AttendanceInferenceService.SessionSegment::checkInTime)).toList();
+        for (var segment : closedVisits) {
+            var from = segment.checkInTime().isAfter(end) ? segment.checkInTime() : end;
+            var to = segment.checkOutTime();
+            if (!to.isAfter(from)) continue;
+            if (rangeStart == null) {
+                rangeStart = from;
+                rangeEnd = to;
+            } else if (!from.isAfter(rangeEnd)) {
+                if (to.isAfter(rangeEnd)) rangeEnd = to;
+            } else {
+                afterShiftSeconds += Duration.between(rangeStart, rangeEnd).getSeconds();
+                rangeStart = from;
+                rangeEnd = to;
+            }
         }
-        int eligible = Math.min(afterShift, actualWorkedMinutes);
+        if (rangeStart != null) afterShiftSeconds += Duration.between(rangeStart, rangeEnd).getSeconds();
+        // Round once after summing actual presence; two half-minute remainders can complete the hour.
+        int eligible = (int) Math.min(afterShiftSeconds / 60, actualWorkedMinutes);
         return eligible >= MINIMUM_OVERTIME_MINUTES ? eligible : 0;
-    }
-
-    private int minutesAfter(LocalDateTime first, LocalDateTime last, LocalDateTime boundary) {
-        if (first == null || last == null) return 0;
-        var from = first.isAfter(boundary) ? first : boundary;
-        return last.isAfter(from) ? Math.toIntExact(Duration.between(from, last).toMinutes()) : 0;
     }
 
     private AttendanceInferenceService.AttendanceInference clipWithTolerance(
