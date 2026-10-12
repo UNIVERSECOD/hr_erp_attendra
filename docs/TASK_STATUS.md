@@ -1,5 +1,9 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-12 — Separate standard repository delivery
+
+User requested pushing MCG and publishing the standard copy to `https://github.com/UNIVERSECOD/Attendra-Standard-20261012`. MCG feature commit `344efd1` remains on the original repository's `codex/mcg` branch; no merge into original `main` or runtime deployment is included. Standard copy is based on `526b4e2` and targets the new repository's `main`, with only repository-delivery documentation updated. Its old `origin` is retained as `source`, and the new repository becomes `origin`. Only the standard `main` history is pushed, not other branches/tags, local `.env`, untracked `.agents`, databases, photos or runtime files. This delivery changes no application code, so the previous verification remains applicable; build/hardware tests are not rerun for remote/documentation changes.
+
 ## 2026-10-12 — MCG Tabel in the current workspace, standard copy preserved
 
 User authorized a copy of the standard project, then MCG functionality in the existing folder; explicitly deferred separate Setup. Follow-up confirmed that `1` follows each date's assigned schedule and entry/exit tolerances, including approved permission marked not to deduct work hours.

@@ -6,7 +6,8 @@ The user requested a standard-project copy first, followed by MCG work in the cu
 
 - Standard source copy: `D:\Attendra-Standard-before-MCG-20261012`, branch `main`, baseline `526b4e26aaf08e44006dedffa1196607a11212fb`.
 - MCG workspace: `D:\hr-erp-back-front`, branch `codex/mcg`.
-- The copy has independent Git objects (`clone --no-hardlinks`), the original GitHub remote, local configuration files and local agent instructions. Configuration hashes and ACLs were checked without printing secrets. Dependencies, build output and runtime data were not copied.
+- Standard delivery repository (user requested 2026-10-12): `https://github.com/UNIVERSECOD/Attendra-Standard-20261012.git`, branch `main`. The standard copy's `origin` points there; its application baseline remains `526b4e2` with a documentation-only repository-split commit. MCG remains in `hr_erp_attendra` on `codex/mcg`; no merge into its `main` was requested.
+- The copy has independent Git objects (`clone --no-hardlinks`), local configuration files and local agent instructions. Its original GitHub remote is preserved as `source`; `origin` is the standard delivery repository above. Configuration hashes and ACLs were checked without printing secrets. Dependencies, build output and runtime data were not copied. Local configuration and untracked agent instructions are not pushed.
 - **The project copy is not a backup of the live database, photos or native installation.** Existing customer data remains in its original storage.
 - Do not merge the customer-specific policy into general `main` without approval. The copies still have the same Docker container names and native installer identity; do not start both with the ordinary Compose/Setup workflow as if parallel installations were supported.
 
