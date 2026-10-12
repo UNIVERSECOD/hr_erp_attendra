@@ -226,21 +226,28 @@ class AttendanceOverviewServiceTest {
                 .containsExactly(90, 180, 0);
     }
 
-    @Test void detailOvertimeAppearsOnceBeforeAreaFilteringPaginationAndExport() throws Exception {
+    @Test void detailsAndExportOmitOvertimeWhilePreservingVisitsAndAreaFiltering() throws Exception {
         query.setView(AttendanceReportQuery.View.DETAILS);
         var first = visit(1L, 9, 12); var last = visit(2L, 13, 20); var open = visit(3L, 21, null);
         when(details.getReport(start, query.getEnd(), null, null, null, null, null, null, null, 0, Integer.MAX_VALUE))
                 .thenReturn(PaginatedResponse.of(List.of(open, last, first), 3, 1, 0, Integer.MAX_VALUE));
-        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
-                .thenReturn(List.of(day(start, 10, 0, 0, "OPEN_SESSION")));
         query.setSize(1); query.setPage(1);
         assertThat(service.report(query).getContent()).singleElement()
-                .satisfies(row -> assertThat(row.getOvertimeMinutes()).isEqualTo(60));
+                .satisfies(row -> {
+                    assertThat(row.getAttendanceLogId()).isEqualTo(2L);
+                    assertThat(row.getOvertimeMinutes()).isNull();
+                    assertThat(row.getStatuses()).doesNotContain("OVERTIME");
+                });
         try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
             var sheet = workbook.getSheetAt(0);
-            assertThat(sheet.getRow(1).getCell(11).getStringCellValue()).isEqualTo("—");
-            assertThat(sheet.getRow(2).getCell(11).getStringCellValue()).isEqualTo("1 saat 0 dəqiqə");
-            assertThat(sheet.getRow(3).getCell(11).getStringCellValue()).isEqualTo("—");
+            for (var cell : sheet.getRow(0)) assertThat(cell.getStringCellValue()).isNotEqualTo("Overtime");
+            assertThat(sheet.getRow(0).getLastCellNum()).isEqualTo((short) 12);
+            assertThat(sheet.getRow(0).getCell(11).getStringCellValue()).isEqualTo("Status");
+            assertThat(sheet.getLastRowNum()).isEqualTo(3);
+            for (int i = 1; i <= 3; i++) {
+                assertThat(sheet.getRow(i).getLastCellNum()).isEqualTo((short) 12);
+                assertThat(sheet.getRow(i).getCell(11).getStringCellValue()).doesNotContain("Overtime");
+            }
         }
         AttendanceLog firstLog = new AttendanceLog(); firstLog.setId(1L); firstLog.setEmployeeId(1L);
         firstLog.setCheckInTime(start.atTime(9, 0)); firstLog.setAreaSnapshotCaptured(true); firstLog.setAreaSnapshotId(30L);
@@ -251,6 +258,7 @@ class AttendanceOverviewServiceTest {
         assertThat(service.report(query).getContent()).allSatisfy(row -> assertThat(row.getOvertimeMinutes()).isNull());
         verify(logs, never()).save(any());
         verify(attendance, never()).generateDailySummary(any(), any());
+        verify(attendance, never()).getEmployeeAttendanceForReport(any(), any(), any(), any());
     }
 
     @Test void sortingPrecedesPaginationAndExcelKeepsTheCompleteSortedResult() throws Exception {

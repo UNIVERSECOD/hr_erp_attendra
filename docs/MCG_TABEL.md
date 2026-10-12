@@ -19,16 +19,16 @@ The user clarified that a full day follows **that date's assigned hours and entr
 | --- | --- |
 | Complete assigned STANDARD/NIGHT shift, including accepted entry/exit tolerance | `1` |
 | Complete six-hour or twelve-hour shift | Also `1` |
-| Complete shift with two overtime hours | `1` and `+2.00 s OT` |
-| Incomplete shift | Regular counted hours, e.g. `6.00 s`, plus any OT separately |
+| Complete shift with two overtime hours | `1`; OT remains in the separate monthly total |
+| Incomplete shift | Whole counted hours including OT, with minutes discarded for display: 8h16m becomes numeric `8` |
 | Approved non-deductible permission fills a missing part of the shift | May complete `1`; overlapping credits are counted once |
 | Deductible permission | Removes counted time; work outside the shift cannot buy back a full-day marker |
-| Latest visit has no exit | Never `1`; `?` marks the unresolved result |
+| Latest visit has no exit | No full-day marker; show counted whole hours and explain missing exit in the screen tooltip |
 | FLEXIBLE/FIRST_ENTRY | Existing calendar-day hourly allocation; no fixed daily norm, no day marker/OT |
 | No valid assigned schedule | Hours only; do not infer a day or OT from fallback 09:00–17:00 |
-| Only historical summary remains, without sufficient source evidence | Preserve archived hours with `*`; no invented day or OT |
+| Only historical summary remains, without sufficient source evidence | Show archived whole hours; warning toast/tooltip disclose missing evidence, with no invented day or OT |
 | Approved leave, holiday, full-day deducted permission | Existing `Q/I` behavior preserved |
-| Future date or unworked rest day | Blank (existing `Q/I` can still be displayed) |
+| Future date or unworked rest day | Display numeric `0` without adding to attendance/absence totals (existing `Q/I` can still be displayed) |
 
 STANDARD/NIGHT continue using the existing first-in/last-out span minus break. Flexible intervals continue using closed interval sums, split at Asia/Baku midnight. This feature does not change the underlying attendance or overtime policy.
 
@@ -40,9 +40,9 @@ For day completion only, accepted tolerance gaps are normalized to the shift bou
 - The MCG branch's Tabel page explicitly requests `MCG` for both display and export. If the backend is older and returns no MCG mode, it shows an error toast rather than presenting standard hours as MCG results.
 - Existing `daily` numbers still mean hours. New `mcgDaily` records contain a boolean day marker, counted/regular/OT minutes, permission credit and source/status flags. Consumers must not sum markers and hours as the same unit.
 - Monthly columns: full days, hours on days not represented by `1` (excluding OT), overtime hours, counted working days, and total counted hours. Total hours include permission credit and OT, but **not artificial tolerance credit**. Do not calculate total hours as `fullDays * 8`.
-- Excel uses the same projection as the screen. Daily mixed-unit cells are text (`1`, `6.00 s`, `+2.00 s OT`); separate total columns remain numeric. Legend and frozen identity columns are included.
+- Daily worked cells on screen and Excel are numeric: `1` when all full-day conditions hold, otherwise whole counted hours (`workedMinutes / 60`, truncated). No unit suffix, decimal fraction, OT line or `*`/`?` marker appears in these cells. Existing leave/holiday `Q/I` codes are preserved. Days without a value, including future days, display numeric `0`; underlying nulls and attendance/absence counting stay unchanged. Exact minute calculations and monthly totals remain unchanged; screen tooltips retain exact durations and source/exit warnings. Excel stores numeric cells. Legend and frozen identity columns are included.
 - Terminated employees stay in historical Tabel and their names remain red. There are no `employmentStatus` or `terminationDate` Excel columns.
-- Filters, export success/error toasts and session handling remain. Missing historical source data additionally produces a warning toast and persistent `*` legend.
+- Filters, export success/error toasts and session handling remain. Missing historical source data produces a warning toast and explanatory tooltips/legend.
 
 ## Data and delivery safety
 

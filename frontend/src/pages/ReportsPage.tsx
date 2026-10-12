@@ -133,8 +133,9 @@ export default function ReportsPage() {
   const nextSortDirection = (field: AttendanceReportSortField) => filters.sortBy === field
     ? filters.sortDirection === 'asc' ? 'desc' : 'asc' : descendingFirst.has(field) ? 'desc' : 'asc'
   const changeView = (view: AttendanceReportView) => {
-    const hideSort = (view === 'MONTHLY' || view === 'YEARLY')
-      && ['status', 'checkInTime', 'checkOutTime'].includes(filters.sortBy ?? '')
+    const hideSort = ((view === 'MONTHLY' || view === 'YEARLY')
+      && ['status', 'checkInTime', 'checkOutTime'].includes(filters.sortBy ?? ''))
+      || (view === 'DETAILS' && filters.sortBy === 'overtimeMinutes')
     update({ view, status: undefined, ...(hideSort ? { sortBy: undefined, sortDirection: undefined } : {}) })
   }
   const visibleDepartments = departments.filter(d => !filters.areaId || d.allAreas || d.branchId === filters.areaId)
@@ -164,8 +165,8 @@ export default function ReportsPage() {
         ? formatAttendanceTime(r.checkOutTime) : formatAttendanceDateTime(r.checkOutTime) },
     ] : []),
     { label: 'İş müddəti', cell: r => <Metric value={r.workedMinutes} tone="work" /> },
-    { label: 'Overtime', cell: r => <Metric value={r.overtimeMinutes} tone="overtime" /> },
     ...(!detail ? [
+      { label: 'Overtime', cell: (r: AttendanceOverviewRow) => <Metric value={r.overtimeMinutes} tone="overtime" /> },
       { label: 'Gecikmə', cell: (r: AttendanceOverviewRow) => <Metric value={r.lateMinutes} tone="late" /> },
       { label: 'Erkən çıxış', cell: (r: AttendanceOverviewRow) => <Metric value={r.earlyLeaveMinutes} tone="early" /> },
       { label: 'İcazə', cell: (r: AttendanceOverviewRow) => <Metric value={r.permissionMinutes} tone="permission" /> },
@@ -191,8 +192,7 @@ export default function ReportsPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h1 className="text-2xl font-bold text-gray-900">Davamiyyət hesabatları</h1>
           <p className="mt-1 text-sm text-gray-500 max-w-3xl">{sections.find(s => s.value === filters.view)?.description}</p>
-          <p className="mt-1 text-xs text-gray-500 max-w-3xl">Overtime gündəlik qrafik normasından artıq işlənən müddətdir. Sərbəst qrafikdə norma olmadığı üçün hesablanmır.
-            {detail && ' Günlük overtime yalnız günün son tamamlanmış giriş–çıxış sətrində göstərilir.'}</p></div>
+          {!detail && <p className="mt-1 text-xs text-gray-500 max-w-3xl">Overtime gündəlik qrafik normasından artıq işlənən müddətdir. Sərbəst qrafikdə norma olmadığı üçün hesablanmır.</p>}</div>
         <div className="flex gap-2">
           <button className={actionClass} onClick={() => void fetchReport()} disabled={loading || !!dateError}>Yenilə</button>
           <button onClick={() => void exportExcel()} disabled={exporting || loading || !!dateError || !!error}

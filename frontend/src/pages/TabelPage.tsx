@@ -13,6 +13,10 @@ import { toast } from '../store/toastStore.ts'
 const SIDEBAR_OPEN = 'w-full lg:w-64'
 const SIDEBAR_CLOSED = 'w-10'
 
+function workedDuration(minutes: number) {
+  return `${Math.floor(minutes / 60)} saat ${minutes % 60} dəqiqə`
+}
+
 const monthOptions = [
   'Yanvar',
   'Fevral',
@@ -96,7 +100,7 @@ export default function TabelPage() {
         }
         setData(res.data.data)
         if (res.data.data.rows.some((row) => Object.values(row.mcgDaily ?? {}).some((day) => !day.sourceVerified))) {
-          toast.warning('Bəzi günlər yalnız arxiv saatı ilə göstərilir', '* işarəli günlərin giriş–çıxış qeydləri yoxdur; tam gün və overtime təsdiqlənmir.')
+          toast.warning('Bəzi günlər yalnız arxiv saatı ilə göstərilir', 'Giriş–çıxış qeydləri olmayan günlər üçün tam gün və overtime təsdiqlənmir. Ətraflı məlumat günün üzərində göstərilir.')
         }
       } catch {
         if (active) {
@@ -242,8 +246,8 @@ export default function TabelPage() {
 
             <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3 text-xs leading-relaxed text-indigo-900">
               <p><strong>1</strong> = həmin günün qrafiki tam yerinə yetirilib; giriş–çıxış toleransı və iş saatından çıxılmayan təsdiqli icazə nəzərə alınır.</p>
-              <p><strong>s</strong> = saat · <strong>OT</strong> = overtime. Günlük saatlar OT xaricdir. Cəmi saata icazə krediti və OT daxildir; çevik qrafik saatla qalır.</p>
-              <p><strong>*</strong> = yalnız arxiv saatı, tam gün və OT təsdiqlənmir · <strong>?</strong> = çıxış qeydi çatışmır.</p>
+              <p>Şərtlər ödənmirsə, günlük xanada işlənmiş tam saat göstərilir; dəqiqələr atılır (8 saat 16 dəqiqə = 8). Overtime aylıq yekunda ayrıca verilir. Aylıq yekunlar dəqiq hesablanır.</p>
+              <p>Günün üzərinə gəldikdə dəqiq müddət və çatışmayan giriş–çıxış qeydləri göstərilir. Natamam saat yekunu OT xaricdir; cəmi saata icazə krediti və OT daxildir.</p>
               <p className="text-red-700">Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.</p>
             </div>
 
@@ -256,7 +260,7 @@ export default function TabelPage() {
                     <th className="sticky left-[160px] z-30 min-w-[200px] max-w-[200px] border-b bg-slate-50 px-3 py-3 text-left truncate">Soyadı, adı</th>
                     <th className="sticky left-[360px] z-30 min-w-[140px] max-w-[140px] border-b bg-slate-50 px-3 py-3 text-left truncate">Vəzifəsi</th>
                     {Array.from({ length: data?.daysInMonth ?? 0 }, (_, day) => (
-                      <th key={day + 1} className="sticky top-0 min-w-[84px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
+                      <th key={day + 1} className="sticky top-0 min-w-[52px] border-b bg-slate-50 px-2 py-3 text-center">{day + 1}</th>
                     ))}
                     <th className="min-w-[90px] border-b px-3 py-3 text-center">Tam gün</th>
                     <th className="min-w-[140px] border-b px-3 py-3 text-center" title="Tam gün kimi hesablanmayan günlərin saatları; overtime xaric">Natamam saat</th>
@@ -292,12 +296,11 @@ export default function TabelPage() {
 
                         return (
                           <td key={day + 1}
-                            title={detail ? `Hesablanan: ${(mcgDay.workedMinutes / 60).toFixed(2)} s; icazə krediti: ${(mcgDay.creditedPermissionMinutes / 60).toFixed(2)} s${unresolved ? '; çıxış qeydi çatışmır' : ''}${!mcgDay.sourceVerified ? '; giriş–çıxış qeydləri yoxdur' : ''}` : undefined}
-                            className={`px-2 py-2 text-center ${mcgDay?.fullDay ? 'font-semibold text-emerald-700' : isAbsent ? 'font-semibold text-red-600' : isCode ? 'font-medium text-amber-700' : isEmpty ? 'text-slate-300' : ''}`}>
+                            title={detail ? `Hesablanan: ${workedDuration(mcgDay.workedMinutes)}; icazə krediti: ${workedDuration(mcgDay.creditedPermissionMinutes)}${unresolved ? '; çıxış qeydi çatışmır' : ''}${!mcgDay.sourceVerified ? '; giriş–çıxış qeydləri yoxdur' : ''}` : undefined}
+                            className={`px-2 py-2 text-center ${mcgDay?.fullDay ? 'font-semibold text-emerald-700' : isAbsent ? 'font-semibold text-red-600' : isCode ? 'font-medium text-amber-700' : isEmpty ? 'text-slate-400' : ''}`}>
                             {detail ? <>
-                              <span>{mcgDay.fullDay ? '1' : `${(mcgDay.regularMinutes / 60).toFixed(2)} s`}{!mcgDay.sourceVerified ? ' *' : ''}{unresolved ? ' ?' : ''}</span>
-                              {mcgDay.overtimeMinutes > 0 && <span className="mt-1 block whitespace-nowrap text-xs font-medium text-indigo-600">+{(mcgDay.overtimeMinutes / 60).toFixed(2)} s OT</span>}
-                            </> : typeof value === 'number' ? value.toFixed(2) : isEmpty ? '' : value}
+                              <span>{mcgDay.fullDay ? 1 : Math.floor(mcgDay.workedMinutes / 60)}</span>
+                            </> : typeof value === 'number' ? Math.floor(value) : isEmpty ? 0 : value}
                           </td>
                         )
                       })}

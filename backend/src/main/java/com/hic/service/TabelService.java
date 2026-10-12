@@ -259,10 +259,13 @@ public class TabelService {
                 for (int day = 1; day <= tabel.getDaysInMonth(); day++) {
                     Object value = row.getDaily().get(day);
                     if (value == null) {
-                        sheetRow.createCell(dataCol++).setCellValue("");
+                        var cell = sheetRow.createCell(dataCol++);
+                        if (mcg) cell.setCellValue(0);
+                        else cell.setCellValue("");
                     } else if (mcg && value instanceof Number && row.getMcgDaily().containsKey(day)) {
                         var cell = sheetRow.createCell(dataCol++);
-                        cell.setCellValue(formatMcgDay(row.getMcgDaily().get(day)));
+                        var mcgDay = row.getMcgDaily().get(day);
+                        cell.setCellValue(mcgDay.fullDay() ? 1 : mcgDay.workedMinutes() / 60);
                         cell.setCellStyle(dayStyle);
                     } else if (value instanceof Number number) {
                         sheetRow.createCell(dataCol++).setCellValue(number.doubleValue());
@@ -289,7 +292,7 @@ public class TabelService {
                 sheet.setColumnWidth(1, 14 * 256);
                 sheet.setColumnWidth(2, 32 * 256);
                 sheet.setColumnWidth(3, 22 * 256);
-                for (int i = 4; i < 4 + tabel.getDaysInMonth(); i++) sheet.setColumnWidth(i, 13 * 256);
+                for (int i = 4; i < 4 + tabel.getDaysInMonth(); i++) sheet.setColumnWidth(i, 7 * 256);
                 for (int i = 4 + tabel.getDaysInMonth(); i <= column; i++) sheet.setColumnWidth(i, 20 * 256);
                 Font headerFont = workbook.createFont();
                 headerFont.setBold(true);
@@ -303,11 +306,11 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "s = saat; OT = overtime. Saatlar OT xaric göstərilir. Cəmi saat icazə kreditini və OT-ni də əhatə edir.");
+                        "Şərtlər ödənmirsə, günlük xanada işlənmiş tam saat göstərilir; dəqiqələr atılır (8 saat 16 dəqiqə = 8). Aylıq yekunlar dəqiq hesablanır.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "* = yalnız arxiv saatı mövcuddur, tam gün və OT təsdiqlənmir. ? = çıxış qeydi çatışmır.");
+                        "Çıxış və ya mənbə qeydi çatışmayan günlər tam gün kimi təsdiqlənmir. Overtime aylıq yekunda ayrıca verilir.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Qırmızı adla işarələnən əməkdaşlar işdən azad edilib. Çevik qrafik saatla hesablanır.");
+                        "Natamam saat yekunu OT xaricdir; cəmi saata icazə krediti və OT daxildir. Qırmızı adla işarələnən əməkdaşlar işdən azad edilib.");
                 for (int i = rowIndex - 3; i <= rowIndex; i++) {
                     sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(i, i, 0, column));
                 }
@@ -318,14 +321,6 @@ public class TabelService {
         } catch (Exception ex) {
             throw new RuntimeException("Failed to export tabel", ex);
         }
-    }
-
-    private String formatMcgDay(McgDayDTO day) {
-        String value = day.fullDay() ? "1" : String.format(Locale.ROOT, "%.2f s", day.regularMinutes() / 60.0);
-        if (day.overtimeMinutes() > 0) value += String.format(Locale.ROOT, "\n+%.2f s OT", day.overtimeMinutes() / 60.0);
-        if (!day.sourceVerified()) value += " *";
-        if ("OPEN_SESSION".equals(day.status()) || "MISSING_EXIT".equals(day.status())) value += " ?";
-        return value;
     }
 
     private Map<Long, Set<LocalDate>> buildLeaveDaysByEmployee(Long tenantId,

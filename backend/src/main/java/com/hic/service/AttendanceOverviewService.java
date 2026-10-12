@@ -88,16 +88,6 @@ public class AttendanceOverviewService {
         if (q.getView() == AttendanceReportQuery.View.DETAILS) {
             var visits = details.getReport(q.getStart(), q.getEnd(), null, null, null, null,
                     null, null, null, 0, Integer.MAX_VALUE).getContent();
-            // Assign the daily total once, before area filters and pagination, so it cannot move
-            // to another visit just because the last visit is hidden by the current filter.
-            Map<DayKey, AttendanceReportRowDTO> lastVisits = new HashMap<>();
-            for (var visit : visits) {
-                if (visit.getCheckOutTime() != null && employeeMap.containsKey(visit.getEmployeePk())) {
-                    lastVisits.merge(new DayKey(visit.getEmployeePk(), visit.getDate()), visit,
-                            (a, b) -> a.getCheckOutTime().isAfter(b.getCheckOutTime()) ? a : b);
-                }
-            }
-            Map<Long, Map<LocalDate, EmployeeAttendanceRowDTO>> dailyCache = new HashMap<>();
             for (var detail : visits) {
                 Employee employee = employeeMap.get(detail.getEmployeePk());
                 if (employee == null) continue;
@@ -109,17 +99,9 @@ public class AttendanceOverviewService {
                 if (q.getTimetableId() != null && !q.getTimetableId().equals(timetableId)) continue;
                 var row = new AttendanceOverviewRowDTO();
                 BeanUtils.copyProperties(detail, row);
-                if (lastVisits.get(new DayKey(employee.getId(), detail.getDate())) == detail) {
-                    var daily = dailyCache.computeIfAbsent(employee.getId(), id -> attendance
-                            .getEmployeeAttendanceForReport(employee, q.getStart(), q.getEnd(), schedules).stream()
-                            .collect(Collectors.toMap(EmployeeAttendanceRowDTO::getDate, Function.identity())))
-                            .get(detail.getDate());
-                    if (daily != null) row.setOvertimeMinutes(overtime(daily, schedules.apply(employee, detail.getDate())));
-                }
                 setTimetable(row, timetableId, timetableMap);
                 var detailStatuses = new ArrayList<String>();
                 if (row.getStatus() != null) detailStatuses.add(row.getStatus());
-                if (zero(row.getOvertimeMinutes()) > 0) detailStatuses.add("OVERTIME");
                 row.setStatuses(detailStatuses);
                 result.add(row);
             }
@@ -301,8 +283,11 @@ public class AttendanceOverviewService {
         boolean detail = query.getView() == AttendanceReportQuery.View.DETAILS;
         boolean daily = query.getView() == AttendanceReportQuery.View.DAILY;
         List<String> headers = new ArrayList<>(List.of("Dövr", "ID", "Ad soyad", "FIN", "Qrafik", "Ərazi", "Departament", "Vəzifə"));
-        headers.addAll(detail || daily ? List.of("Giriş", "Çıxış", "İş müddəti", "Overtime", "Status")
-                : List.of("İş müddəti", "Overtime", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
+        if (detail || daily) {
+            headers.addAll(List.of("Giriş", "Çıxış", "İş müddəti"));
+            if (daily) headers.add("Overtime");
+            headers.add("Status");
+        } else headers.addAll(List.of("İş müddəti", "Overtime", "Gəldiyi gün", "Gəlmədiyi gün", "Gecikdiyi gün", "Erkən çıxdığı gün", "Məzuniyyət günü", "Çıxışı olmayan gün"));
         if (!detail) headers.addAll(List.of("Gecikmə", "Erkən çıxış", "İcazə"));
         try (Workbook workbook = new XSSFWorkbook(); var output = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("Davamiyyət");
@@ -314,10 +299,11 @@ public class AttendanceOverviewService {
             for (var dto : data) {
                 List<Object> values = new ArrayList<>(Arrays.asList(detail ? dto.getDate() : dto.getPeriod(), dto.getEmployeeId(),
                         dto.getFullName(), dto.getFin(), dto.getTimetableName(), dto.getArea(), dto.getDepartment(), dto.getPosition()));
-                if (detail || daily) values.addAll(Arrays.asList(dateTime(dto.getCheckInTime()), dateTime(dto.getCheckOutTime()),
-                        duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()),
-                        dto.getStatuses().stream().map(AttendanceOverviewService::statusLabel).distinct().collect(Collectors.joining(", "))));
-                else values.addAll(List.of(duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()), dto.getAttendedDays(), dto.getAbsentDays(),
+                if (detail || daily) {
+                    values.addAll(Arrays.asList(dateTime(dto.getCheckInTime()), dateTime(dto.getCheckOutTime()), duration(dto.getWorkedMinutes())));
+                    if (daily) values.add(duration(dto.getOvertimeMinutes()));
+                    values.add(dto.getStatuses().stream().map(AttendanceOverviewService::statusLabel).distinct().collect(Collectors.joining(", ")));
+                } else values.addAll(List.of(duration(dto.getWorkedMinutes()), duration(dto.getOvertimeMinutes()), dto.getAttendedDays(), dto.getAbsentDays(),
                         dto.getLateDays(), dto.getEarlyLeaveDays(), dto.getLeaveDays(), dto.getMissingExitDays()));
                 if (!detail) values.addAll(List.of(duration(dto.getLateMinutes()), duration(dto.getEarlyLeaveMinutes()), duration(dto.getPermissionMinutes())));
                 Row row = sheet.createRow(index++);
