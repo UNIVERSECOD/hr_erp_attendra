@@ -5,11 +5,11 @@
 The user requested a standard-project copy first, followed by MCG work in the current folder. No separate customer Setup was requested.
 
 - Standard source copy: `D:\Attendra-Standard-before-MCG-20261012`, branch `main`, baseline `526b4e26aaf08e44006dedffa1196607a11212fb`.
-- MCG workspace: `D:\hr-erp-back-front`, branch `codex/mcg`.
-- Standard delivery repository (user requested 2026-10-12): `https://github.com/UNIVERSECOD/Attendra-Standard-20261012.git`, branch `main`. The standard copy's `origin` points there; its application baseline remains `526b4e2` with a documentation-only repository-split commit. MCG remains in `hr_erp_attendra` on `codex/mcg`; no merge into its `main` was requested.
+- MCG workspace: `D:\hr-erp-back-front`, delivery branch `main` after explicit user approval on 2026-10-13; development history is retained on `codex/mcg`.
+- Standard delivery repository (user requested 2026-10-12): `https://github.com/UNIVERSECOD/Attendra-Standard-20261012.git`, branch `main`. The standard copy's `origin` points there; its application baseline remains `526b4e2` with a documentation-only repository-split commit. On 2026-10-13 the user separately approved delivering MCG to `hr_erp_attendra`'s `main`; the independent standard repository is untouched.
 - The copy has independent Git objects (`clone --no-hardlinks`), local configuration files and local agent instructions. Its original GitHub remote is preserved as `source`; `origin` is the standard delivery repository above. Configuration hashes and ACLs were checked without printing secrets. Dependencies, build output and runtime data were not copied. Local configuration and untracked agent instructions are not pushed.
 - **The project copy is not a backup of the live database, photos or native installation.** Existing customer data remains in its original storage.
-- Do not merge the customer-specific policy into general `main` without approval. The copies still have the same Docker container names and native installer identity; do not start both with the ordinary Compose/Setup workflow as if parallel installations were supported.
+- Main-merge approval for `hr_erp_attendra` was explicitly given on 2026-10-13; this does not authorize MCG changes in the separate standard repository or deployment to running installations. The copies still have the same Docker container names and native installer identity; do not start both with the ordinary Compose/Setup workflow as if parallel installations were supported.
 
 ## Confirmed business rules
 

@@ -1,5 +1,11 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-13 — Approved MCG delivery to main
+
+- The user explicitly approved `main` delivery in `hr_erp_attendra`. Fast-forwarded `main` from `526b4e2` to the verified MCG application commit `47ba40d`; this delivery follow-up changes only handoff documentation. Earlier `codex/mcg`-only delivery restrictions are superseded.
+- The independent `Attendra-Standard-20261012` repository and standard source copy are untouched. No running installation, database, photo, configuration or device changes are part of this delivery.
+- The application tree is unchanged from the verification below: 503 backend tests, 11 frontend tests, Maven/frontend builds, separate Docker image builds and Compose configuration passed. These checks are not rerun for documentation-only delivery. Browser/hardware/customer deployment acceptance remains outside this push.
+
 ## 2026-10-13 — Daily-only badges, default daily view and yesterday shortcut
 
 - User restricted combined completed/missing-exit badges to DAILY. Removed the employee-attendance DTO/UI extension; the day-only projection stays in the overview, outside its early-return DETAILS path. Each detail visit retains its own entry, exit, worked minutes and one status, also in Excel. Monthly/yearly aggregation remains unchanged.
