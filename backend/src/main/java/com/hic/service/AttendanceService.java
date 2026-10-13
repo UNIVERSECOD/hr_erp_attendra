@@ -223,6 +223,7 @@ public class AttendanceService {
             row.setNotes(buildNotes(approvedLeaves, approvedPermissions, currentDate));
             row.setShiftType(daySchedule.shiftType());
             row.setSessions(toSessionDtos(attendanceInferenceService.inferDay(logs, currentDate).segments()));
+            row.setStatuses(AttendanceDisplayStatus.forDay(row, inference));
             rows.add(row);
         }
 

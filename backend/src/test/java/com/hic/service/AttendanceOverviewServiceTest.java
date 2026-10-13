@@ -79,8 +79,9 @@ class AttendanceOverviewServiceTest {
         var completed = day(today.minusDays(1), 9.5, 0, 0, "PRESENT");
         completed.setCheckOutTime(today.minusDays(1).atTime(19, 0).atOffset(ZoneOffset.ofHours(4)));
         recordedVisits(source(today.minusDays(1), "09:30", "19:00"));
-        // A later open re-entry can coexist with the earlier visit's checkout on the daily row.
+        // An open-only day remains live; mixed closed/open days have a separate regression below.
         var inside = day(today, 4, 5, 0, "OPEN_SESSION");
+        inside.setCheckOutTime(null);
         when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any()))
                 .thenReturn(List.of(pastOpen, completed, inside));
         var rows = service.report(query).getContent();
@@ -511,6 +512,53 @@ class AttendanceOverviewServiceTest {
         var row = service.report(query).getContent().get(0);
         assertThat(row.getOvertimeMinutes()).isZero();
         assertThat(row.getWorkedMinutes()).isEqualTo(720);
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.CsvSource({"0,false", "1,false", "0,true", "1,true"})
+    void completedVisitsAndOpenReentryKeepHoursAndBothBadges(int daysAgo, boolean onLeave) throws Exception {
+        var date = com.hic.util.AppTimeZone.today().minusDays(daysAgo);
+        query.setStart(date); query.setEnd(date);
+        var visits = List.of(source(date, "09:00", "12:00"), source(date, "14:00", "16:00"),
+                source(date, "17:00", null));
+        recordedVisits(visits.toArray(AttendanceLog[]::new));
+        when(logs.findByTenantIdAndEmployeeIdAndCheckInTimeBetween(eq(7L), eq(1L), any(), any())).thenReturn(visits);
+        var leaves = mock(LeaveRequestRepository.class);
+        if (onLeave) {
+            var leave = new LeaveRequest(); leave.setStartDate(date); leave.setEndDate(date);
+            leave.setStatus(LeaveRequest.LeaveStatus.APPROVED);
+            when(leaves.findApprovedByTenantAndEmployeeIdAndDateRange(eq(7L), eq(1L), any(), any()))
+                    .thenReturn(List.of(leave));
+        }
+        var realAttendance = new AttendanceService(logs, mock(DailyAttendanceSummaryRepository.class), employees,
+                leaves, mock(EmployeePermissionRepository.class), userScope, inferenceService, scheduleResolver,
+                new AttendanceTimeCalculator(), new AttendancePermissionCalculator());
+        var schedules = scheduleResolver.forReport(7L, List.of(employee), date, date);
+        var daily = realAttendance.getEmployeeAttendanceForReport(employee, date, date, schedules);
+        assertThat(daily.get(0).getHoursWorked()).isEqualTo(5.0); // 3h + 2h, no gap or open-visit time.
+        assertThat(daily.get(0).getStatuses()).contains(DailyAttendanceSummary.AttendanceStatus.PRESENT,
+                DailyAttendanceSummary.AttendanceStatus.MISSING_EXIT)
+                .doesNotContain(DailyAttendanceSummary.AttendanceStatus.OPEN_SESSION);
+        var mcg = new McgTabelCalculator(inferenceService, new AttendanceTimeCalculator(), new AttendancePermissionCalculator())
+                .calculate(date, visits, schedules.apply(employee, date), List.of(), d -> schedules.apply(employee, d));
+        assertThat(mcg.workedMinutes()).isEqualTo(300);
+        assertThat(mcg.fullDay()).isFalse();
+        when(attendance.getEmployeeAttendanceForReport(eq(employee), any(), any(), any())).thenReturn(daily);
+        var row = service.report(query).getContent().get(0);
+        assertThat(row.getWorkedMinutes()).isEqualTo(300);
+        assertThat(row.getStatuses()).contains("PRESENT", "MISSING_EXIT").doesNotContain("OPEN_SESSION");
+        assertThat(row.getMissingExitDays()).isEqualTo(1);
+        if (onLeave) assertThat(row.getStatuses()).contains("ON_LEAVE");
+        for (var filter : List.of("WORKDAY_COMPLETE", "MISSING_EXIT")) {
+            query.setStatus(filter);
+            assertThat(service.report(query).getTotalElements()).isEqualTo(1);
+            try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+                assertThat(workbook.getSheetAt(0).getRow(1).getCell(12).getStringCellValue())
+                        .contains("İşdə olub", "Çıxış yoxdur");
+            }
+        }
+        verify(logs, never()).save(any());
+        verify(attendance, never()).generateDailySummary(any(), any());
     }
 
     private void recordedVisits(AttendanceLog... visits) {

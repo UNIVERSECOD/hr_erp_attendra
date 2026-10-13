@@ -170,6 +170,7 @@ export interface AttendanceSession {
 }
 
 export interface EmployeeAttendanceRow {
+  statuses?: EmployeeAttendanceRow['status'][]
   date: string
   checkInTime?: string
   checkOutTime?: string

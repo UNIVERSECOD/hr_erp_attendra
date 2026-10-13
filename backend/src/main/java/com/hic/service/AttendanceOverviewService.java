@@ -149,17 +149,21 @@ public class AttendanceOverviewService {
                 row.setShiftType(daily.getShiftType());
                 setTimetable(row, schedule.timetableId(), timetableMap);
                 String status = reportStatus(daily.getStatus().name(), daily.getDate(), daily.getCheckInTime());
+                var displayStatuses = daily.getStatuses().isEmpty()
+                        ? AttendanceDisplayStatus.forDay(daily, inferenceService.inferDay(
+                                AttendanceDayAllocation.forDay(dayLogs, daily.getDate(),
+                                        d -> schedules.apply(employee, d).shiftType()), daily.getDate()))
+                        : daily.getStatuses();
+                if (status.equals("OPEN_SESSION") && displayStatuses.contains(DailyAttendanceSummary.AttendanceStatus.PRESENT)
+                        && displayStatuses.contains(DailyAttendanceSummary.AttendanceStatus.MISSING_EXIT)) status = "MISSING_EXIT";
                 if (status.equals("ABSENT") && daily.getDate().equals(AppTimeZone.today())
                         && schedule.startTime() != null && AppTimeZone.now().toLocalTime().isBefore(schedule.startTime())) {
                     status = "NOT_STARTED";
                 }
                 row.setStatus(status);
                 var statuses = new LinkedHashSet<String>();
-                // Attendance and its exceptions are independent badges; permission must not hide a completed visit.
-                if (row.getCheckInTime() != null && row.getCheckOutTime() != null
-                        && !row.getCheckOutTime().isBefore(row.getCheckInTime())
-                        && !status.equals("OPEN_SESSION") && !status.equals("MISSING_EXIT")
-                        && !status.equals("WORKDAY_COMPLETE")) statuses.add("PRESENT");
+                displayStatuses.stream().map(Enum::name).forEach(statuses::add);
+                if (status.equals("NOT_STARTED")) statuses.remove("ABSENT");
                 statuses.add(status);
                 if (row.getLateMinutes() > 0) statuses.add("LATE");
                 if (row.getEarlyLeaveMinutes() > 0) statuses.add("EARLY_LEAVE");
@@ -171,7 +175,7 @@ public class AttendanceOverviewService {
                 row.setLateDays(row.getLateMinutes() > 0 ? 1 : 0);
                 row.setEarlyLeaveDays(row.getEarlyLeaveMinutes() > 0 ? 1 : 0);
                 row.setLeaveDays(status.equals("ON_LEAVE") ? 1 : 0);
-                row.setMissingExitDays(status.equals("MISSING_EXIT") || status.equals("OPEN_SESSION") ? 1 : 0);
+                row.setMissingExitDays(statuses.contains("MISSING_EXIT") || statuses.contains("OPEN_SESSION") ? 1 : 0);
                 if (q.getView() != AttendanceReportQuery.View.DAILY || matchesStatus(row, q.getStatus())) result.add(row);
             }
         }

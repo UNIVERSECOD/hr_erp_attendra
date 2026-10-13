@@ -1,5 +1,12 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-13 — Completed visits plus missing re-entry exit
+
+- User clarified that earlier completed visits must retain their counted time when a later entry has no exit, with **İşdə olub + Çıxış yoxdur** together. For example, 09:00–12:00, 14:00–16:00, 17:00–open counts 5 hours before existing deductions, not the gap or the open interval.
+- Shared display-only status projection feeds employee attendance and daily overview. Both filters and daily Excel retain the row; leave/permission labels coexist. Open-only current days remain İşdə. Source evidence uses existing day allocation and inference; archived summaries fall back to their timestamps/status.
+- No time-calculation, permission, tolerance, OT, migration, device-write or stored-status changes. Existing toasts remain; this read-only rendering change adds no operation requiring a new toast. Standard main/copy and running installations remain untouched.
+- Regression covers today/past dates, with/without approved leave, actual employee calculation, MCG minutes/no full-day marker, both filters, Excel and no persistence writes. **107 focused tests and 501 full backend tests passed**, zero failures/errors/skips; Maven package, frontend lint/build, both separately tagged Docker builds and Compose configuration passed. No running-container/native/customer deployment, browser visual acceptance or physical-device verification was performed; ISAPI code is unchanged and its separate suite was not rerun. Evidence stays ignored under `build/audit/pull-review-20261013/`.
+
 ## 2026-10-13 — Calculation audit, report overtime alignment and presence labels
 
 - User requested `Tamamlandı` -> **İşdə olub** and **İşdə** only for an unclosed visit on the current Asia/Baku calendar date. Report and employee-attendance display now use that distinction; previous-day unclosed visits show **Çıxış yoxdur**. Device session expiry/pairing and stored statuses are unchanged. A later screenshot exposed that permission as the primary status hid completed presence: closed daily visits now also show **İşdə olub** beside permission, overtime, late/early badges. Permission alone without entry/exit does not imply attendance. UI, Excel and the completed-presence filter share these badges.

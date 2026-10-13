@@ -67,11 +67,12 @@ const statusLabels: Record<EmployeeAttendanceRow['status'], string> = {
   PERMITTED_EARLY_LEAVE: 'İcazəli erkən çıxış',
 }
 
-function displayStatus(row: EmployeeAttendanceRow): EmployeeAttendanceRow['status'] {
+function displayStatuses(row: EmployeeAttendanceRow): EmployeeAttendanceRow['status'][] {
+  if (row.statuses?.length) return row.statuses
   if (row.status === 'OPEN_SESSION' || row.status === 'MISSING_EXIT') {
-    return row.checkInTime && row.date === todayInAppTimeZone() ? 'OPEN_SESSION' : 'MISSING_EXIT'
+    return [row.checkInTime && row.date === todayInAppTimeZone() ? 'OPEN_SESSION' : 'MISSING_EXIT']
   }
-  return row.status
+  return [row.status]
 }
 
 function formatEmployeeLabel(employee: EmployeeSearchResult) {
@@ -556,9 +557,11 @@ export default function AttendancePage() {
                             {row.earlyLeaveMinutes ? `${row.earlyLeaveMinutes} dəq.` : '—'}
                           </td>
                           <td className="px-5 py-4">
-                            <span className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[displayStatus(row)]}`}>
-                              {statusLabels[displayStatus(row)]}
-                            </span>
+                            <div className="flex flex-wrap gap-1">
+                              {displayStatuses(row).map(status => <span key={status} className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[status]}`}>
+                                {statusLabels[status]}
+                              </span>)}
+                            </div>
                           </td>
                           <td className="px-5 py-4 text-slate-500">{row.notes || '—'}</td>
                         </tr>
