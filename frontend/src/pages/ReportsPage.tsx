@@ -9,13 +9,14 @@ import { reportDateError, useAttendanceReportStore } from '../store/attendanceRe
 import { toast } from '../store/toastStore.ts'
 import { AttendanceOverviewFilters, AttendanceOverviewRow, AttendanceReportView, AttendanceReportSortField, Position, Department, Branch, Timetable } from '../types'
 import { formatAttendanceDateTime, formatAttendanceTime, todayInAppTimeZone } from '../utils/dateTime.ts'
-import { attendanceReportDatePresets, defaultAttendanceReportFilters } from '../utils/attendanceReportFilters.ts'
+import { attendanceReportDatePresets, attendanceReportMonths, attendanceReportPeriodRange,
+  attendanceReportViewRange, defaultAttendanceReportFilters } from '../utils/attendanceReportFilters.ts'
 
 const sections: { value: AttendanceReportView; label: string; description: string }[] = [
   { value: 'DAILY', label: 'Gündəlik', description: 'Hər əməkdaş üçün günün yekunu, gecikmə və erkən çıxış. Hər iki hal olduqda hər iki status göstərilir.' },
   { value: 'DETAILS', label: 'Giriş–çıxış detalları', description: 'Hər giriş–çıxış cütü ayrıca sətirdədir. Çıxışsız təkrar girişdə son giriş saatı göstərilir.' },
-  { value: 'MONTHLY', label: 'Aylıq', description: 'Hər əməkdaşın aylar üzrə davamiyyəti və iş müddəti. Yalnız seçilmiş tarix aralığındakı günlər toplanır.' },
-  { value: 'YEARLY', label: 'İllik', description: 'Hər əməkdaşın il üzrə yekunu. Yalnız seçilmiş tarix aralığındakı günlər toplanır.' },
+  { value: 'MONTHLY', label: 'Aylıq', description: 'Hər əməkdaşın seçilmiş təqvim ayı üzrə davamiyyəti və iş müddəti.' },
+  { value: 'YEARLY', label: 'İllik', description: 'Hər əməkdaşın seçilmiş təqvim ili üzrə yekunu.' },
 ]
 const statusLabels: Record<string, string> = {
   LATE: 'Gecikib', EARLY_LEAVE: 'Erkən çıxıb', ABSENT: 'Gəlməyib', ON_LEAVE: 'Məzuniyyət',
@@ -102,6 +103,37 @@ function Field({ name, label, children }: { name: string; label: string; childre
   return <div className="min-w-0"><label htmlFor={name} className="mb-1 block text-xs font-medium text-gray-600">{label}</label>{children}</div>
 }
 
+function PeriodFields({ view, start, onChange }: {
+  view: 'MONTHLY' | 'YEARLY'; start: string
+  onChange: (dates: Pick<AttendanceOverviewFilters, 'start' | 'end'>) => void
+}) {
+  const [year, setYear] = useState(start.slice(0, 4))
+  const [month, setMonth] = useState(start.slice(5, 7))
+  const invalid = !attendanceReportPeriodRange(view, year, month).start
+  return <>
+    {view === 'MONTHLY' && <Field name="report-month" label="Ay">
+      <select id="report-month" value={month} className={inputClass} onChange={e => {
+        setMonth(e.target.value)
+        onChange(attendanceReportPeriodRange(view, year, e.target.value))
+      }}>{attendanceReportMonths.map((label, index) => {
+        const value = String(index + 1).padStart(2, '0')
+        return <option key={value} value={value}>{label}</option>
+      })}</select>
+    </Field>}
+    <Field name="report-year" label="İl">
+      <input id="report-year" type="number" min="1" max="9999" step="1" list="report-year-options" value={year}
+        className={inputClass} aria-invalid={invalid} aria-describedby={invalid ? 'report-year-error' : undefined}
+        onChange={e => {
+          setYear(e.target.value)
+          onChange(attendanceReportPeriodRange(view, e.target.value, month))
+        }} />
+      <datalist id="report-year-options">{Array.from({ length: 6 }, (_, i) => Number(todayInAppTimeZone().slice(0, 4)) + 1 - i)
+        .map(value => <option key={value} value={value} />)}</datalist>
+      {invalid && <p id="report-year-error" role="alert" className="mt-1 text-xs text-red-600">İli 4 rəqəmlə daxil edin (0001–9999).</p>}
+    </Field>
+  </>
+}
+
 export default function ReportsPage() {
   const { rows, filters, page, totalPages, loading, error, totalElements, setFilters, setPage, fetchReport } = useAttendanceReportStore()
   const [positions, setPositions] = useState<Position[]>([])
@@ -139,10 +171,12 @@ export default function ReportsPage() {
   const nextSortDirection = (field: AttendanceReportSortField) => filters.sortBy === field
     ? filters.sortDirection === 'asc' ? 'desc' : 'asc' : descendingFirst.has(field) ? 'desc' : 'asc'
   const changeView = (view: AttendanceReportView) => {
+    if (view === filters.view) return
     const hideSort = ((view === 'MONTHLY' || view === 'YEARLY')
       && ['status', 'checkInTime', 'checkOutTime'].includes(filters.sortBy ?? ''))
       || (view === 'DETAILS' && filters.sortBy === 'overtimeMinutes')
-    update({ view, status: undefined, ...(hideSort ? { sortBy: undefined, sortDirection: undefined } : {}) })
+    update({ view, ...attendanceReportViewRange(view, filters), status: undefined,
+      ...(hideSort ? { sortBy: undefined, sortDirection: undefined } : {}) })
   }
   const visibleDepartments = departments.filter(d => !filters.areaId || d.allAreas || d.branchId === filters.areaId)
   const visiblePositions = positions.filter(p => filters.departmentId ? p.departmentId === filters.departmentId
@@ -213,19 +247,22 @@ export default function ReportsPage() {
       </div>
       <div className="bg-white rounded-xl shadow-sm p-4 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs font-medium text-gray-500 mr-1">Müddət aralığı</span>
-          {attendanceReportDatePresets().map(preset =>
+          <span className="text-xs font-medium text-gray-500 mr-1">{aggregate ? filters.view === 'MONTHLY' ? 'Hesabat ayı' : 'Hesabat ili' : 'Müddət aralığı'}</span>
+          {!aggregate && attendanceReportDatePresets().map(preset =>
             <button key={preset.label} onClick={() => update({ start: preset.start, end: preset.end })}
               className="px-3 py-1 text-xs rounded-full border border-gray-200 text-gray-600 hover:border-purple-300 hover:text-purple-700">{preset.label}</button>)}
           <button className="ml-auto text-xs text-purple-700 hover:underline" onClick={() => setFilters({ view: filters.view,
             start: filters.start, end: filters.end })}>Filtrləri təmizlə</button>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          {aggregate ? <PeriodFields key={filters.view} view={filters.view === 'MONTHLY' ? 'MONTHLY' : 'YEARLY'}
+            start={filters.start} onChange={update} /> : <>
           <Field name="report-start" label="Başlanğıc tarixi"><input id="report-start" type="date" value={filters.start}
             onChange={e => update({ start: e.target.value })} className={inputClass} aria-invalid={!!dateError} /></Field>
           <Field name="report-end" label="Bitmə tarixi"><input id="report-end" type="date" value={filters.end}
             onChange={e => update({ end: e.target.value })} className={inputClass} aria-invalid={!!dateError} />
             {dateError && <p role="alert" className="mt-1 text-xs text-red-600">{dateError}</p>}</Field>
+          </>}
           <Field name="report-name" label="Ad soyad"><input id="report-name" placeholder="Ad və ya soyad" value={filters.name ?? ''}
             onChange={e => update({ name: e.target.value })} className={inputClass} /></Field>
           <Field name="report-fin" label="FIN"><input id="report-fin" placeholder="FIN axtar" value={filters.fin ?? ''}

@@ -1,5 +1,13 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-13 — Month/year-specific report period controls
+
+- MONTHLY uses all twelve Azerbaijani month names and a year field with recent-year suggestions; YEARLY uses only the year field. Any valid four-digit year remains enterable, not only suggested years. Generic day shortcuts and partial-day date inputs are hidden in both summary tabs and remain unchanged in DAILY/DETAILS.
+- Opening a summary tab expands the selected start date to its full calendar month/year; empty dates use Asia/Baku today. Month lengths and Gregorian leap years are handled without host-time-zone dependence. The same filter dates feed report and Excel; future summary days remain excluded by the existing backend. Invalid/incomplete years show inline feedback and clear request dates so fetch/export cannot use stale periods.
+- No backend, ISAPI, migration, calculation, data or device changes. Existing load/export/session toasts and pagination reset behavior remain intact. Standard repository and running installations are untouched by this follow-up.
+- Verification: 32 focused and 36 total frontend tests passed, including static React rendering of all four report views, leap/century-year boundaries, summary-tab range normalization and unchanged daily/detail shortcuts. Lint, production build, a separately tagged frontend Docker image and Compose configuration passed. Backend/ISAPI suites and real-browser/hardware acceptance were not rerun for this frontend-only change; running containers were not recreated.
+- Other-computer update remains paused by the user after the power outage: source is at `7a11a13`, backups were reported copied, but containers were not rebuilt. Resume by checking current Git/container/volume state and backup freshness; pull the new follow-up before that eventual deployment.
+
 ## 2026-10-13 — Approved MCG delivery to main
 
 - The user explicitly approved `main` delivery in `hr_erp_attendra`. Fast-forwarded `main` from `526b4e2` to the verified MCG application commit `47ba40d`; this delivery follow-up changes only handoff documentation. Earlier `codex/mcg`-only delivery restrictions are superseded.

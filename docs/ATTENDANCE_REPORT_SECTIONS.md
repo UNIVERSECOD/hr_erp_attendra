@@ -8,9 +8,10 @@ Implemented on `codex/attendance-report-sections`, based on `d287e60`. The user 
 - Sorting is validated and applied server-side after filters/aggregation but before pagination; Excel uses the identical sorted result. Ties use date/employee/entry/log identifiers. No sort parameter preserves the previous default order. Switching to a summary tab clears sorting on hidden status/entry/exit columns; changing sort resets to page one.
 - **Giriş–çıxış detalları** retains the existing separate-visit projection, latest repeated entry, manual correction and frozen area behavior.
 - **Gündəlik** shows one employee-day with calculated hours, late/early minutes, permission minutes and status badges. Lateness and early leave are independent: a day can match both filters. A combined filter selects days with both conditions.
-- **Aylıq** groups the filtered employee-days by employee/month.
-- **İllik** groups the filtered employee-days by employee/year.
-- Shared filters: start/end dates, Azerbaijani case-insensitive name, FIN, actual timetable, area, department and position IDs. Area changes clear department/position; department changes clear position. Changing view clears the daily-only status filter.
+- **Aylıq** groups the filtered employee-days by employee/month. The UI selects one full calendar month using Azerbaijani month names plus a year field.
+- **İllik** groups the filtered employee-days by employee/year. The UI selects one full calendar year, including all 366 days in a leap year.
+- DAILY/DETAILS retain start/end day inputs and Bu gün / Dünən / Bu ay / Bu il shortcuts. MONTHLY/YEARLY hide those controls and send full-period start/end dates to the same API and Excel endpoint. Switching to a summary tab expands the selected start date to that month/year; invalid year edits show field-level feedback and block fetch/export.
+- Shared filters: Azerbaijani case-insensitive name, FIN, actual timetable, area, department and position IDs. Area changes clear department/position; department changes clear position. Changing view clears the daily-only status filter.
 - Table pagination happens after filtering/aggregation. Excel uses the same complete result set, independent of the current page.
 - Requests support up to 366 calendar days inclusive, enough for a leap year; future summary dates and dates before hire are excluded. Without a historical termination date in the schema, terminated staff contribute recorded days only, not fabricated absences.
 
