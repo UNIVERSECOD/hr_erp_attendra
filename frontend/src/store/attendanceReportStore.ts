@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { attendanceApi } from '../api/attendanceApi.ts'
 import { AttendanceOverviewFilters, AttendanceOverviewRow } from '../types'
-import { monthStartInAppTimeZone, todayInAppTimeZone } from '../utils/dateTime.ts'
+import { defaultAttendanceReportFilters } from '../utils/attendanceReportFilters.ts'
 import { toast } from './toastStore.ts'
 
 interface AttendanceReportState {
@@ -28,7 +28,7 @@ export function reportDateError(filters: AttendanceOverviewFilters) {
 let requestId = 0
 export const useAttendanceReportStore = create<AttendanceReportState>((set, get) => ({
   rows: [],
-  filters: { view: 'DETAILS', start: monthStartInAppTimeZone(), end: todayInAppTimeZone() },
+  filters: defaultAttendanceReportFilters(),
   page: 0, size: 20, totalElements: 0, totalPages: 0, loading: false, error: null,
   setFilters: (filters) => {
     requestId++

@@ -8,11 +8,12 @@ import { timetableApi } from '../api/timetableApi.ts'
 import { reportDateError, useAttendanceReportStore } from '../store/attendanceReportStore.ts'
 import { toast } from '../store/toastStore.ts'
 import { AttendanceOverviewFilters, AttendanceOverviewRow, AttendanceReportView, AttendanceReportSortField, Position, Department, Branch, Timetable } from '../types'
-import { formatAttendanceDateTime, formatAttendanceTime, monthStartInAppTimeZone, todayInAppTimeZone } from '../utils/dateTime.ts'
+import { formatAttendanceDateTime, formatAttendanceTime, todayInAppTimeZone } from '../utils/dateTime.ts'
+import { attendanceReportDatePresets, defaultAttendanceReportFilters } from '../utils/attendanceReportFilters.ts'
 
 const sections: { value: AttendanceReportView; label: string; description: string }[] = [
-  { value: 'DETAILS', label: 'Giriş–çıxış detalları', description: 'Hər giriş–çıxış cütü ayrıca sətirdədir. Çıxışsız təkrar girişdə son giriş saatı göstərilir.' },
   { value: 'DAILY', label: 'Gündəlik', description: 'Hər əməkdaş üçün günün yekunu, gecikmə və erkən çıxış. Hər iki hal olduqda hər iki status göstərilir.' },
+  { value: 'DETAILS', label: 'Giriş–çıxış detalları', description: 'Hər giriş–çıxış cütü ayrıca sətirdədir. Çıxışsız təkrar girişdə son giriş saatı göstərilir.' },
   { value: 'MONTHLY', label: 'Aylıq', description: 'Hər əməkdaşın aylar üzrə davamiyyəti və iş müddəti. Yalnız seçilmiş tarix aralığındakı günlər toplanır.' },
   { value: 'YEARLY', label: 'İllik', description: 'Hər əməkdaşın il üzrə yekunu. Yalnız seçilmiş tarix aralığındakı günlər toplanır.' },
 ]
@@ -114,6 +115,10 @@ export default function ReportsPage() {
   const aggregate = !detail && !daily
 
   useEffect(() => {
+    setFilters(defaultAttendanceReportFilters())
+  }, [setFilters])
+
+  useEffect(() => {
     const timer = window.setTimeout(() => { void fetchReport() }, 250)
     return () => window.clearTimeout(timer)
   }, [filters, page, fetchReport])
@@ -209,9 +214,8 @@ export default function ReportsPage() {
       <div className="bg-white rounded-xl shadow-sm p-4 space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <span className="text-xs font-medium text-gray-500 mr-1">Müddət aralığı</span>
-          {[{ label: 'Bu gün', start: todayInAppTimeZone() }, { label: 'Bu ay', start: monthStartInAppTimeZone() },
-            { label: 'Bu il', start: `${todayInAppTimeZone().slice(0, 4)}-01-01` }].map(preset =>
-            <button key={preset.label} onClick={() => update({ start: preset.start, end: todayInAppTimeZone() })}
+          {attendanceReportDatePresets().map(preset =>
+            <button key={preset.label} onClick={() => update({ start: preset.start, end: preset.end })}
               className="px-3 py-1 text-xs rounded-full border border-gray-200 text-gray-600 hover:border-purple-300 hover:text-purple-700">{preset.label}</button>)}
           <button className="ml-auto text-xs text-purple-700 hover:underline" onClick={() => setFilters({ view: filters.view,
             start: filters.start, end: filters.end })}>Filtrləri təmizlə</button>

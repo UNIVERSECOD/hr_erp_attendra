@@ -149,11 +149,10 @@ public class AttendanceOverviewService {
                 row.setShiftType(daily.getShiftType());
                 setTimetable(row, schedule.timetableId(), timetableMap);
                 String status = reportStatus(daily.getStatus().name(), daily.getDate(), daily.getCheckInTime());
-                var displayStatuses = daily.getStatuses().isEmpty()
-                        ? AttendanceDisplayStatus.forDay(daily, inferenceService.inferDay(
-                                AttendanceDayAllocation.forDay(dayLogs, daily.getDate(),
-                                        d -> schedules.apply(employee, d).shiftType()), daily.getDate()))
-                        : daily.getStatuses();
+                // Day-level badges never flow into the per-visit DETAILS path above.
+                var displayStatuses = AttendanceDisplayStatus.forDay(daily, inferenceService.inferDay(
+                        AttendanceDayAllocation.forDay(dayLogs, daily.getDate(),
+                                d -> schedules.apply(employee, d).shiftType()), daily.getDate()));
                 if (status.equals("OPEN_SESSION") && displayStatuses.contains(DailyAttendanceSummary.AttendanceStatus.PRESENT)
                         && displayStatuses.contains(DailyAttendanceSummary.AttendanceStatus.MISSING_EXIT)) status = "MISSING_EXIT";
                 if (status.equals("ABSENT") && daily.getDate().equals(AppTimeZone.today())

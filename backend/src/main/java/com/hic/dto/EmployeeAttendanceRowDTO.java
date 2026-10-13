@@ -20,8 +20,6 @@ public class EmployeeAttendanceRowDTO {
     private Integer creditedPermissionMinutes;
     private Boolean hasPermission;
     private AttendanceStatus status;
-    /** Display-only badges; the stored/primary status and calculated minutes remain unchanged. */
-    private List<AttendanceStatus> statuses = new ArrayList<>();
     private String notes;
     /** Employee shift type (e.g. FIRST_ENTRY = serbest növbə). */
     private String shiftType;

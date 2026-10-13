@@ -25,7 +25,7 @@ The user clarified that a full day follows **that date's assigned hours and entr
 | Approved non-deductible permission fills a missing part of the shift | May complete `1`; overlapping credits are counted once |
 | Deductible permission | Removes counted time; work outside the shift cannot buy back a full-day marker |
 | Latest visit has no exit | No full-day marker; show counted duration and explain missing exit in the screen tooltip |
-| Completed visits followed by an unclosed re-entry | Keep only completed-interval time (existing deductions apply); attendance UI/report/Excel show both `İşdə olub` and `Çıxış yoxdur`, including today. No full-day marker is inferred. |
+| Completed visits followed by an unclosed re-entry | Keep only completed-interval time (existing deductions apply); only the DAILY report/Excel shows both `İşdə olub` and `Çıxış yoxdur`, including today. DETAILS keeps each visit separate. No full-day marker is inferred. |
 | FLEXIBLE/FIRST_ENTRY | Existing calendar-day hourly allocation; no fixed daily norm, no day marker/OT |
 | No valid assigned schedule | Hours only; do not infer a day or OT from fallback 09:00–17:00 |
 | Only historical summary remains, without sufficient source evidence | Show archived duration in black; warning toast/tooltip disclose missing evidence, with no invented day or OT |

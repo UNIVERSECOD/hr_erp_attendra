@@ -6,7 +6,7 @@ import com.hic.util.AppTimeZone;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-/** Read-only badges: completed work and a later missing exit can coexist. */
+/** Daily-report-only badges: completed work and a later missing exit can coexist. */
 final class AttendanceDisplayStatus {
     private AttendanceDisplayStatus() {}
 

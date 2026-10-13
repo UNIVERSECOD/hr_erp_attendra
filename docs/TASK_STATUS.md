@@ -1,5 +1,12 @@
 # Attendra task ledger / AI handoff
 
+## 2026-10-13 — Daily-only badges, default daily view and yesterday shortcut
+
+- User restricted combined completed/missing-exit badges to DAILY. Removed the employee-attendance DTO/UI extension; the day-only projection stays in the overview, outside its early-return DETAILS path. Each detail visit retains its own entry, exit, worked minutes and one status, also in Excel. Monthly/yearly aggregation remains unchanged.
+- Gündəlik is the first tab. Opening/reopening Reports resets to DAILY and today's Asia/Baku date; normal tab/date/filter changes work while the page is open. Added Dünən next to Bu gün, with start=end=yesterday, including month/year/leap-day boundaries. Bu ay/Bu il retain their existing ranges.
+- No change to hours, permission, tolerance, overtime, stored statuses, source sessions, migrations or physical devices. Error/export/session toasts stay intact. Standard main/copy and running installations remain separate.
+- Verification: **64 focused / 503 full backend tests**, zero failures/errors/skips, Maven package, **11 frontend tests**, lint/build, both separately tagged Docker image builds and Compose configuration passed. Regressions cover per-visit detail/Excel isolation on current/past dates and frontend default/yesterday date presets. Browser visual acceptance, customer/native/container deployment and physical-device tests were not performed; ISAPI is unchanged and its separate suite was not rerun. Evidence stays ignored under `build/audit/pull-review-20261013/daily-default-*`.
+
 ## 2026-10-13 — Completed visits plus missing re-entry exit
 
 - User clarified that earlier completed visits must retain their counted time when a later entry has no exit, with **İşdə olub + Çıxış yoxdur** together. For example, 09:00–12:00, 14:00–16:00, 17:00–open counts 5 hours before existing deductions, not the gap or the open interval.

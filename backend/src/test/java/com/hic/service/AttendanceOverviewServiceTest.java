@@ -536,9 +536,6 @@ class AttendanceOverviewServiceTest {
         var schedules = scheduleResolver.forReport(7L, List.of(employee), date, date);
         var daily = realAttendance.getEmployeeAttendanceForReport(employee, date, date, schedules);
         assertThat(daily.get(0).getHoursWorked()).isEqualTo(5.0); // 3h + 2h, no gap or open-visit time.
-        assertThat(daily.get(0).getStatuses()).contains(DailyAttendanceSummary.AttendanceStatus.PRESENT,
-                DailyAttendanceSummary.AttendanceStatus.MISSING_EXIT)
-                .doesNotContain(DailyAttendanceSummary.AttendanceStatus.OPEN_SESSION);
         var mcg = new McgTabelCalculator(inferenceService, new AttendanceTimeCalculator(), new AttendancePermissionCalculator())
                 .calculate(date, visits, schedules.apply(employee, date), List.of(), d -> schedules.apply(employee, d));
         assertThat(mcg.workedMinutes()).isEqualTo(300);
@@ -559,6 +556,35 @@ class AttendanceOverviewServiceTest {
         }
         verify(logs, never()).save(any());
         verify(attendance, never()).generateDailySummary(any(), any());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(ints = {0, 1})
+    void detailsKeepEachVisitOwnMinutesAndStatusInsteadOfDailyBadges(int daysAgo) throws Exception {
+        start = com.hic.util.AppTimeZone.today().minusDays(daysAgo);
+        query.setStart(start); query.setEnd(start); query.setView(AttendanceReportQuery.View.DETAILS);
+        var first = visit(1L, 9, 12); first.setStatus("CLOSED"); first.setWorkedMinutes(180);
+        var second = visit(2L, 14, 16); second.setStatus("CLOSED"); second.setWorkedMinutes(120);
+        var open = visit(3L, 17, null); open.setStatus("OPEN"); open.setWorkedMinutes(0);
+        when(details.getReport(start, start, null, null, null, null, null, null, null, 0, Integer.MAX_VALUE))
+                .thenReturn(PaginatedResponse.of(List.of(first, second, open), 3, 1, 0, Integer.MAX_VALUE));
+        var rows = service.report(query).getContent();
+        assertThat(rows).extracting(AttendanceOverviewRowDTO::getWorkedMinutes).containsExactly(180, 120, 0);
+        assertThat(rows.get(0).getStatuses()).containsExactly("CLOSED");
+        assertThat(rows.get(1).getStatuses()).containsExactly("CLOSED");
+        assertThat(rows.get(2).getStatuses()).containsExactly(daysAgo == 0 ? "OPEN_SESSION" : "MISSING_EXIT");
+        assertThat(rows.get(2).getCheckOutTime()).isNull();
+        try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(service.export(query)))) {
+            var sheet = workbook.getSheetAt(0);
+            assertThat(sheet.getLastRowNum()).isEqualTo(3);
+            assertThat(sheet.getRow(1).getCell(10).getStringCellValue()).isEqualTo("3 saat 0 dəqiqə");
+            assertThat(sheet.getRow(2).getCell(10).getStringCellValue()).isEqualTo("2 saat 0 dəqiqə");
+            assertThat(sheet.getRow(3).getCell(10).getStringCellValue()).isEqualTo("0 saat 0 dəqiqə");
+            assertThat(sheet.getRow(1).getCell(11).getStringCellValue()).isEqualTo("İşdə olub");
+            assertThat(sheet.getRow(3).getCell(11).getStringCellValue())
+                    .isEqualTo(daysAgo == 0 ? "İşdə" : "Çıxış yoxdur");
+        }
+        verify(attendance, never()).getEmployeeAttendanceForReport(any(), any(), any(), any());
     }
 
     private void recordedVisits(AttendanceLog... visits) {
