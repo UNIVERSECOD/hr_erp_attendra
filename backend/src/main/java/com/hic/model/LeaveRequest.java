@@ -44,6 +44,12 @@ public class LeaveRequest {
     @Column(name = "approval_date")
     private LocalDate approvalDate;
 
+    @Column(name = "deduct_from_leave_balance", nullable = false)
+    private Boolean deductFromLeaveBalance = false;
+
+    @Column(name = "balance_charged_days", nullable = false)
+    private Integer balanceChargedDays = 0;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 

@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -65,32 +66,46 @@ public class LeaveService {
     @Transactional
     public LeaveRequestDTO create(LeaveRequestDTO dto) {
         Long tenantId = requireTenantId();
-        if (!employeeRepository.existsById(dto.getEmployeeId())) {
-            throw new ResourceNotFoundException("Employee", dto.getEmployeeId());
-        }
-        if (!leaveTypeRepository.existsById(dto.getLeaveTypeId())) {
-            throw new ResourceNotFoundException("LeaveType", dto.getLeaveTypeId());
-        }
-        if (dto.getEndDate().isBefore(dto.getStartDate())) {
-            throw new BadRequestException("End date cannot be before start date");
+        validateDates(dto.getStartDate(), dto.getEndDate());
+        var employee = lockEmployee(tenantId, dto.getEmployeeId());
+        var leaveType = requireLeaveType(tenantId, dto.getLeaveTypeId());
+        LeaveStatus status = dto.getStatus() == LeaveStatus.APPROVED ? LeaveStatus.APPROVED : LeaveStatus.PENDING;
+        if (status == LeaveStatus.APPROVED) {
+            ensureNoApprovedOverlap(tenantId, employee.getId(), dto.getStartDate(), dto.getEndDate(), null);
         }
         LeaveRequest req = new LeaveRequest();
-        req.setEmployeeId(dto.getEmployeeId());
-        req.setLeaveTypeId(dto.getLeaveTypeId());
+        req.setEmployeeId(employee.getId());
+        req.setLeaveTypeId(leaveType.getId());
         req.setStartDate(dto.getStartDate());
         req.setEndDate(dto.getEndDate());
-        req.setStatus(LeaveStatus.PENDING);
+        req.setStatus(status);
         req.setTenantId(tenantId);
+        req.setDeductFromLeaveBalance(Boolean.TRUE.equals(dto.getDeductFromLeaveBalance()));
+        if (status == LeaveStatus.APPROVED) {
+            req.setApprovedBy(TenantContext.getUserId());
+            req.setApprovalDate(com.hic.util.AppTimeZone.today());
+            chargeBalance(employee, req);
+        }
         return toDTO(leaveRequestRepository.save(req));
     }
 
     @Transactional
     public LeaveRequestDTO updateStatus(Long id, LeaveStatus status, Long approvedBy) {
         LeaveRequest req = requireLeaveInTenant(id);
+        if (status == null) throw new BadRequestException("Məzuniyyət statusu tələb olunur.");
+        Long tenantId = requireTenantId();
+        var employee = lockEmployee(tenantId, req.getEmployeeId());
+        if (status == LeaveStatus.APPROVED && req.getStatus() != LeaveStatus.APPROVED) {
+            ensureNoApprovedOverlap(tenantId, employee.getId(), req.getStartDate(), req.getEndDate(), req.getId());
+            requireLeaveType(tenantId, req.getLeaveTypeId());
+            chargeBalance(employee, req);
+        } else if (status != LeaveStatus.APPROVED && req.getStatus() == LeaveStatus.APPROVED) {
+            refundBalance(employee, req);
+        }
         req.setStatus(status);
         if (status == LeaveStatus.APPROVED) {
             req.setApprovedBy(approvedBy != null ? approvedBy : TenantContext.getUserId());
-            req.setApprovalDate(LocalDate.now());
+            req.setApprovalDate(com.hic.util.AppTimeZone.today());
         }
         return toDTO(leaveRequestRepository.save(req));
     }
@@ -98,14 +113,61 @@ public class LeaveService {
     @Transactional
     public void delete(Long id) {
         LeaveRequest req = requireLeaveInTenant(id);
+        if (req.getStatus() == LeaveStatus.APPROVED) {
+            refundBalance(lockEmployee(requireTenantId(), req.getEmployeeId()), req);
+        }
         leaveRequestRepository.deleteById(req.getId());
+    }
+
+    private com.hic.model.Employee lockEmployee(Long tenantId, Long employeeId) {
+        return employeeRepository.lockForTermination(tenantId, employeeId)
+                .orElseThrow(() -> new ResourceNotFoundException("Employee", employeeId));
+    }
+
+    private LeaveType requireLeaveType(Long tenantId, Long leaveTypeId) {
+        return leaveTypeRepository.findById(leaveTypeId)
+                .filter(type -> tenantId.equals(type.getTenantId()))
+                .orElseThrow(() -> new ResourceNotFoundException("LeaveType", leaveTypeId));
+    }
+
+    private void validateDates(LocalDate startDate, LocalDate endDate) {
+        if (startDate == null || endDate == null || endDate.isBefore(startDate)) {
+            throw new BadRequestException("Düzgün məzuniyyət tarix aralığı seçin.");
+        }
+    }
+
+    private void ensureNoApprovedOverlap(Long tenantId, Long employeeId, LocalDate startDate,
+                                         LocalDate endDate, Long currentId) {
+        boolean overlap = leaveRequestRepository.findApprovedByTenantAndEmployeeIdAndDateRange(
+                        tenantId, employeeId, startDate, endDate).stream()
+                .anyMatch(request -> !java.util.Objects.equals(request.getId(), currentId));
+        if (overlap) throw new BadRequestException("Seçilən tarixlərdə artıq təsdiqlənmiş məzuniyyət var.");
+    }
+
+    private void chargeBalance(com.hic.model.Employee employee, LeaveRequest request) {
+        if (!Boolean.TRUE.equals(request.getDeductFromLeaveBalance())) return;
+        int days = Math.toIntExact(ChronoUnit.DAYS.between(request.getStartDate(), request.getEndDate()) + 1);
+        int remaining = employee.getAnnualLeaveBalance() == null ? 0 : employee.getAnnualLeaveBalance();
+        if (remaining < days) throw new BadRequestException("Əməkdaşın məzuniyyət balansı kifayət etmir.");
+        employee.setAnnualLeaveBalance(remaining - days);
+        request.setBalanceChargedDays(days);
+        employeeRepository.save(employee);
+    }
+
+    private void refundBalance(com.hic.model.Employee employee, LeaveRequest request) {
+        int charged = request.getBalanceChargedDays() == null ? 0 : request.getBalanceChargedDays();
+        if (charged == 0) return;
+        int remaining = employee.getAnnualLeaveBalance() == null ? 0 : employee.getAnnualLeaveBalance();
+        employee.setAnnualLeaveBalance(Math.addExact(remaining, charged));
+        request.setBalanceChargedDays(0);
+        employeeRepository.save(employee);
     }
 
     private LeaveRequest requireLeaveInTenant(Long id) {
         LeaveRequest req = leaveRequestRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("LeaveRequest", id));
-        Long tenantId = TenantContext.getTenantId();
-        if (tenantId != null && (req.getTenantId() == null || !tenantId.equals(req.getTenantId()))) {
+        Long tenantId = requireTenantId();
+        if (!tenantId.equals(req.getTenantId())) {
             throw new ResourceNotFoundException("LeaveRequest", id);
         }
         return req;
@@ -129,6 +191,8 @@ public class LeaveService {
         dto.setStatus(req.getStatus());
         dto.setApprovedBy(req.getApprovedBy());
         dto.setApprovalDate(req.getApprovalDate());
+        dto.setDeductFromLeaveBalance(req.getDeductFromLeaveBalance());
+        dto.setBalanceChargedDays(req.getBalanceChargedDays());
         dto.setCreatedAt(req.getCreatedAt());
         return dto;
     }

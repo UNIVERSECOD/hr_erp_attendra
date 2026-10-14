@@ -160,7 +160,7 @@ class TabelServiceTest {
         assertEquals(0, row.getDaily().get(1));
         assertEquals(9.0, row.getDaily().get(3));
         assertEquals(8.5, row.getDaily().get(4));
-        assertEquals("Q/I", row.getDaily().get(5));
+        assertEquals("M", row.getDaily().get(5));
         assertEquals("Q/I", row.getDaily().get(6));
         assertEquals("Q/I", row.getDaily().get(7));
         assertNull(row.getDaily().get(11));
@@ -168,6 +168,12 @@ class TabelServiceTest {
         assertEquals(17.5, row.getTotalHours());
         assertEquals(TabelMonthlyDTO.CalculationMode.STANDARD, result.getCalculationMode());
         org.mockito.Mockito.verifyNoInteractions(mcgProjectionService);
+        try (var workbook = WorkbookFactory.create(new ByteArrayInputStream(
+                tabelService.exportMonthlyTabel(2026, 4, 3L, 4L, 5L, "FIN123")))) {
+            assertEquals("M", workbook.getSheet("Tabel").getRow(2).getCell(8).getStringCellValue());
+        } catch (java.io.IOException exception) {
+            throw new AssertionError(exception);
+        }
     }
 
     @Test
@@ -177,6 +183,12 @@ class TabelServiceTest {
         employee.setFirstName("Test"); employee.setLastName("MCG");
         employee.setEmploymentStatus(Employee.EmploymentStatus.TERMINATED);
         when(employeeRepository.findByTenantId(7L, Pageable.unpaged())).thenReturn(new PageImpl<>(List.of(employee)));
+        var approvedLeave = new LeaveRequest();
+        approvedLeave.setEmployeeId(11L);
+        approvedLeave.setStartDate(LocalDate.of(2026, 4, 8));
+        approvedLeave.setEndDate(LocalDate.of(2026, 4, 8));
+        when(leaveRequestRepository.findApprovedByTenantAndEmployeeIdsAndDateRange(any(), any(), any(), any()))
+                .thenReturn(List.of(approvedLeave));
         when(mcgProjectionService.forMonth(any(), any(), any(), any())).thenReturn((e, date, summary) -> switch (date.getDayOfMonth()) {
             case 1 -> new TabelMonthlyDTO.McgDayDTO(true, 480, 480, 0, 0, 0, "PRESENT", true, 480, false);
             case 2 -> new TabelMonthlyDTO.McgDayDTO(false, 496, 150, 346, 0, 0, "LATE", true, 420, false);
@@ -193,6 +205,7 @@ class TabelServiceTest {
         assertEquals(5.77, row.getOvertimeHours()); assertEquals(42.25, row.getTotalHours());
         assertEquals(6, row.getWorkingDays()); assertEquals(8.0, row.getDaily().get(1));
         assertEquals("Q/İ", row.getDaily().get(6));
+        assertEquals("M", row.getDaily().get(8));
         byte[] excel = tabelService.exportMonthlyTabel(2026, 4, null, null, null, null, TabelMonthlyDTO.CalculationMode.MCG);
         try (var book = WorkbookFactory.create(new ByteArrayInputStream(excel))) {
             var sheet = book.getSheet("Tabel");
@@ -208,6 +221,7 @@ class TabelServiceTest {
             assertEquals(496 / 1440.0, sheet.getRow(2).getCell(5).getNumericCellValue());
             assertEquals("08:16", formatter.formatCellValue(sheet.getRow(2).getCell(5)));
             assertEquals("08:00", formatter.formatCellValue(sheet.getRow(2).getCell(6)));
+            assertEquals("M", sheet.getRow(2).getCell(11).getStringCellValue());
             assertEquals("07:00", formatter.formatCellValue(sheet.getRow(2).getCell(7)));
             assertEquals("1", formatter.formatCellValue(sheet.getRow(2).getCell(8)));
             assertEquals("Q/İ", sheet.getRow(2).getCell(9).getStringCellValue());

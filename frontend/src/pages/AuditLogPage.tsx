@@ -23,7 +23,7 @@ const fields: Record<string, string> = {
   deviceConfigId: 'Cihaz ID', assignmentSource: 'Təyinat mənbəyi', sourceBranchId: 'Mənbə ərazi ID', effectiveStartDate: 'Başlanğıc tarixi', effectiveEndDate: 'Bitmə tarixi',
   startTime: 'Başlanğıc saatı', endTime: 'Bitmə saatı', crossesMidnight: 'Gecə yarısını keçir', allowedLateMinutes: 'Gecikmə güzəşti', allowedEarlyLeaveMinutes: 'Erkən çıxış güzəşti',
   breakMinutes: 'Fasilə dəqiqəsi', dayOfWeek: 'Həftənin günü', workingDay: 'İş günü', permissionTypeId: 'İcazə növü ID', startDate: 'Başlanğıc tarixi', endDate: 'Bitmə tarixi',
-  deductFromWorkHours: 'İş saatından çıxılır', applyScope: 'Tətbiq dairəsi', leaveTypeId: 'Məzuniyyət növü ID', attendanceLogId: 'Keçid ID',
+  deductFromWorkHours: 'İş saatından çıxılır', deductFromLeaveBalance: 'Məzuniyyət balansından çıxılır', balanceChargedDays: 'Balansdan çıxılan günlər', applyScope: 'Tətbiq dairəsi', leaveTypeId: 'Məzuniyyət növü ID', attendanceLogId: 'Keçid ID',
   previousCheckInTime: 'Əvvəlki giriş', previousCheckOutTime: 'Əvvəlki çıxış', newCheckInTime: 'Yeni giriş', newCheckOutTime: 'Yeni çıxış',
   completed: 'Tamamlandı', attempts: 'Cəhd sayı', username: 'İstifadəçi adı', userType: 'Rol', companyName: 'Şirkət adı', attendanceSyncIntervalMinutes: 'Sinxronizasiya intervalı',
   passwordHash: 'Parol', passwordEncrypted: 'Cihaz parolu', faceImageUrl: 'Foto', faceId: 'Foto identifikatoru', cardId: 'Kart', finNumber: 'FIN', deviceEmployeeNo: 'Terminal nömrəsi',

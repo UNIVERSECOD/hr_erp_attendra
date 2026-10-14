@@ -143,7 +143,7 @@ class EmployeePermissionServiceTest {
         when(scheduleResolver.resolveForPermission(employee, today)).thenReturn(schedule(true, 9, 18));
         when(scheduleResolver.resolveForPermission(employee, today.plusDays(1))).thenReturn(schedule(false, 9, 18));
         assertThrows(BadRequestException.class, () -> service.grantPermission(1L, 4L, today, today.plusDays(1),
-                LocalTime.of(10, 0), LocalTime.of(11, 0), true, "note", null));
+                null, null, true, "note", null));
         verify(permissionRepository, never()).save(any());
     }
 
@@ -200,6 +200,20 @@ class EmployeePermissionServiceTest {
                         false, "note", EmployeePermission.Status.APPROVED));
 
         assertEquals("Start and end time must be different", ex.getMessage());
+    }
+
+    @Test
+    void grantPermission_rejectsHourlyDateRange() {
+        LocalDate today = AppTimeZone.today();
+
+        BadRequestException ex = assertThrows(BadRequestException.class,
+                () -> service.grantPermission(
+                        1L, 1L, today, today.plusDays(1),
+                        LocalTime.of(10, 0), LocalTime.of(11, 0),
+                        false, "note", EmployeePermission.Status.APPROVED));
+
+        assertEquals("Saatlıq icazə yalnız bir tarix üçün verilə bilər.", ex.getMessage());
+        verify(permissionRepository, never()).save(any());
     }
 
     @Test

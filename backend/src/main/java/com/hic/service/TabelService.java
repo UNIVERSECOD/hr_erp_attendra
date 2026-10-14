@@ -106,6 +106,7 @@ public class TabelService {
         }
 
         Map<Long, Set<LocalDate>> leaveByEmployee = buildLeaveDaysByEmployee(tenantId, employees, start, end);
+        Map<Long, Set<LocalDate>> permissionByEmployee = buildFullDayPermissionDaysByEmployee(tenantId, employees, start, end);
         Map<Long, Set<LocalDate>> holidayByEmployee = buildHolidayDaysByEmployee(tenantId, employees, start, end);
         boolean mcg = mode == CalculationMode.MCG;
         var projector = mcg ? mcgProjectionService.forMonth(tenantId, employees, start, end) : null;
@@ -130,13 +131,16 @@ public class TabelService {
             int totalMinutes = 0;
 
             Set<LocalDate> leaveDates = leaveByEmployee.getOrDefault(employee.getId(), Set.of());
+            Set<LocalDate> permissionDates = permissionByEmployee.getOrDefault(employee.getId(), Set.of());
             Set<LocalDate> holidayDates = holidayByEmployee.getOrDefault(employee.getId(), Set.of());
 
             for (int day = 1; day <= yearMonth.lengthOfMonth(); day++) {
                 LocalDate date = yearMonth.atDay(day);
                 Object value;
 
-                if (holidayDates.contains(date) || leaveDates.contains(date)) {
+                if (leaveDates.contains(date)) {
+                    value = "M";
+                } else if (holidayDates.contains(date) || permissionDates.contains(date)) {
                     value = mcg ? "Q/İ" : QI_CODE;
                 } else {
                     DailyAttendanceSummary summary = summariesByDate.get(date);
@@ -317,7 +321,7 @@ public class TabelService {
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "1 = həmin günün qrafiki tam yerinə yetirilib (tolerans və iş saatından çıxılmayan təsdiqli icazə daxil).");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
-                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ.");
+                        "Tam gün şərtləri ödənirsə və overtime 1 saata çatmayıbsa 1 göstərilir; digər iş müddətləri saat:dəqiqə ilədir. İstirahət günü = Q/İ; təsdiqlənmiş məzuniyyət = M.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
                         "Qrafik bitdikdən sonrakı faktiki giriş–çıxış müddətləri 60 dəqiqəyə çatdıqda overtime sayılır; aradakı boşluqlar sayılmır. Göy = overtime, qırmızı = az iş, yaşıl 1 = norma, qara = digər.");
                 sheet.createRow(++rowIndex).createCell(0).setCellValue(
@@ -361,8 +365,18 @@ public class TabelService {
             addDateRange(result, leaveRequest.getEmployeeId(), leaveRequest.getStartDate(), leaveRequest.getEndDate(), start, end);
         }
 
+        return result;
+    }
+
+    private Map<Long, Set<LocalDate>> buildFullDayPermissionDaysByEmployee(Long tenantId,
+                                                                            List<Employee> employees,
+                                                                            LocalDate start,
+                                                                            LocalDate end) {
+        Map<Long, Set<LocalDate>> result = new HashMap<>();
+        if (employees.isEmpty()) return result;
+
         List<EmployeePermission> employeePermissions = employeePermissionRepository.findByDateRange(tenantId, start, end);
-        Set<Long> employeeIdSet = new HashSet<>(employeeIds);
+        Set<Long> employeeIdSet = employees.stream().map(Employee::getId).collect(java.util.stream.Collectors.toSet());
         for (EmployeePermission permission : employeePermissions) {
             if (permission.getEmployeeId() == null || !employeeIdSet.contains(permission.getEmployeeId())) {
                 continue;

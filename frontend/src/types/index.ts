@@ -239,6 +239,8 @@ export interface LeaveRequest {
   status: 'PENDING' | 'APPROVED' | 'REJECTED'
   approvedBy?: number
   approvalDate?: string
+  deductFromLeaveBalance: boolean
+  balanceChargedDays?: number
   createdAt?: string
 }
 

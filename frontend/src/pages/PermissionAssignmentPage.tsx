@@ -7,6 +7,7 @@ import { Employee, EmployeePermission, PermissionType } from '../types'
 import { statusLabel } from '../i18n/labels.ts'
 import { getApiErrorMessage } from '../utils/apiError.ts'
 import { toast } from '../store/toastStore.ts'
+import LeaveManagement from '../components/LeaveManagement.tsx'
 
 type PermissionFormValue = {
   employeeIds: number[]
@@ -81,7 +82,7 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
       setError('İcazə növünü seçin')
       return
     }
-    if (!startDate || !endDate || endDate < startDate) {
+    if (!startDate || (fullDay && (!endDate || endDate < startDate))) {
       setError('Düzgün tarix aralığı seçin')
       return
     }
@@ -101,7 +102,7 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
         employeeIds: selectedEmployeeIds,
         permissionTypeId,
         startDate,
-        endDate,
+        endDate: fullDay ? endDate : startDate,
         startTime: fullDay ? undefined : startTime,
         endTime: fullDay ? undefined : endTime,
         deductFromWorkHours,
@@ -140,13 +141,18 @@ function PermissionModal({ employees, permissionTypes, initial, onClose, onSave 
           </label>
 
           <label className="text-sm font-medium text-slate-700">
-            Başlanğıc tarixi
+            {fullDay ? 'Başlanğıc tarixi' : 'Tarix'}
             <input type="date" value={startDate} onChange={event => setStartDate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
           </label>
-          <label className="text-sm font-medium text-slate-700">
-            Bitmə tarixi
-            <input type="date" value={endDate} onChange={event => setEndDate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
-          </label>
+          {fullDay && (
+            <label className="text-sm font-medium text-slate-700">
+              Bitmə tarixi
+              <input type="date" value={endDate} onChange={event => setEndDate(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm" />
+            </label>
+          )}
+          {!fullDay && initial?.startTime && initial.startDate !== initial.endDate && (
+            <p className="col-span-2 text-sm text-amber-700">Bu köhnə çoxgünlük saatlıq icazəni yadda saxladıqda yalnız seçilən tarix qalacaq.</p>
+          )}
 
           <label className="col-span-2 flex items-center gap-2 text-sm font-medium text-slate-700">
             <input type="checkbox" checked={fullDay} onChange={event => setFullDay(event.target.checked)} />
@@ -244,6 +250,7 @@ export default function PermissionAssignmentPage() {
   const [showModal, setShowModal] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeTab, setActiveTab] = useState<'permissions' | 'leaves'>('permissions')
 
   const fetchData = async () => {
     setLoading(true)
@@ -338,11 +345,18 @@ export default function PermissionAssignmentPage() {
       <div className="space-y-5 p-6">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">İcazələr</h1>
-            <p className="mt-1 text-sm text-slate-500">Əməkdaşların saatlıq və tam günlük icazələrini idarə edin</p>
+            <h1 className="text-2xl font-bold text-slate-900">İcazələr və məzuniyyət</h1>
+            <p className="mt-1 text-sm text-slate-500">Əməkdaşların icazə və məzuniyyət qeydlərini idarə edin</p>
           </div>
-          <button type="button" onClick={openCreate} disabled={permissionTypes.length === 0} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50">+ Yeni icazə</button>
+          {activeTab === 'permissions' && <button type="button" onClick={openCreate} disabled={permissionTypes.length === 0} className="rounded-md bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50">+ Yeni icazə</button>}
         </div>
+
+        <div className="flex gap-2 border-b border-slate-200">
+          <button type="button" onClick={() => setActiveTab('permissions')} className={`px-4 py-2 text-sm font-medium ${activeTab === 'permissions' ? 'border-b-2 border-purple-600 text-purple-700' : 'text-slate-600'}`}>İcazələr</button>
+          <button type="button" onClick={() => setActiveTab('leaves')} className={`px-4 py-2 text-sm font-medium ${activeTab === 'leaves' ? 'border-b-2 border-emerald-600 text-emerald-700' : 'text-slate-600'}`}>Məzuniyyət</button>
+        </div>
+
+        {activeTab === 'leaves' ? <LeaveManagement employees={employees} onChanged={fetchData} /> : <>
 
         {error && <div className="rounded-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
         {!loading && permissionTypes.length === 0 && <div className="rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">İcazə növü yaradılmayıb.</div>}
@@ -406,6 +420,7 @@ export default function PermissionAssignmentPage() {
             </tbody>
           </table>
         </div>
+        </>}
       </div>
 
       {showModal && <PermissionModal employees={employees.filter(employee => employee.employmentStatus === 'ACTIVE' || employee.id === editingPermission?.employeeId)} permissionTypes={permissionTypes} initial={editingPermission} onClose={() => setShowModal(false)} onSave={savePermission} />}

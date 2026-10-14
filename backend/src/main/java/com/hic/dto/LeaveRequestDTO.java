@@ -27,5 +27,7 @@ public class LeaveRequestDTO {
     private LeaveStatus status;
     private Long approvedBy;
     private LocalDate approvalDate;
+    private Boolean deductFromLeaveBalance;
+    private Integer balanceChargedDays;
     private LocalDateTime createdAt;
 }

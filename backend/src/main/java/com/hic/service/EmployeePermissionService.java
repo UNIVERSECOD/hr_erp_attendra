@@ -242,6 +242,9 @@ public class EmployeePermissionService {
         if (startTime != null && endTime.equals(startTime)) {
             throw new BadRequestException("Start and end time must be different");
         }
+        if (startTime != null && !startDate.equals(endDate)) {
+            throw new BadRequestException("Saatlıq icazə yalnız bir tarix üçün verilə bilər.");
+        }
         if (startTime != null && (reason == null || reason.isBlank())) {
             throw new BadRequestException("Reason is required for hourly permission");
         }
